@@ -1,0 +1,42 @@
+# Build output
+bin/
+obj/
+TestResults/
+artifacts/
+
+# Visual Studio / IDE state
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Rider / ReSharper
+_ReSharper*/
+*.DotSettings.user
+
+# Local app data and downloaded content
+Stendr/Data/
+
+# OS and local shortcuts
+Thumbs.db
+Desktop.ini
+*.lnk
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+
+# NuGet
+*.nupkg
+packages/
+.nuget/packages/
+
+# Publish/package output
+publish/
+*.zip
+*.msix
+*.appx
