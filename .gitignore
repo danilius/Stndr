@@ -18,7 +18,7 @@ _ReSharper*/
 *.DotSettings.user
 
 # Local app data and downloaded content
-Stendr/Data/
+Stndr/Data/
 
 # OS and local shortcuts
 Thumbs.db

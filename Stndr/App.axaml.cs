@@ -5,7 +5,7 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
 using System.Threading.Tasks;
 
-namespace Stendr;
+namespace Stndr;
 
 public partial class App : Application
 {

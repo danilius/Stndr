@@ -12,7 +12,7 @@ using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.VisualTree;
 
-namespace Stendr;
+namespace Stndr;
 
 public sealed class ReaderTextView : SelectableTextBlock
 {

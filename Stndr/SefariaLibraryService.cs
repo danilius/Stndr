@@ -10,7 +10,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using LiteDatabase = LiteDB.LiteDatabase;
 
-namespace Stendr;
+namespace Stndr;
 
 public sealed class SefariaLibraryService
 {
@@ -969,7 +969,7 @@ public sealed class SefariaLibraryService
         {
             Timeout = TimeSpan.FromSeconds(30)
         };
-        client.DefaultRequestHeaders.Add("User-Agent", "Stendr/1.0");
+        client.DefaultRequestHeaders.Add("User-Agent", "Stndr/1.0");
         return client;
     }
 
@@ -980,7 +980,7 @@ public sealed class SefariaLibraryService
             var directory = new DirectoryInfo(start);
             while (directory is not null)
             {
-                if (File.Exists(Path.Combine(directory.FullName, "Stendr.csproj")))
+                if (File.Exists(Path.Combine(directory.FullName, "Stndr.csproj")))
                 {
                     return directory.FullName;
                 }
@@ -989,7 +989,7 @@ public sealed class SefariaLibraryService
             }
         }
 
-        return Path.Combine(Directory.GetCurrentDirectory(), "Stendr");
+        return Path.Combine(Directory.GetCurrentDirectory(), "Stndr");
     }
 
     private static void AddLibraryNode(SefariaIndexJsonNode node, SefariaCategoryNode parent)

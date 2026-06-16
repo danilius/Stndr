@@ -1,7 +1,7 @@
 ﻿using Avalonia;
 using System;
 
-namespace Stendr;
+namespace Stndr;
 
 class Program
 {

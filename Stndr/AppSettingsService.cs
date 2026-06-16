@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using System.Text.Json;
 
-namespace Stendr;
+namespace Stndr;
 
 public sealed class AppSettingsService
 {
@@ -49,7 +49,7 @@ public sealed class AppSettingsService
             var directory = new DirectoryInfo(start);
             while (directory is not null)
             {
-                if (File.Exists(Path.Combine(directory.FullName, "Stendr.csproj")))
+                if (File.Exists(Path.Combine(directory.FullName, "Stndr.csproj")))
                 {
                     return directory.FullName;
                 }
@@ -58,6 +58,6 @@ public sealed class AppSettingsService
             }
         }
 
-        return Path.Combine(Directory.GetCurrentDirectory(), "Stendr");
+        return Path.Combine(Directory.GetCurrentDirectory(), "Stndr");
     }
 }

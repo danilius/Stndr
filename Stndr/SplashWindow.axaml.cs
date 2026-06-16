@@ -3,7 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Threading;
 
-namespace Stendr;
+namespace Stndr;
 
 public partial class SplashWindow : Window
 {

@@ -19,7 +19,7 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 
-namespace Stendr;
+namespace Stndr;
 
 public partial class MainWindow : Window
 {
@@ -3521,7 +3521,7 @@ public partial class MainWindow : Window
     private static string GetStateFolder()
     {
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        return Path.Combine(appData, "Stendr");
+        return Path.Combine(appData, "Stndr");
     }
 
     private static string GetStateFilePath()
