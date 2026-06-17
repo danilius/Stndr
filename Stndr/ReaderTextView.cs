@@ -33,6 +33,9 @@ public sealed class ReaderTextView : SelectableTextBlock
     public static readonly StyledProperty<HebrewMarksMode> HebrewMarksModeProperty =
         AvaloniaProperty.Register<ReaderTextView, HebrewMarksMode>(nameof(HebrewMarksMode), HebrewMarksMode.NikkudAndCantillation);
 
+    public static readonly StyledProperty<FontFamily?> EmbeddedHebrewFontFamilyProperty =
+        AvaloniaProperty.Register<ReaderTextView, FontFamily?>(nameof(EmbeddedHebrewFontFamily));
+
     public ReaderTextView()
     {
         TextWrapping = TextWrapping.Wrap;
@@ -72,6 +75,12 @@ public sealed class ReaderTextView : SelectableTextBlock
         set => SetValue(HebrewMarksModeProperty, value);
     }
 
+    public FontFamily? EmbeddedHebrewFontFamily
+    {
+        get => GetValue(EmbeddedHebrewFontFamilyProperty);
+        set => SetValue(EmbeddedHebrewFontFamilyProperty, value);
+    }
+
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
@@ -79,6 +88,7 @@ public sealed class ReaderTextView : SelectableTextBlock
         if (change.Property == SourceTextProperty ||
             change.Property == IsHebrewProperty ||
             change.Property == HebrewMarksModeProperty ||
+            change.Property == EmbeddedHebrewFontFamilyProperty ||
             change.Property == FontFamilyProperty ||
             change.Property == FontSizeProperty ||
             change.Property == ForegroundProperty)
@@ -354,6 +364,11 @@ public sealed class ReaderTextView : SelectableTextBlock
             UnicodeCategory.EnclosingMark;
     }
 
+    private static bool ContainsHebrewLetter(char character)
+    {
+        return character >= '\u0590' && character <= '\u05FF';
+    }
+
     private sealed record HebrewHitInfo(
         Point Point,
         double X,
@@ -420,14 +435,7 @@ public sealed class ReaderTextView : SelectableTextBlock
             var segment = lineBreakIndex < 0 ? remaining : remaining[..lineBreakIndex];
             if (segment.Length > 0)
             {
-                inlines.Add(new Run(segment.ToString())
-                {
-                    FontFamily = FontFamily,
-                    FontSize = FontSize,
-                    FontStyle = parsedRun.IsItalic ? FontStyle.Italic : FontStyle.Normal,
-                    FontWeight = parsedRun.IsBold ? FontWeight.Bold : FontWeight.Normal,
-                    Foreground = Foreground
-                });
+                AppendSegmentInlines(inlines, segment.ToString(), parsedRun);
             }
 
             if (lineBreakIndex < 0)
@@ -438,6 +446,45 @@ public sealed class ReaderTextView : SelectableTextBlock
             inlines.Add(new LineBreak());
             remaining = remaining[(lineBreakIndex + 1)..];
         }
+    }
+
+    private void AppendSegmentInlines(InlineCollection inlines, string segment, ParsedRun parsedRun)
+    {
+        var embeddedHebrewFontFamily = EmbeddedHebrewFontFamily;
+        if (IsHebrew || embeddedHebrewFontFamily is null)
+        {
+            inlines.Add(CreateRun(segment, parsedRun, FontFamily));
+            return;
+        }
+
+        var start = 0;
+        var currentIsHebrew = ContainsHebrewLetter(segment[0]);
+        for (var i = 1; i < segment.Length; i++)
+        {
+            var isHebrew = ContainsHebrewLetter(segment[i]);
+            if (isHebrew == currentIsHebrew)
+            {
+                continue;
+            }
+
+            inlines.Add(CreateRun(segment[start..i], parsedRun, currentIsHebrew ? embeddedHebrewFontFamily : FontFamily));
+            start = i;
+            currentIsHebrew = isHebrew;
+        }
+
+        inlines.Add(CreateRun(segment[start..], parsedRun, currentIsHebrew ? embeddedHebrewFontFamily : FontFamily));
+    }
+
+    private Run CreateRun(string text, ParsedRun parsedRun, FontFamily fontFamily)
+    {
+        return new Run(text)
+        {
+            FontFamily = fontFamily,
+            FontSize = FontSize,
+            FontStyle = parsedRun.IsItalic ? FontStyle.Italic : FontStyle.Normal,
+            FontWeight = parsedRun.IsBold ? FontWeight.Bold : FontWeight.Normal,
+            Foreground = Foreground
+        };
     }
 
     private List<ParsedRun> CreateParsedRuns(string? text)

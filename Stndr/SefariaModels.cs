@@ -277,7 +277,8 @@ public enum ReaderDisplayMode
 {
     PrimaryOnly,
     TranslationBelow,
-    SideBySide
+    SideBySide,
+    TranslationSideBySide
 }
 
 public enum CommentaryLanguage
@@ -320,15 +321,20 @@ public sealed class AppSettings
     public Dictionary<string, string> SelectedHebrewTextsByBook { get; set; } = new();
     public Dictionary<string, string> SelectedTranslationsByBook { get; set; } = new();
     public Dictionary<string, ReaderDisplayMode> ReaderDisplayModesByBook { get; set; } = new();
+    public List<string> PinnedCommentarySourceKeys { get; set; } = new();
     public HebrewReaderFont HebrewReaderFont { get; set; } = HebrewReaderFont.SefariaSerif;
     public EnglishReaderFont EnglishReaderFont { get; set; } = EnglishReaderFont.SystemSans;
     public UiFont UiFont { get; set; } = UiFont.Inter;
     public string HebrewReaderFontFamily { get; set; } = string.Empty;
     public string EnglishReaderFontFamily { get; set; } = string.Empty;
     public string UiFontFamily { get; set; } = string.Empty;
+    public string HebrewDisplayFontFamily { get; set; } = string.Empty;
     public double HebrewReaderFontSize { get; set; } = 15;
     public double EnglishReaderFontSize { get; set; } = 15;
+    public double HebrewCommentaryFontSize { get; set; } = 15;
+    public double EnglishCommentaryFontSize { get; set; } = 15;
     public double UiFontSize { get; set; } = 13;
+    public double HebrewDisplayFontSize { get; set; } = 18;
     public double SingleLanguageReaderColumnLetters { get; set; } = 80;
     public double DualLanguageReaderColumnLetters { get; set; } = 120;
 }
