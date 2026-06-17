@@ -40,6 +40,8 @@ public partial class MainWindow : Window
     private const string LibraryManagerTabTitle = "Library Manager";
     private const string SettingsTabTitle = "Settings";
     private const string AllCommentariesSelectionKey = "__all_commentaries__";
+    private static readonly TimeSpan StartupContentLoadedTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan StartupLayoutUpdatedTimeout = TimeSpan.FromMilliseconds(250);
 
     private ColumnDefinition? _leftColumn;
     private ColumnDefinition? _rightColumn;
@@ -71,6 +73,7 @@ public partial class MainWindow : Window
     private bool _leftCollapsed;
     private bool _rightCollapsed;
     private bool _isSefariaDownloading;
+    private bool _hasLoadedLayoutState;
     private double _leftExpandedWidth = DefaultExpandedPanelWidth;
     private double _rightExpandedWidth = DefaultExpandedPanelWidth;
     private SefariaCategoryNode? _sefariaRoot;
@@ -78,6 +81,8 @@ public partial class MainWindow : Window
     private CancellationTokenSource? _sefariaDownloadCts;
     private List<FontOption>? _allFontOptions;
     private List<FontOption>? _hebrewFontOptions;
+
+    public event EventHandler? StartupCompleted;
 
     public MainWindow()
     {
@@ -110,12 +115,89 @@ public partial class MainWindow : Window
         _settings = _settingsService.Load();
         ApplyUiFontSetting();
         InitializeNavigationItems();
-        LoadLayoutState();
+        ApplyLeftPanelState(false, DefaultExpandedPanelWidth);
+        ApplyRightPanelState(false, DefaultExpandedPanelWidth);
+        EnsureDefaultTabs();
         RefreshInstalledBooksTree();
         UpdateTabHeaderStates();
 
+        this.Opened += async (_, _) => await CompleteStartupAsync();
         this.Closing += (_, _) => SaveLayoutState();
         this.Closed += (_, _) => SaveLayoutState();
+    }
+
+    private async Task CompleteStartupAsync()
+    {
+        try
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                LoadLayoutState();
+                UpdateTabHeaderStates();
+            }, DispatcherPriority.Background);
+
+            await WaitForSelectedTabContentReadyAsync();
+        }
+        finally
+        {
+            _hasLoadedLayoutState = true;
+            StartupCompleted?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    private async Task WaitForSelectedTabContentReadyAsync()
+    {
+        var selectedContent = await Dispatcher.UIThread.InvokeAsync(
+            GetSelectedTabContent,
+            DispatcherPriority.Background);
+        if (selectedContent is null)
+        {
+            return;
+        }
+
+        await WaitForControlLoadedAsync(selectedContent, StartupContentLoadedTimeout);
+        await WaitForControlLayoutUpdatedAsync(selectedContent, StartupLayoutUpdatedTimeout);
+        await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Render);
+    }
+
+    private Control? GetSelectedTabContent()
+    {
+        return _centerTabs?.SelectedItem is TabItem { Content: Control content }
+            ? content
+            : null;
+    }
+
+    private static async Task WaitForControlLoadedAsync(Control control, TimeSpan timeout)
+    {
+        if (control.IsLoaded)
+        {
+            return;
+        }
+
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        void OnLoaded(object? sender, RoutedEventArgs e)
+        {
+            completion.TrySetResult();
+        }
+
+        control.Loaded += OnLoaded;
+        await Task.WhenAny(completion.Task, Task.Delay(timeout));
+        control.Loaded -= OnLoaded;
+    }
+
+    private static async Task WaitForControlLayoutUpdatedAsync(Control control, TimeSpan timeout)
+    {
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        void OnLayoutUpdated(object? sender, EventArgs e)
+        {
+            completion.TrySetResult();
+        }
+
+        control.LayoutUpdated += OnLayoutUpdated;
+        await Task.WhenAny(completion.Task, Task.Delay(timeout));
+        control.LayoutUpdated -= OnLayoutUpdated;
     }
 
 }

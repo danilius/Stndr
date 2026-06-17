@@ -416,6 +416,11 @@ public partial class MainWindow
 
     private void SaveLayoutState()
     {
+        if (!_hasLoadedLayoutState)
+        {
+            return;
+        }
+
         if (_leftColumn is null || _rightColumn is null || _tabs is null || _centerTabs is null)
         {
             return;

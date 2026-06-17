@@ -29,17 +29,13 @@
                        HorizontalAlignment="Center"
                        Margin="0,10,0,18" />
 
-            <Border Grid.Row="2"
-                    Height="4"
-                    Background="#DDEAF2"
-                    ClipToBounds="True">
-                <Canvas x:Name="LoadingTrack">
-                    <Border x:Name="LoadingPill"
-                            Width="150"
-                            Height="4"
-                            Background="#00A6C8" />
-                </Canvas>
-            </Border>
+            <ProgressBar Grid.Row="2"
+                         Height="4"
+                         Minimum="0"
+                         Maximum="100"
+                         IsIndeterminate="True"
+                         Background="#DDEAF2"
+                         Foreground="#00A6C8" />
         </Grid>
     </Border>
 </Window>
