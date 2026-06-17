@@ -329,6 +329,8 @@ public sealed class AppSettings
     public double HebrewReaderFontSize { get; set; } = 15;
     public double EnglishReaderFontSize { get; set; } = 15;
     public double UiFontSize { get; set; } = 13;
+    public double SingleLanguageReaderColumnLetters { get; set; } = 80;
+    public double DualLanguageReaderColumnLetters { get; set; } = 120;
 }
 
 public sealed record ReaderTextUnit(

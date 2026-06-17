@@ -31,6 +31,12 @@ public partial class MainWindow : Window
     private const double DefaultUiFontSize = 13;
     private const double MinUiFontSize = 10;
     private const double MaxUiFontSize = 22;
+    private const double DefaultSingleLanguageColumnLetters = 80;
+    private const double DefaultDualLanguageColumnLetters = 120;
+    private const double MinReaderColumnLetters = 30;
+    private const double MaxReaderColumnLetters = 220;
+    private const double AverageReaderCharacterWidthFactor = 0.62;
+    private const double ReaderSegmentLabelWidth = 28;
     private const string LibraryManagerTabTitle = "Library Manager";
     private const string SettingsTabTitle = "Settings";
     private const string AllCommentariesSelectionKey = "__all_commentaries__";
@@ -485,82 +491,104 @@ public partial class MainWindow : Window
         {
             Background = Brushes.White,
             Padding = new Thickness(24),
-            Child = new StackPanel
+            Child = new ScrollViewer
             {
-                Spacing = 14,
-                Children =
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Content = new StackPanel
                 {
-                    new TextBlock
+                    Spacing = 14,
+                    Children =
                     {
-                        Text = "Settings",
-                        FontSize = 24,
-                        FontWeight = FontWeight.SemiBold
-                    },
-                    new TextBlock
-                    {
-                        Text = "Installed library title display",
-                        FontWeight = FontWeight.SemiBold
-                    },
-                    hebrewOption,
-                    englishOption,
-                    bothOption,
-                    CreateFontSettingRow(
-                        "Display font",
-                        GetAllFontOptions(),
-                        GetSelectedUiFontFamily(),
-                        GetSelectedUiFontSize(),
-                        MinUiFontSize,
-                        MaxUiFontSize,
-                        family =>
+                        new TextBlock
                         {
-                            _settings.UiFontFamily = family;
-                            _settingsService.Save(_settings);
-                            ApplyUiFontSetting();
+                            Text = "Settings",
+                            FontSize = 24,
+                            FontWeight = FontWeight.SemiBold
                         },
-                        size =>
+                        new TextBlock
                         {
-                            _settings.UiFontSize = size;
-                            _settingsService.Save(_settings);
-                            ApplyUiFontSetting();
-                        }),
-                    CreateFontSettingRow(
-                        "Hebrew reader font",
-                        GetHebrewFontOptions(),
-                        GetSelectedHebrewFontFamily(),
-                        GetSelectedHebrewFontSize(),
-                        MinReaderFontSize,
-                        MaxReaderFontSize,
-                        family =>
-                        {
-                            _settings.HebrewReaderFontFamily = family;
-                            _settingsService.Save(_settings);
-                            RefreshOpenReaderTabs();
+                            Text = "Installed library title display",
+                            FontWeight = FontWeight.SemiBold
                         },
-                        size =>
-                        {
-                            _settings.HebrewReaderFontSize = size;
-                            _settingsService.Save(_settings);
-                            RefreshOpenReaderTabs();
-                        }),
-                    CreateFontSettingRow(
-                        "English reader font",
-                        GetAllFontOptions(),
-                        GetSelectedEnglishFontFamily(),
-                        GetSelectedEnglishFontSize(),
-                        MinReaderFontSize,
-                        MaxReaderFontSize,
-                        family =>
-                        {
-                            _settings.EnglishReaderFontFamily = family;
-                            _settingsService.Save(_settings);
-                            RefreshOpenReaderTabs();
-                        },
-                        size =>
-                        {
-                            _settings.EnglishReaderFontSize = size;
-                            _settingsService.Save(_settings);
-                            RefreshOpenReaderTabs();
-                        })
+                        hebrewOption,
+                        englishOption,
+                        bothOption,
+                        CreateFontSettingRow(
+                            "Display font",
+                            GetAllFontOptions(),
+                            GetSelectedUiFontFamily(),
+                            GetSelectedUiFontSize(),
+                            MinUiFontSize,
+                            MaxUiFontSize,
+                            family =>
+                            {
+                                _settings.UiFontFamily = family;
+                                _settingsService.Save(_settings);
+                                ApplyUiFontSetting();
+                            },
+                            size =>
+                            {
+                                _settings.UiFontSize = size;
+                                _settingsService.Save(_settings);
+                                ApplyUiFontSetting();
+                            }),
+                        CreateFontSettingRow(
+                            "Hebrew reader font",
+                            GetHebrewFontOptions(),
+                            GetSelectedHebrewFontFamily(),
+                            GetSelectedHebrewFontSize(),
+                            MinReaderFontSize,
+                            MaxReaderFontSize,
+                            family =>
+                            {
+                                _settings.HebrewReaderFontFamily = family;
+                                _settingsService.Save(_settings);
+                                RefreshOpenReaderTabs();
+                            },
+                            size =>
+                            {
+                                _settings.HebrewReaderFontSize = size;
+                                _settingsService.Save(_settings);
+                                RefreshOpenReaderTabs();
+                            }),
+                        CreateFontSettingRow(
+                            "English reader font",
+                            GetAllFontOptions(),
+                            GetSelectedEnglishFontFamily(),
+                            GetSelectedEnglishFontSize(),
+                            MinReaderFontSize,
+                            MaxReaderFontSize,
+                            family =>
+                            {
+                                _settings.EnglishReaderFontFamily = family;
+                                _settingsService.Save(_settings);
+                                RefreshOpenReaderTabs();
+                            },
+                            size =>
+                            {
+                                _settings.EnglishReaderFontSize = size;
+                                _settingsService.Save(_settings);
+                                RefreshOpenReaderTabs();
+                            }),
+                        CreateLetterCountSettingRow(
+                            "Single-language reader width",
+                            GetSingleLanguageReaderColumnLetters(),
+                            value =>
+                            {
+                                _settings.SingleLanguageReaderColumnLetters = value;
+                                _settingsService.Save(_settings);
+                                RefreshOpenReaderTabs();
+                            }),
+                        CreateLetterCountSettingRow(
+                            "Dual-language reader width",
+                            GetDualLanguageReaderColumnLetters(),
+                            value =>
+                            {
+                                _settings.DualLanguageReaderColumnLetters = value;
+                                _settingsService.Save(_settings);
+                                RefreshOpenReaderTabs();
+                            })
+                    }
                 }
             }
         };
@@ -597,6 +625,27 @@ public partial class MainWindow : Window
                         CreateFontSizeSettingPicker(currentSize, minSize, maxSize, setSize)
                     }
                 }
+            }
+        };
+    }
+
+    private static Control CreateLetterCountSettingRow(
+        string label,
+        double currentValue,
+        Action<double> setValue)
+    {
+        return new StackPanel
+        {
+            Spacing = 6,
+            Margin = new Thickness(0, 8, 0, 0),
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = label,
+                    FontWeight = FontWeight.SemiBold
+                },
+                CreateLetterCountSettingPicker(currentValue, setValue)
             }
         };
     }
@@ -726,6 +775,61 @@ public partial class MainWindow : Window
         return picker;
     }
 
+    private static ComboBox CreateLetterCountSettingPicker(
+        double currentValue,
+        Action<double> setValue)
+    {
+        var values = BuildLetterCountOptions();
+        var picker = new ComboBox
+        {
+            Width = 120,
+            IsEditable = true,
+            ItemsSource = values,
+            SelectedItem = FormatLetterCount(currentValue),
+            Text = FormatLetterCount(currentValue)
+        };
+
+        var appliedValue = Math.Clamp(currentValue, MinReaderColumnLetters, MaxReaderColumnLetters);
+
+        void TryApplyValue()
+        {
+            var rawValue = picker.Text;
+            if (string.IsNullOrWhiteSpace(rawValue) && picker.SelectedItem is string selected)
+            {
+                rawValue = selected;
+            }
+
+            if (!TryParseLetterCount(rawValue, out var parsedValue))
+            {
+                picker.Text = FormatLetterCount(currentValue);
+                return;
+            }
+
+            var nextValue = Math.Clamp(parsedValue, MinReaderColumnLetters, MaxReaderColumnLetters);
+            picker.Text = FormatLetterCount(nextValue);
+            if (Math.Abs(nextValue - appliedValue) < 0.001)
+            {
+                return;
+            }
+
+            appliedValue = nextValue;
+            setValue(nextValue);
+        }
+
+        picker.DropDownClosed += (_, _) => TryApplyValue();
+        picker.LostFocus += (_, _) => TryApplyValue();
+        picker.KeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Enter)
+            {
+                TryApplyValue();
+                e.Handled = true;
+            }
+        };
+
+        return picker;
+    }
+
     private static List<string> BuildFontSizeOptions(double minSize, double maxSize)
     {
         var sizes = new List<string>();
@@ -740,6 +844,22 @@ public partial class MainWindow : Window
     private static string FormatFontSize(double size)
     {
         return $"{size:0}px";
+    }
+
+    private static List<string> BuildLetterCountOptions()
+    {
+        var values = new List<string>();
+        for (var value = 40; value <= 200; value += 10)
+        {
+            values.Add(FormatLetterCount(value));
+        }
+
+        return values;
+    }
+
+    private static string FormatLetterCount(double value)
+    {
+        return $"{value:0} letters";
     }
 
     private static bool TryParseFontSize(string? value, out double size)
@@ -757,6 +877,27 @@ public partial class MainWindow : Window
         }
 
         return double.TryParse(normalized, out size);
+    }
+
+    private static bool TryParseLetterCount(string? value, out double count)
+    {
+        count = 0;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var normalized = value.Trim();
+        if (normalized.EndsWith("letters", StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = normalized[..^7].Trim();
+        }
+        else if (normalized.EndsWith("letter", StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = normalized[..^6].Trim();
+        }
+
+        return double.TryParse(normalized, out count);
     }
 
     private List<FontOption> GetAllFontOptions()
@@ -846,6 +987,24 @@ public partial class MainWindow : Window
     private double GetSelectedEnglishFontSize()
     {
         return NormalizeSettingSize(_settings.EnglishReaderFontSize, DefaultReaderFontSize, MinReaderFontSize, MaxReaderFontSize);
+    }
+
+    private double GetSingleLanguageReaderColumnLetters()
+    {
+        return NormalizeSettingSize(
+            _settings.SingleLanguageReaderColumnLetters,
+            DefaultSingleLanguageColumnLetters,
+            MinReaderColumnLetters,
+            MaxReaderColumnLetters);
+    }
+
+    private double GetDualLanguageReaderColumnLetters()
+    {
+        return NormalizeSettingSize(
+            _settings.DualLanguageReaderColumnLetters,
+            DefaultDualLanguageColumnLetters,
+            MinReaderColumnLetters,
+            MaxReaderColumnLetters);
     }
 
     private static double NormalizeSettingSize(double value, double fallback, double minSize, double maxSize)
@@ -1624,61 +1783,74 @@ public partial class MainWindow : Window
 
     private Control CreateReaderUnit(ReaderTabState state, ReaderTextUnit? primary, ReaderTextUnit? translation)
     {
+        var primaryIsHebrew = SefariaLibraryService.IsHebrew(state.Primary);
         var primaryBlock = CreateReaderTextBlock(
             primary?.Text ?? string.Empty,
-            SefariaLibraryService.IsHebrew(state.Primary),
+            primaryIsHebrew,
             state.HebrewMarksMode);
+        var primaryLabelText = FormatSegmentLabel(primary, primaryIsHebrew);
         var primaryLabel = CreateSegmentLabel(
-            FormatSegmentLabel(primary, SefariaLibraryService.IsHebrew(state.Primary)),
+            primaryLabelText,
             HorizontalAlignment.Left);
         if (translation is null || state.DisplayMode == ReaderDisplayMode.PrimaryOnly)
         {
-            if (!SefariaLibraryService.IsHebrew(state.Primary))
+            if (!primaryIsHebrew)
             {
-                return CreateLabeledTextRow(primaryBlock, null, primaryLabel);
+                return CreateReaderWidthContainer(
+                    CreateLabeledTextRow(primaryBlock, null, primaryLabel),
+                    GetSingleLanguageReaderColumnLetters(),
+                    GetSelectedEnglishFontSize());
             }
 
-            return CreateLabeledTextRow(primaryBlock, primaryLabel, null);
+            return CreateReaderWidthContainer(
+                CreateLabeledTextRow(primaryBlock, null, primaryLabel),
+                GetSingleLanguageReaderColumnLetters(),
+                GetSelectedHebrewFontSize());
         }
 
         var translationBlock = CreateReaderTextBlock(
             translation.Text,
             false,
             state.HebrewMarksMode);
-        var translationLabel = CreateSegmentLabel(FormatSegmentLabel(translation, false), HorizontalAlignment.Right);
+        var translationLabelText = FormatSegmentLabel(translation, false);
+        var translationLabel = CreateSegmentLabel(translationLabelText, HorizontalAlignment.Right);
         if (state.DisplayMode == ReaderDisplayMode.SideBySide)
         {
             primaryBlock = new Border
             {
-                Padding = new Thickness(0, 0, 10, 0),
+                Padding = new Thickness(0, 0, 8, 0),
                 Child = primaryBlock
             };
             translationBlock = new Border
             {
-                Padding = new Thickness(10, 0, 0, 0),
+                Padding = new Thickness(8, 0, 0, 0),
                 Child = translationBlock
             };
+            var centerLabel = CreateSegmentLabel(
+                FirstNonEmpty(primaryLabelText, translationLabelText),
+                HorizontalAlignment.Center);
 
             var grid = new Grid
             {
-                ColumnDefinitions = new ColumnDefinitions("32,*,*,32"),
-                ColumnSpacing = 18,
+                ColumnDefinitions = new ColumnDefinitions("*,44,*"),
+                ColumnSpacing = 0,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 Children =
                 {
-                    primaryLabel,
                     primaryBlock,
+                    centerLabel,
                     translationBlock,
-                    translationLabel
                 }
             };
-            Grid.SetColumn(primaryBlock, 1);
+            Grid.SetColumn(centerLabel, 1);
             Grid.SetColumn(translationBlock, 2);
-            Grid.SetColumn(translationLabel, 3);
-            return grid;
+            return CreateReaderWidthContainer(
+                grid,
+                GetDualLanguageReaderColumnLetters(),
+                Math.Max(GetSelectedHebrewFontSize(), GetSelectedEnglishFontSize()));
         }
 
-        return new StackPanel
+        return CreateReaderWidthContainer(new StackPanel
         {
             Spacing = 8,
             Children =
@@ -1686,7 +1858,26 @@ public partial class MainWindow : Window
                 CreateLabeledTextRow(primaryBlock, primaryLabel, null),
                 CreateLabeledTextRow(translationBlock, null, translationLabel)
             }
+        },
+        GetDualLanguageReaderColumnLetters(),
+        Math.Max(GetSelectedHebrewFontSize(), GetSelectedEnglishFontSize()));
+    }
+
+    private static Control CreateReaderWidthContainer(Control content, double letterCount, double fontSize)
+    {
+        var width = EstimateReaderWidth(letterCount, fontSize);
+        return new Border
+        {
+            Width = width,
+            MaxWidth = width,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Child = content
         };
+    }
+
+    private static double EstimateReaderWidth(double letterCount, double fontSize)
+    {
+        return letterCount * fontSize * AverageReaderCharacterWidthFactor;
     }
 
     private static TextBlock CreateSegmentLabel(string label, HorizontalAlignment alignment)
@@ -1694,9 +1885,11 @@ public partial class MainWindow : Window
         return new TextBlock
         {
             Text = label,
+            Width = ReaderSegmentLabelWidth,
             FontSize = 12,
             Foreground = new SolidColorBrush(Color.Parse("#98A2B3")),
             HorizontalAlignment = alignment,
+            TextAlignment = TextAlignment.Center,
             VerticalAlignment = VerticalAlignment.Top,
             Margin = new Thickness(0, 11, 0, 0)
         };
@@ -2586,11 +2779,15 @@ public partial class MainWindow : Window
         var languageButton = new Button
         {
             Content = readerState.CommentaryLanguage == CommentaryLanguage.Hebrew ? "א" : "A",
+            Background = Brushes.White,
+            BorderBrush = new SolidColorBrush(Color.Parse("#D0D5DD")),
             MinWidth = 24,
             MinHeight = 22,
             Padding = new Thickness(4, 0),
             HorizontalAlignment = HorizontalAlignment.Right,
-            VerticalAlignment = VerticalAlignment.Center
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center
         };
 
         languageButton.Click += (_, e) =>
