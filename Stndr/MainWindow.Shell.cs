@@ -395,25 +395,6 @@ public partial class MainWindow
         ApplyRightPanelState(!_rightCollapsed, _rightExpandedWidth);
     }
 
-    private void OnNavigationSelectionChanged(object? sender, SelectionChangedEventArgs e)
-    {
-        if (_leftPanelBody?.SelectedItem is not string selected || _tabs is null || _centerTabs is null)
-        {
-            return;
-        }
-
-        var existing = _tabs.FirstOrDefault(t => string.Equals(t.Tag as string, selected, StringComparison.Ordinal));
-        if (existing is not null)
-        {
-            _centerTabs.SelectedItem = existing;
-            return;
-        }
-
-        var tab = CreateTab(selected);
-        _tabs.Add(tab);
-        _centerTabs.SelectedItem = tab;
-    }
-
     private void SaveLayoutState()
     {
         if (!_hasLoadedLayoutState)

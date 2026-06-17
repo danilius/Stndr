@@ -160,7 +160,7 @@
                 BorderBrush="#22000000">
             <Grid RowDefinitions="Auto,*">
                 <DockPanel Margin="6">
-                    <Button x:Name="LeftHamburgerButton"
+                    <Button
                             Content="☰"
                             Click="ToggleLeftPanel"
                             Width="28"
@@ -205,7 +205,7 @@
                 BorderBrush="#22000000">
             <Grid RowDefinitions="Auto,*">
                 <DockPanel Margin="6">
-                    <Button x:Name="RightHamburgerButton"
+                    <Button
                             Content="☰"
                             Click="ToggleRightPanel"
                             Width="28"

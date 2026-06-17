@@ -294,27 +294,6 @@ public enum HebrewMarksMode
     NikkudAndCantillation
 }
 
-public enum HebrewReaderFont
-{
-    SefariaSerif,
-    NotoSans,
-    WindowsHebrew
-}
-
-public enum EnglishReaderFont
-{
-    SystemSans,
-    HumanistSans,
-    Serif
-}
-
-public enum UiFont
-{
-    Inter,
-    SegoeUi,
-    NirmalaUi
-}
-
 public sealed class AppSettings
 {
     public InstalledBookTitleDisplay InstalledBookTitleDisplay { get; set; } = InstalledBookTitleDisplay.Both;
@@ -322,9 +301,6 @@ public sealed class AppSettings
     public Dictionary<string, string> SelectedTranslationsByBook { get; set; } = new();
     public Dictionary<string, ReaderDisplayMode> ReaderDisplayModesByBook { get; set; } = new();
     public List<string> PinnedCommentarySourceKeys { get; set; } = new();
-    public HebrewReaderFont HebrewReaderFont { get; set; } = HebrewReaderFont.SefariaSerif;
-    public EnglishReaderFont EnglishReaderFont { get; set; } = EnglishReaderFont.SystemSans;
-    public UiFont UiFont { get; set; } = UiFont.Inter;
     public string HebrewReaderFontFamily { get; set; } = string.Empty;
     public string EnglishReaderFontFamily { get; set; } = string.Empty;
     public string UiFontFamily { get; set; } = string.Empty;
