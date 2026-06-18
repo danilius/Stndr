@@ -52,6 +52,7 @@ public partial class MainWindow : Window
     private TextBlock? _rightPanelTitle;
     private StackPanel? _rightPanelBody;
     private TabControl? _centerTabs;
+    private Grid? _centerTabContentHost;
     private TreeView? _libraryTree;
     private ScrollViewer? _libraryTreeScrollViewer;
     private TreeViewItem? _selectedLibraryTreeItem;
@@ -68,6 +69,7 @@ public partial class MainWindow : Window
     private readonly SefariaLibraryService _sefariaLibrary = new();
     private readonly AppSettingsService _settingsService = new();
     private readonly Dictionary<TabItem, ReaderTabState> _openReaderTabs = new();
+    private readonly Dictionary<TabItem, Control> _tabContents = new();
     private AppSettings _settings = new();
 
     private bool _leftCollapsed;
@@ -103,13 +105,17 @@ public partial class MainWindow : Window
         var centerTabs = this.FindControl<TabControl>("CenterTabs")
             ?? throw new InvalidOperationException("CenterTabs control was not found.");
         _centerTabs = centerTabs;
+        _centerTabContentHost = this.FindControl<Grid>("CenterTabContentHost")
+            ?? throw new InvalidOperationException("CenterTabContentHost control was not found.");
 
         _tabs = new ObservableCollection<TabItem>();
         centerTabs.ItemsSource = _tabs;
         centerTabs.SelectionChanged += (_, _) =>
         {
+            UpdateSelectedTabContentVisibility();
             UpdateTabHeaderStates();
             UpdateReaderTools();
+            RestoreSelectedReaderWebScrollAfterTabSwitch();
         };
 
         _settings = _settingsService.Load();
@@ -162,9 +168,10 @@ public partial class MainWindow : Window
 
     private Control? GetSelectedTabContent()
     {
-        return _centerTabs?.SelectedItem is TabItem { Content: Control content }
-            ? content
-            : null;
+        return _centerTabs?.SelectedItem is TabItem selectedTab &&
+            _tabContents.TryGetValue(selectedTab, out var content)
+                ? content
+                : null;
     }
 
     private static async Task WaitForControlLoadedAsync(Control control, TimeSpan timeout)

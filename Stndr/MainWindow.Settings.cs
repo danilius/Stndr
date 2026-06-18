@@ -49,7 +49,7 @@ public partial class MainWindow
                         },
                         new TextBlock
                         {
-                            Text = "Installed library title display",
+                            Text = "Title language",
                             FontWeight = FontWeight.SemiBold
                         },
                         hebrewOption,
@@ -278,6 +278,9 @@ public partial class MainWindow
             RefreshInstalledBooksTree();
             RefreshLibraryManagerHeaders();
             UpdateLibraryDetails();
+            RefreshOpenReaderTabs();
+            RefreshDisplayFlyouts();
+            UpdateReaderTools();
         };
 
         return option;

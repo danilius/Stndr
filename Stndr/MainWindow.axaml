@@ -186,10 +186,16 @@
                       ResizeDirection="Columns"
                       ResizeBehavior="PreviousAndNext" />
 
-        <TabControl x:Name="CenterTabs"
-                    Grid.Row="1"
-                    Grid.Column="2"
-                    Margin="8" />
+        <Grid Grid.Row="1"
+              Grid.Column="2"
+              Margin="8"
+              RowDefinitions="Auto,*">
+            <TabControl x:Name="CenterTabs"
+                        Grid.Row="0" />
+            <Grid x:Name="CenterTabContentHost"
+                  Grid.Row="1"
+                  Background="White" />
+        </Grid>
 
         <GridSplitter x:Name="RightSplitter"
                       Grid.Row="1"

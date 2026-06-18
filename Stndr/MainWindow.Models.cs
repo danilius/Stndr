@@ -52,8 +52,12 @@ public partial class MainWindow
         public HebrewMarksMode HebrewMarksMode { get; set; } = HebrewMarksMode.NikkudAndCantillation;
         public bool IsNavigationExpanded { get; set; } = true;
         public bool IsDisplayExpanded { get; set; } = true;
+        public bool IsSedrotExpanded { get; set; } = true;
         public bool IsCommentariesExpanded { get; set; } = true;
         public bool IsTextsExpanded { get; set; } = true;
+        public bool ShowAliyot { get; set; }
+        public bool IsSedraContentOpen { get; set; }
+        public string SelectedSedraKey { get; set; } = string.Empty;
         public string SelectedCommentaryRef { get; set; } = string.Empty;
         public bool IsCommentaryContentOpen { get; set; }
         public string SelectedCommentarySourceKey { get; set; } = AllCommentariesSelectionKey;
@@ -79,8 +83,12 @@ public partial class MainWindow
         public List<ReaderNavigationChapter> NavigationChapters { get; set; } = new();
         public bool IsNavigationExpanded { get; set; } = true;
         public bool IsDisplayExpanded { get; set; } = true;
+        public bool IsSedrotExpanded { get; set; } = true;
         public bool IsCommentariesExpanded { get; set; } = true;
         public bool IsTextsExpanded { get; set; } = true;
+        public bool ShowAliyot { get; set; }
+        public bool IsSedraContentOpen { get; set; }
+        public string SelectedSedraKey { get; set; } = string.Empty;
         public ReaderDisplayRow? SelectedReaderRow { get; set; }
         public string SelectedCommentaryRef { get; set; } = string.Empty;
         public bool IsCommentaryContentOpen { get; set; }
@@ -95,6 +103,10 @@ public partial class MainWindow
         public CancellationTokenSource? CommentaryLoadCts { get; set; }
         public CancellationTokenSource? ReadingPositionSaveCts { get; set; }
         public ListBox? ReaderList { get; set; }
+        public NativeWebView? ReaderWebView { get; set; }
+        public double ReaderWebScrollOffset { get; set; }
+        public bool HasAppliedInitialWebScroll { get; set; }
+        public bool IsApplyingWebScrollRestore { get; set; }
         public Flyout? DisplayFlyout { get; set; }
         public bool IsReaderScrollTrackingAttached { get; set; }
         public TextBlock? TitleBlock { get; set; }
@@ -111,6 +123,31 @@ public partial class MainWindow
         string ChapterHeading);
 
     private sealed record ReaderNavigationItem(string Label, ReaderDisplayRow Row, string ChapterTitle);
+
+    private sealed record TorahSedra(
+        string Key,
+        string BookTitle,
+        string EnglishTitle,
+        string HebrewTitle,
+        string WholeRef,
+        IReadOnlyList<TorahAliyah> Aliyot,
+        bool IsCombined = false);
+
+    private sealed record TorahAliyah(int Number, string Ref);
+
+    private sealed record TorahVerseLocation(int Chapter, int Verse) : IComparable<TorahVerseLocation>
+    {
+        public int CompareTo(TorahVerseLocation? other)
+        {
+            if (other is null)
+            {
+                return 1;
+            }
+
+            var chapterComparison = Chapter.CompareTo(other.Chapter);
+            return chapterComparison != 0 ? chapterComparison : Verse.CompareTo(other.Verse);
+        }
+    }
 
     private sealed record CommentarySourceGroup(
         string Key,
