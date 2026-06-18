@@ -62,6 +62,8 @@ public partial class MainWindow
             return;
         }
 
+        ClearTabContents();
+        _openReaderTabs.Clear();
         _tabs.Clear();
 
         var savedTabs = state.Tabs.Count > 0
@@ -77,11 +79,18 @@ public partial class MainWindow
             return;
         }
 
-        foreach (var savedTab in savedTabs)
+        var selectedIndex = savedTabs.Count == 0
+            ? -1
+            : Math.Clamp(state.SelectedTabIndex, 0, savedTabs.Count - 1);
+        for (var i = 0; i < savedTabs.Count; i++)
         {
+            var savedTab = savedTabs[i];
             if (savedTab.Kind == SavedTabKind.Reader)
             {
-                RestoreReaderTab(savedTab);
+                RestoreReaderTab(
+                    savedTab,
+                    selectAfterOpen: i == selectedIndex,
+                    renderImmediately: true);
             }
             else if (!string.IsNullOrWhiteSpace(savedTab.Title))
             {
@@ -101,10 +110,7 @@ public partial class MainWindow
 
     private TabItem CreateTab(string title, Control? content = null)
     {
-        var tab = new TabItem
-        {
-            Content = content ?? CreateTabContent(title)
-        };
+        var tab = new TabItem();
 
         var tabIcon = new TextBlock
         {
@@ -251,8 +257,41 @@ public partial class MainWindow
         tab.Header = header;
 
         tab.Tag = title;
+        RegisterTabContent(tab, content ?? CreateTabContent(title));
 
         return tab;
+    }
+
+    private void RegisterTabContent(TabItem tab, Control content)
+    {
+        _tabContents[tab] = content;
+        content.IsVisible = ReferenceEquals(tab, _centerTabs?.SelectedItem);
+        _centerTabContentHost?.Children.Add(content);
+    }
+
+    private void RemoveTabContent(TabItem tab)
+    {
+        if (!_tabContents.Remove(tab, out var content))
+        {
+            return;
+        }
+
+        _centerTabContentHost?.Children.Remove(content);
+    }
+
+    private void ClearTabContents()
+    {
+        _tabContents.Clear();
+        _centerTabContentHost?.Children.Clear();
+    }
+
+    private void UpdateSelectedTabContentVisibility()
+    {
+        var selectedTab = _centerTabs?.SelectedItem as TabItem;
+        foreach (var (tab, content) in _tabContents)
+        {
+            content.IsVisible = ReferenceEquals(tab, selectedTab);
+        }
     }
 
     private Control CreateTabContent(string title)
@@ -308,6 +347,7 @@ public partial class MainWindow
 
         SaveReaderTabPosition(tab);
         _openReaderTabs.Remove(tab);
+        RemoveTabContent(tab);
         _tabs.Remove(tab);
         if (_centerTabs is not null)
         {
@@ -326,7 +366,10 @@ public partial class MainWindow
         if (readerTab.ReaderList?.Scroll is not null)
         {
             _sefariaLibrary.SaveReadingPosition(readerTab.Primary, readerTab.ReaderList.Scroll.Offset.Y);
+            return;
         }
+
+        _sefariaLibrary.SaveReadingPosition(readerTab.Primary, readerTab.ReaderWebScrollOffset);
     }
 
     private void ApplyLeftPanelState(bool collapsed, double expandedWidth)
@@ -393,25 +436,6 @@ public partial class MainWindow
         }
 
         ApplyRightPanelState(!_rightCollapsed, _rightExpandedWidth);
-    }
-
-    private void OnNavigationSelectionChanged(object? sender, SelectionChangedEventArgs e)
-    {
-        if (_leftPanelBody?.SelectedItem is not string selected || _tabs is null || _centerTabs is null)
-        {
-            return;
-        }
-
-        var existing = _tabs.FirstOrDefault(t => string.Equals(t.Tag as string, selected, StringComparison.Ordinal));
-        if (existing is not null)
-        {
-            _centerTabs.SelectedItem = existing;
-            return;
-        }
-
-        var tab = CreateTab(selected);
-        _tabs.Add(tab);
-        _centerTabs.SelectedItem = tab;
     }
 
     private void SaveLayoutState()
@@ -507,15 +531,21 @@ public partial class MainWindow
                 HebrewMarksMode = readerState.HebrewMarksMode,
                 IsNavigationExpanded = readerState.IsNavigationExpanded,
                 IsDisplayExpanded = readerState.IsDisplayExpanded,
+                IsSedrotExpanded = readerState.IsSedrotExpanded,
                 IsCommentariesExpanded = readerState.IsCommentariesExpanded,
                 IsTextsExpanded = readerState.IsTextsExpanded,
+                ShowAliyot = readerState.ShowAliyot,
+                IsSedraContentOpen = readerState.IsSedraContentOpen,
+                SelectedSedraKey = readerState.SelectedSedraKey,
                 SelectedCommentaryRef = readerState.SelectedCommentaryRef,
                 IsCommentaryContentOpen = readerState.IsCommentaryContentOpen,
                 SelectedCommentarySourceKey = readerState.SelectedCommentarySourceKey,
                 SelectedCommentarySourceTitleEnglish = readerState.SelectedCommentarySourceTitleEnglish,
                 SelectedCommentarySourceTitleHebrew = readerState.SelectedCommentarySourceTitleHebrew,
                 CommentaryLanguage = readerState.CommentaryLanguage,
-                ScrollOffset = readerState.ReaderList?.Scroll?.Offset.Y ?? readerState.Primary.LastScrollOffset
+                ScrollOffset = readerState.ReaderWebView is not null
+                    ? readerState.ReaderWebScrollOffset
+                    : readerState.ReaderList?.Scroll?.Offset.Y ?? readerState.ReaderWebScrollOffset
             };
         }
 

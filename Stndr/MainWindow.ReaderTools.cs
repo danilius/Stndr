@@ -24,6 +24,9 @@ namespace Stndr;
 
 public partial class MainWindow
 {
+    private const double SedraPickerMinimumColumnWidth = 180;
+    private const double SedraPickerColumnGap = 6;
+
     private void UpdateTabHeaderStates()
     {
         if (_tabs is null || _centerTabs is null)
@@ -100,6 +103,19 @@ public partial class MainWindow
                 readerState.IsNavigationExpanded = value;
                 SaveLayoutState();
             }));
+        if (HasTorahSedrot(readerState.Primary))
+        {
+            _rightPanelBody.Children.Add(CreateReaderToolsGroup(
+                CreateSedrotGroupHeader(readerState),
+                CreateReaderSedrotTools(readerState),
+                readerState.IsSedrotExpanded,
+                value =>
+                {
+                    readerState.IsSedrotExpanded = value;
+                    SaveLayoutState();
+                }));
+        }
+
         _rightPanelBody.Children.Add(CreateReaderToolsGroup(
             CreateCommentaryGroupHeader(readerState),
             CreateReaderCommentaryTools(readerState),
@@ -198,7 +214,7 @@ public partial class MainWindow
         }
 
         _rightPanelBody.Children.Add(CreateReaderToolsGroup(
-            "Texts",
+            "Versions",
             textTools,
             readerState.IsTextsExpanded,
             value =>
@@ -277,6 +293,312 @@ public partial class MainWindow
         layout.Children.Add(languageButton);
         Grid.SetColumn(languageButton, 2);
         return layout;
+    }
+
+    private Control CreateSedrotGroupHeader(ReaderTabState readerState)
+    {
+        var layout = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("Auto,*"),
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+
+        if (readerState.IsSedraContentOpen)
+        {
+            var backButton = new Button
+            {
+                Content = "\u2190",
+                MinWidth = 24,
+                MinHeight = 22,
+                Padding = new Thickness(4, 0),
+                Margin = new Thickness(0, 0, 6, 0),
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            backButton.Click += (_, e) =>
+            {
+                readerState.IsSedraContentOpen = false;
+                e.Handled = true;
+                UpdateReaderTools();
+                SaveLayoutState();
+            };
+
+            layout.Children.Add(backButton);
+        }
+
+        var titleBlock = new TextBlock
+        {
+            Text = FormatSedrotHeading(readerState),
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        layout.Children.Add(titleBlock);
+        Grid.SetColumn(titleBlock, 1);
+        return layout;
+    }
+
+    private string FormatSedrotHeading(ReaderTabState readerState)
+    {
+        if (readerState.IsSedraContentOpen)
+        {
+            return _settings.InstalledBookTitleDisplay switch
+            {
+                InstalledBookTitleDisplay.Hebrew => "\u05e2\u05dc\u05d9\u05d5\u05ea",
+                InstalledBookTitleDisplay.English => "Aliyot",
+                _ => "\u05e2\u05dc\u05d9\u05d5\u05ea / Aliyot"
+            };
+        }
+
+        return _settings.InstalledBookTitleDisplay switch
+        {
+            InstalledBookTitleDisplay.Hebrew => "\u05e4\u05e8\u05e9\u05d9\u05d5\u05ea \u05d5\u05e2\u05dc\u05d9\u05d5\u05ea",
+            InstalledBookTitleDisplay.English => "Sedrot & Aliyot",
+            _ => "\u05e4\u05e8\u05e9\u05d9\u05d5\u05ea \u05d5\u05e2\u05dc\u05d9\u05d5\u05ea / Sedrot & Aliyot"
+        };
+    }
+
+    private Control CreateReaderSedrotTools(ReaderTabState readerState)
+    {
+        var sedrot = GetTorahSedrot(readerState.Primary.Title);
+        var panel = new StackPanel
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Spacing = 6
+        };
+
+        if (sedrot.Count == 0)
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = "No sedrot are available for this book.",
+                TextWrapping = TextWrapping.Wrap
+            });
+            return panel;
+        }
+
+        if (!readerState.IsSedraContentOpen)
+        {
+            var pickerGrid = new WrapPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Stretch
+            };
+
+            foreach (var sedra in sedrot)
+            {
+                pickerGrid.Children.Add(CreateSedraPickerRow(readerState, sedra));
+            }
+
+            pickerGrid.SizeChanged += (_, _) => ApplySedraPickerGridWidths(pickerGrid);
+            Dispatcher.UIThread.Post(() => ApplySedraPickerGridWidths(pickerGrid), DispatcherPriority.Loaded);
+            panel.Children.Add(pickerGrid);
+            return panel;
+        }
+
+        var selectedSedra = sedrot.FirstOrDefault(sedra =>
+            string.Equals(sedra.Key, readerState.SelectedSedraKey, StringComparison.Ordinal));
+        if (selectedSedra is null)
+        {
+            readerState.IsSedraContentOpen = false;
+            readerState.SelectedSedraKey = string.Empty;
+            return CreateReaderSedrotTools(readerState);
+        }
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = FormatSedraTitle(selectedSedra),
+            FontWeight = FontWeight.SemiBold,
+            TextWrapping = TextWrapping.Wrap
+        });
+        panel.Children.Add(new TextBlock
+        {
+            Text = selectedSedra.WholeRef,
+            Foreground = new SolidColorBrush(Color.Parse("#667085")),
+            FontSize = Math.Max(10, GetSelectedUiFontSize() - 1),
+            TextWrapping = TextWrapping.Wrap
+        });
+
+        foreach (var aliyah in selectedSedra.Aliyot)
+        {
+            panel.Children.Add(CreateAliyahRow(readerState, aliyah));
+        }
+
+        return panel;
+    }
+
+    private Control CreateSedraPickerRow(ReaderTabState readerState, TorahSedra sedra)
+    {
+        var title = new TextBlock
+        {
+            Text = FormatSedraTitle(sedra),
+            FontSize = Math.Max(13, GetSelectedUiFontSize()),
+            FontWeight = FontWeight.SemiBold,
+            TextWrapping = TextWrapping.Wrap
+        };
+
+        var detail = new TextBlock
+        {
+            Text = sedra.IsCombined ? $"{sedra.WholeRef} - Combined" : sedra.WholeRef,
+            FontSize = Math.Max(11, GetSelectedUiFontSize() - 1),
+            Foreground = new SolidColorBrush(Color.Parse("#667085")),
+            TextWrapping = TextWrapping.Wrap
+        };
+
+        var button = new Button
+        {
+            Content = new StackPanel
+            {
+                Spacing = 4,
+                Children =
+                {
+                    title,
+                    detail
+                }
+            },
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            Margin = new Thickness(0, 0, SedraPickerColumnGap, SedraPickerColumnGap)
+        };
+        button.Classes.Add("commentary-source-row");
+        if (string.Equals(readerState.SelectedSedraKey, sedra.Key, StringComparison.Ordinal))
+        {
+            button.Classes.Add("selected");
+        }
+
+        button.Click += (_, e) =>
+        {
+            readerState.SelectedSedraKey = sedra.Key;
+            readerState.IsSedraContentOpen = true;
+            UpdateReaderTools();
+            SaveLayoutState();
+            e.Handled = true;
+        };
+
+        return button;
+    }
+
+    private static void ApplySedraPickerGridWidths(WrapPanel pickerGrid)
+    {
+        var availableWidth = pickerGrid.Bounds.Width;
+        if (availableWidth <= 0)
+        {
+            return;
+        }
+
+        var columns = Math.Max(
+            1,
+            (int)Math.Floor((availableWidth + SedraPickerColumnGap) / (SedraPickerMinimumColumnWidth + SedraPickerColumnGap)));
+        var itemWidth = Math.Max(
+            0,
+            (availableWidth - (columns - 1) * SedraPickerColumnGap) / columns - SedraPickerColumnGap);
+
+        foreach (var child in pickerGrid.Children.OfType<Control>())
+        {
+            child.Width = itemWidth;
+        }
+    }
+
+    private Control CreateAliyahRow(ReaderTabState readerState, TorahAliyah aliyah)
+    {
+        var background = GetAliyahBrush(aliyah.Number);
+        var button = new Button
+        {
+            Background = background,
+            BorderBrush = new SolidColorBrush(Color.Parse("#EAECF0")),
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(8, 7),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            Content = new TextBlock
+            {
+                Text = $"{aliyah.Number}. {FormatAliyahRef(aliyah.Ref)}",
+                TextWrapping = TextWrapping.Wrap
+            }
+        };
+
+        button.Click += (_, e) =>
+        {
+            ScrollReaderToReference(readerState, aliyah.Ref);
+            e.Handled = true;
+        };
+
+        return button;
+    }
+
+    private string FormatSedraTitle(TorahSedra sedra)
+    {
+        return _settings.InstalledBookTitleDisplay switch
+        {
+            InstalledBookTitleDisplay.Hebrew => sedra.HebrewTitle,
+            InstalledBookTitleDisplay.English => sedra.EnglishTitle,
+            _ => $"{sedra.HebrewTitle} / {sedra.EnglishTitle}"
+        };
+    }
+
+    private static string FormatAliyahRef(string reference)
+    {
+        var parts = reference.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return parts.Length == 2 ? parts[1] : reference;
+    }
+
+    private static IBrush GetAliyahBrush(int aliyahNumber)
+    {
+        var colors = new[]
+        {
+            "#FFF3C4",
+            "#DFF7E8",
+            "#DDEBFF",
+            "#F5E3FF",
+            "#FFE3DF",
+            "#E1F5F7",
+            "#F1EAD8"
+        };
+        var color = colors[Math.Clamp(aliyahNumber - 1, 0, colors.Length - 1)];
+        return new SolidColorBrush(Color.Parse(color));
+    }
+
+    private static void ScrollReaderToReference(ReaderTabState readerState, string aliyahRef)
+    {
+        var startReference = GetAliyahStartReference(aliyahRef);
+        if (string.IsNullOrWhiteSpace(startReference))
+        {
+            return;
+        }
+
+        var row = readerState.ReaderRows
+            .Where(candidate => !candidate.IsChapterHeading)
+            .FirstOrDefault(candidate =>
+                string.Equals(candidate.Primary?.Reference, startReference, StringComparison.Ordinal) ||
+                string.Equals(candidate.Translation?.Reference, startReference, StringComparison.Ordinal));
+        if (row is null)
+        {
+            return;
+        }
+
+        ScrollReaderRowToTop(readerState, row);
+    }
+
+    private static string GetAliyahStartReference(string aliyahRef)
+    {
+        if (string.IsNullOrWhiteSpace(aliyahRef))
+        {
+            return string.Empty;
+        }
+
+        var startIndex = 0;
+        while (startIndex < aliyahRef.Length && !char.IsDigit(aliyahRef[startIndex]))
+        {
+            startIndex++;
+        }
+
+        if (startIndex >= aliyahRef.Length)
+        {
+            return string.Empty;
+        }
+
+        var range = aliyahRef[startIndex..].Trim();
+        var dashIndex = range.IndexOf('-');
+        var start = dashIndex < 0 ? range : range[..dashIndex];
+        return start.Replace(':', '.');
     }
 
     private Control CreateReaderCommentaryTools(ReaderTabState readerState)
@@ -931,6 +1253,12 @@ public partial class MainWindow
 
     private static void ScrollReaderRowToTop(ReaderTabState readerState, ReaderDisplayRow row)
     {
+        if (readerState.ReaderWebView is not null)
+        {
+            ScrollReaderWebViewToReference(readerState, row);
+            return;
+        }
+
         if (readerState.ReaderList is null)
         {
             return;
@@ -1048,6 +1376,7 @@ public partial class MainWindow
         panel.Children.Add(CreateDisplayDivider());
         panel.Children.Add(CreateHebrewMarksToggle(readerState, "Vowels", isCantillationToggle: false));
         panel.Children.Add(CreateHebrewMarksToggle(readerState, "Cantillation", isCantillationToggle: true));
+        panel.Children.Add(CreateAliyotToggle(readerState));
 
         return compact
             ? new Border
@@ -1290,6 +1619,48 @@ public partial class MainWindow
             {
                 SetVowelsEnabled(state, option.IsChecked == true);
             }
+        };
+
+        return option;
+    }
+
+    private Control CreateAliyotToggle(ReaderTabState state)
+    {
+        var hasTorahSedrot = HasTorahSedrot(state.Primary);
+        var hasSedra = GetSelectedTorahSedra(state) is not null;
+        var option = new CheckBox
+        {
+            Content = new TextBlock
+            {
+                Text = "Aliyot",
+                FontFamily = new FontFamily(GetSelectedUiFontFamily())
+            },
+            IsChecked = state.ShowAliyot,
+            IsEnabled = hasTorahSedrot,
+            Margin = new Thickness(0, 3)
+        };
+        ToolTip.SetTip(option, hasSedra ? "Show aliyah divisions" : "Selects the current sedra and shows aliyah divisions");
+
+        option.IsCheckedChanged += (_, _) =>
+        {
+            var shouldShowAliyot = option.IsChecked == true;
+            if (shouldShowAliyot && !EnsureSelectedTorahSedraForCurrentPosition(state))
+            {
+                state.ShowAliyot = false;
+                option.IsChecked = false;
+                return;
+            }
+
+            state.ShowAliyot = shouldShowAliyot;
+            if (shouldShowAliyot)
+            {
+                state.IsSedrotExpanded = true;
+            }
+
+            RenderReaderContent(state);
+            UpdateReaderTools();
+            RefreshReaderDisplayFlyout(state);
+            SaveLayoutState();
         };
 
         return option;

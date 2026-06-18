@@ -3,7 +3,6 @@
 *.cs text diff=csharp
 *.axaml text
 *.sln text
-*.slnx text
 *.csproj text
 *.json text
 *.md text

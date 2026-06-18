@@ -39,7 +39,11 @@ public partial class MainWindow
         OpenInstalledBook(book, null);
     }
 
-    private void OpenInstalledBook(InstalledSefariaBook book, SavedTabState? savedState)
+    private void OpenInstalledBook(
+        InstalledSefariaBook book,
+        SavedTabState? savedState,
+        bool selectAfterOpen = true,
+        bool renderImmediately = true)
     {
         if (_tabs is null || _centerTabs is null)
         {
@@ -75,7 +79,10 @@ public partial class MainWindow
                 UpdateReaderTools();
             }
 
-            _centerTabs.SelectedItem = existing.Key;
+            if (selectAfterOpen)
+            {
+                _centerTabs.SelectedItem = existing.Key;
+            }
             return;
         }
 
@@ -116,22 +123,24 @@ public partial class MainWindow
         tab.Tag = primary.Title;
         _openReaderTabs[tab] = state;
         _tabs.Add(tab);
-        _centerTabs.SelectedItem = tab;
-
-        Dispatcher.UIThread.Post(() =>
+        if (selectAfterOpen)
         {
-            if (readerList.Scroll is not null)
-            {
-                var savedOffset = savedState?.ScrollOffset ?? state.Primary.LastScrollOffset;
-                readerList.Scroll.Offset = new Vector(readerList.Scroll.Offset.X, savedOffset);
-            }
-        });
+            _centerTabs.SelectedItem = tab;
+        }
 
-        RenderReaderContent(state);
+        state.ReaderWebScrollOffset = savedState?.ScrollOffset ?? state.Primary.LastScrollOffset;
+
+        if (renderImmediately)
+        {
+            RenderReaderContent(state);
+        }
         UpdateReaderTools();
     }
 
-    private void RestoreReaderTab(SavedTabState savedTab)
+    private void RestoreReaderTab(
+        SavedTabState savedTab,
+        bool selectAfterOpen = true,
+        bool renderImmediately = true)
     {
         if (string.IsNullOrWhiteSpace(savedTab.WorkTitle))
         {
@@ -147,7 +156,7 @@ public partial class MainWindow
         var selectedBook = versions.FirstOrDefault(version => string.Equals(version.Key, savedTab.PrimaryKey, StringComparison.Ordinal))
             ?? versions.FirstOrDefault(version => string.Equals(version.Key, savedTab.SelectedTranslationKey, StringComparison.Ordinal))
             ?? versions[0];
-        OpenInstalledBook(selectedBook, savedTab);
+        OpenInstalledBook(selectedBook, savedTab, selectAfterOpen, renderImmediately);
     }
 
     private static void ApplySavedReaderState(ReaderTabState state, SavedTabState? savedState)
@@ -168,8 +177,12 @@ public partial class MainWindow
 
         state.IsNavigationExpanded = savedState.IsNavigationExpanded;
         state.IsDisplayExpanded = savedState.IsDisplayExpanded;
+        state.IsSedrotExpanded = savedState.IsSedrotExpanded;
         state.IsCommentariesExpanded = savedState.IsCommentariesExpanded;
         state.IsTextsExpanded = savedState.IsTextsExpanded;
+        state.ShowAliyot = savedState.ShowAliyot;
+        state.IsSedraContentOpen = savedState.IsSedraContentOpen;
+        state.SelectedSedraKey = savedState.SelectedSedraKey;
         state.SelectedCommentaryRef = savedState.SelectedCommentaryRef;
         state.IsCommentaryContentOpen = savedState.IsCommentaryContentOpen;
         state.SelectedCommentarySourceKey = string.IsNullOrWhiteSpace(savedState.SelectedCommentarySourceKey)
@@ -232,7 +245,7 @@ public partial class MainWindow
 
     private Control CreateReaderView(
         ReaderTabState state,
-        out ListBox readerList,
+        out ListBox? readerList,
         out TextBlock titleBlock,
         out TextBlock versionBlock)
     {
@@ -284,7 +297,46 @@ public partial class MainWindow
         };
         Grid.SetColumn(headerArea.Children[1], 1);
 
-        readerList = new ListBox
+        var headerChrome = new Border
+        {
+            Background = Brushes.White,
+            BorderBrush = new SolidColorBrush(Color.Parse("#EAECF0")),
+            BorderThickness = new Thickness(0, 0, 0, 1),
+            BoxShadow = BoxShadows.Parse("0 2 8 0 #14000000"),
+            Child = headerArea
+        };
+
+        // WebView reader spike:
+        // The previous visible reader was a virtualized ListBox of ReaderTextView controls. It is intentionally
+        // no longer attached here because cross-paragraph selection, links, bookmarks, and document-level hit
+        // testing are much cleaner in one browser document. The old Avalonia reader factory remains below as a
+        // fallback/reference while this experiment proves out the WebView path.
+        readerList = null;
+        var webView = CreateReaderWebView(state);
+        state.ReaderWebView = webView;
+
+        var layout = new Grid
+        {
+            RowDefinitions = new RowDefinitions("Auto,*"),
+            Background = Brushes.White,
+            Children =
+            {
+                headerChrome,
+                webView
+            }
+        };
+        layout.Tag = chapterBlock;
+        Grid.SetRow(webView, 1);
+
+        return layout;
+    }
+
+    private ListBox CreateAvaloniaReaderListFallback(ReaderTabState state)
+    {
+        // Kept as a fallback/reference during the WebView reader spike. This is the current native-Avalonia
+        // implementation that renders each verse/paragraph as its own ReaderTextView, which is exactly what
+        // prevents native text selection from spanning multiple verses/paragraphs.
+        var readerList = new ListBox
         {
             Background = Brushes.White,
             BorderThickness = new Thickness(0),
@@ -315,26 +367,12 @@ public partial class MainWindow
         };
         ScrollViewer.SetHorizontalScrollBarVisibility(readerList, ScrollBarVisibility.Disabled);
         ScrollViewer.SetVerticalSnapPointsType(readerList, SnapPointsType.None);
-
-        var layout = new Grid
-        {
-            RowDefinitions = new RowDefinitions("Auto,*"),
-            Background = Brushes.White,
-            Children =
-            {
-                headerArea,
-                readerList
-            }
-        };
-        layout.Tag = chapterBlock;
-        Grid.SetRow(readerList, 1);
-
-        return layout;
+        return readerList;
     }
 
     private void RenderReaderContent(ReaderTabState state)
     {
-        if (state.ReaderList is null || state.TitleBlock is null || state.VersionBlock is null)
+        if (state.TitleBlock is null || state.VersionBlock is null)
         {
             return;
         }
@@ -358,14 +396,12 @@ public partial class MainWindow
             .ToDictionary(group => group.Key, group => FormatChapterTitle(group.First()), StringComparer.Ordinal);
 
         var showTranslation = state.SelectedTranslation is not null && state.DisplayMode != ReaderDisplayMode.PrimaryOnly;
-        var count = showTranslation ? Math.Max(primaryUnits.Count, translationUnits.Count) : primaryUnits.Count;
-        var items = new List<ReaderDisplayRow>(count);
+        var rowUnits = PairReaderUnitsByReference(primaryUnits, showTranslation ? translationUnits : new List<ReaderTextUnit>());
+        var items = new List<ReaderDisplayRow>(rowUnits.Count);
         var pageRows = new Dictionary<string, ReaderDisplayRow>(StringComparer.Ordinal);
         var currentPage = string.Empty;
-        for (var i = 0; i < count; i++)
+        foreach (var (primary, translation) in rowUnits)
         {
-            var primary = i < primaryUnits.Count ? primaryUnits[i] : null;
-            var translation = showTranslation && i < translationUnits.Count ? translationUnits[i] : null;
             var reference = primary?.Reference ?? translation?.Reference ?? string.Empty;
             var page = GetReferencePart(reference, 0);
             var chapterTitle = chapterTitlesByPage.TryGetValue(page, out var navigationChapterTitle)
@@ -409,9 +445,67 @@ public partial class MainWindow
         state.HasTalmudNavigation = isTalmudNavigation;
         state.NavigationChapters = BuildReaderNavigationChapters(state.NavigationItems);
         state.ReaderRows = items;
-        state.ReaderList.ItemsSource = items;
+        if (state.ReaderList is not null)
+        {
+            state.ReaderList.ItemsSource = items;
+        }
+
+        RenderReaderWebView(state);
         UpdateReaderChapterHeader(state, state.NavigationItems.FirstOrDefault()?.Row);
         RestoreSavedCommentarySelection(state);
+    }
+
+    private static List<(ReaderTextUnit? Primary, ReaderTextUnit? Translation)> PairReaderUnitsByReference(
+        IReadOnlyList<ReaderTextUnit> primaryUnits,
+        IReadOnlyList<ReaderTextUnit> translationUnits)
+    {
+        if (translationUnits.Count == 0)
+        {
+            return primaryUnits
+                .Select(unit => ((ReaderTextUnit?)unit, (ReaderTextUnit?)null))
+                .ToList();
+        }
+
+        var translationsByReference = translationUnits
+            .GroupBy(unit => NormalizeReaderUnitReference(unit.Reference), StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+        var usedTranslationReferences = new HashSet<string>(StringComparer.Ordinal);
+        var rows = new List<(ReaderTextUnit? Primary, ReaderTextUnit? Translation)>(
+            Math.Max(primaryUnits.Count, translationUnits.Count));
+
+        foreach (var primary in primaryUnits)
+        {
+            var reference = NormalizeReaderUnitReference(primary.Reference);
+            translationsByReference.TryGetValue(reference, out var translation);
+            if (translation is not null)
+            {
+                usedTranslationReferences.Add(reference);
+            }
+
+            rows.Add((primary, translation));
+        }
+
+        foreach (var translation in translationUnits)
+        {
+            var reference = NormalizeReaderUnitReference(translation.Reference);
+            if (!usedTranslationReferences.Contains(reference) &&
+                !primaryUnits.Any(primary => string.Equals(
+                    NormalizeReaderUnitReference(primary.Reference),
+                    reference,
+                    StringComparison.Ordinal)))
+            {
+                rows.Add((null, translation));
+            }
+        }
+
+        return rows;
+    }
+
+    private static string NormalizeReaderUnitReference(string reference)
+    {
+        return string.IsNullOrWhiteSpace(reference)
+            ? string.Empty
+            : reference.Trim().Replace(':', '.');
     }
 
     private void AttachReaderScrollTracking(ReaderTabState state, ListBox readerList)
@@ -483,8 +577,7 @@ public partial class MainWindow
     private void RestoreSavedCommentarySelection(ReaderTabState state)
     {
         if (state.SelectedReaderRow is not null ||
-            string.IsNullOrWhiteSpace(state.SelectedCommentaryRef) ||
-            state.ReaderList is null)
+            string.IsNullOrWhiteSpace(state.SelectedCommentaryRef))
         {
             return;
         }
@@ -790,9 +883,15 @@ public partial class MainWindow
 
     private Control CreateReaderDisplayRow(ReaderTabState state, ReaderDisplayRow row)
     {
-        return row.IsChapterHeading
-            ? CreateChapterHeading(row.ChapterHeading)
-            : CreateReaderUnit(state, row.Primary, row.Translation);
+        if (row.IsChapterHeading)
+        {
+            return CreateChapterHeading(row.ChapterHeading);
+        }
+
+        return CreateAliyahDisplayRow(
+            state,
+            row,
+            CreateReaderUnit(state, row.Primary, row.Translation));
     }
 
     private static Control CreateChapterHeading(string heading)
@@ -832,14 +931,47 @@ public partial class MainWindow
 
     private string FormatNavigationChapterLabel(string chapter)
     {
-        if (!int.TryParse(chapter, out var number))
+        if (_settings.InstalledBookTitleDisplay != InstalledBookTitleDisplay.Hebrew)
         {
             return chapter;
         }
 
-        return _settings.InstalledBookTitleDisplay == InstalledBookTitleDisplay.Hebrew
-            ? ToHebrewNumber(number)
-            : number.ToString();
+        if (!int.TryParse(chapter, out var number))
+        {
+            var numericPrefixLength = 0;
+            while (numericPrefixLength < chapter.Length && char.IsDigit(chapter[numericPrefixLength]))
+            {
+                numericPrefixLength++;
+            }
+
+            if (numericPrefixLength == 0 ||
+                !int.TryParse(chapter[..numericPrefixLength], out number))
+            {
+                return chapter;
+            }
+
+            var suffix = FormatHebrewNavigationSuffix(chapter[numericPrefixLength..]);
+            return string.IsNullOrWhiteSpace(suffix)
+                ? ToHebrewNumber(number)
+                : $"{ToHebrewNumber(number)} {suffix}";
+        }
+
+        return ToHebrewNumber(number);
+    }
+
+    private static string FormatHebrewNavigationSuffix(string suffix)
+    {
+        if (string.IsNullOrWhiteSpace(suffix))
+        {
+            return string.Empty;
+        }
+
+        return suffix.Trim().ToLowerInvariant() switch
+        {
+            "a" => "\u05d0",
+            "b" => "\u05d1",
+            _ => suffix.Trim()
+        };
     }
 
     private string FormatChapterTitle(ReaderTextUnit? primary, ReaderTextUnit? translation)
@@ -872,6 +1004,63 @@ public partial class MainWindow
                 : string.IsNullOrWhiteSpace(english)
                     ? hebrew
                     : $"{hebrew} / {english}"
+        };
+    }
+
+    private Control CreateAliyahDisplayRow(ReaderTabState state, ReaderDisplayRow row, Control content)
+    {
+        if (!state.ShowAliyot || GetSelectedTorahSedra(state) is not { } sedra)
+        {
+            return content;
+        }
+
+        var reference = FirstNonEmpty(row.Primary?.Reference, row.Translation?.Reference);
+        if (string.IsNullOrWhiteSpace(reference) ||
+            GetAliyahForReaderReference(sedra, reference) is not { } aliyah)
+        {
+            return content;
+        }
+
+        var shadedContent = new Border
+        {
+            Background = GetAliyahBrush(aliyah.Number),
+            CornerRadius = new CornerRadius(4),
+            Child = content
+        };
+
+        if (!IsAliyahStart(aliyah, reference))
+        {
+            return shadedContent;
+        }
+
+        return new StackPanel
+        {
+            Spacing = 6,
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = FormatAliyahHeading(aliyah.Number),
+                    FontWeight = FontWeight.SemiBold,
+                    Foreground = new SolidColorBrush(Color.Parse("#344054")),
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    TextAlignment = TextAlignment.Center,
+                    Margin = new Thickness(0, 8, 0, 0)
+                },
+                shadedContent
+            }
+        };
+    }
+
+    private string FormatAliyahHeading(int aliyahNumber)
+    {
+        var english = $"Aliyah {aliyahNumber}";
+        var hebrew = $"\u05e2\u05dc\u05d9\u05d9\u05d4 {ToHebrewNumber(aliyahNumber)}";
+        return _settings.InstalledBookTitleDisplay switch
+        {
+            InstalledBookTitleDisplay.Hebrew => hebrew,
+            InstalledBookTitleDisplay.English => english,
+            _ => $"{hebrew} / {english}"
         };
     }
 
