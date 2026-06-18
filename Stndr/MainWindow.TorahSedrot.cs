@@ -92,6 +92,16 @@ public partial class MainWindow
     private static bool TryParseReaderReference(string reference, out TorahVerseLocation verse)
     {
         verse = new TorahVerseLocation(0, 0);
+        reference = reference.Trim();
+        var lastSpace = reference.LastIndexOf(' ');
+        if (lastSpace >= 0 && lastSpace < reference.Length - 1)
+        {
+            reference = reference[(lastSpace + 1)..];
+        }
+
+        var rangeStart = reference.Split('-', 2, StringSplitOptions.TrimEntries)[0];
+        reference = rangeStart;
+        reference = reference.Replace(':', '.');
         var parts = reference.Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (parts.Length < 2 ||
             !int.TryParse(parts[0], out var chapter) ||
