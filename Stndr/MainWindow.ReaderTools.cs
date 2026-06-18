@@ -468,6 +468,11 @@ public partial class MainWindow
         {
             readerState.SelectedSedraKey = sedra.Key;
             readerState.IsSedraContentOpen = true;
+            if (readerState.ShowAliyot)
+            {
+                RenderReaderContent(readerState);
+            }
+
             UpdateReaderTools();
             SaveLayoutState();
             e.Handled = true;
