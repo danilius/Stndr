@@ -18,7 +18,7 @@ public sealed partial class SefariaLibraryService
     {
         var json = ReadJsonTextFile(book.FilePath);
         using var document = JsonDocument.Parse(json);
-        if (!document.RootElement.TryGetProperty("text", out var textElement))
+        if (!TryGetPrimaryTextElement(document.RootElement, out var textElement))
         {
             return json;
         }
@@ -38,7 +38,7 @@ public sealed partial class SefariaLibraryService
             return ReadTalmudTextUnits(book, root);
         }
 
-        if (!root.TryGetProperty("text", out var textElement))
+        if (!TryGetPrimaryTextElement(root, out var textElement))
         {
             return new List<ReaderTextUnit>
             {
@@ -517,5 +517,50 @@ public sealed partial class SefariaLibraryService
             JsonValueKind.Number => element.GetRawText(),
             _ => null
         };
+    }
+
+    private static bool TryGetPrimaryTextElement(JsonElement root, out JsonElement textElement)
+    {
+        textElement = default;
+        if (!root.TryGetProperty("text", out var rawTextElement))
+        {
+            return false;
+        }
+
+        if (rawTextElement.ValueKind == JsonValueKind.Array)
+        {
+            textElement = rawTextElement;
+            return true;
+        }
+
+        if (rawTextElement.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        if (rawTextElement.TryGetProperty(string.Empty, out var defaultTextElement) &&
+            defaultTextElement.ValueKind == JsonValueKind.Array)
+        {
+            textElement = defaultTextElement;
+            return true;
+        }
+
+        if (rawTextElement.TryGetProperty("default", out defaultTextElement) &&
+            defaultTextElement.ValueKind == JsonValueKind.Array)
+        {
+            textElement = defaultTextElement;
+            return true;
+        }
+
+        foreach (var property in rawTextElement.EnumerateObject())
+        {
+            if (property.Value.ValueKind == JsonValueKind.Array)
+            {
+                textElement = property.Value;
+                return true;
+            }
+        }
+
+        return false;
     }
 }

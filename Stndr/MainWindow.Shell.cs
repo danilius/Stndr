@@ -85,16 +85,23 @@ public partial class MainWindow
         for (var i = 0; i < savedTabs.Count; i++)
         {
             var savedTab = savedTabs[i];
-            if (savedTab.Kind == SavedTabKind.Reader)
+            try
             {
-                RestoreReaderTab(
-                    savedTab,
-                    selectAfterOpen: i == selectedIndex,
-                    renderImmediately: true);
+                if (savedTab.Kind == SavedTabKind.Reader)
+                {
+                    RestoreReaderTab(
+                        savedTab,
+                        selectAfterOpen: i == selectedIndex,
+                        renderImmediately: true);
+                }
+                else if (IsKnownUtilityTabTitle(savedTab.Title))
+                {
+                    _tabs.Add(CreateTab(savedTab.Title));
+                }
             }
-            else if (!string.IsNullOrWhiteSpace(savedTab.Title))
+            catch
             {
-                _tabs.Add(CreateTab(savedTab.Title));
+                // Skip malformed or obsolete saved tabs so one bad entry cannot block startup.
             }
         }
 
@@ -267,6 +274,13 @@ public partial class MainWindow
         _tabContents[tab] = content;
         content.IsVisible = ReferenceEquals(tab, _centerTabs?.SelectedItem);
         _centerTabContentHost?.Children.Add(content);
+    }
+
+    private void ReplaceTabContent(TabItem tab, Control content)
+    {
+        RemoveTabContent(tab);
+        RegisterTabContent(tab, content);
+        UpdateSelectedTabContentVisibility();
     }
 
     private void RemoveTabContent(TabItem tab)
@@ -471,7 +485,11 @@ public partial class MainWindow
             RightCollapsed = _rightCollapsed,
             LeftExpandedWidth = _leftExpandedWidth,
             RightExpandedWidth = _rightExpandedWidth,
-            Tabs = _tabs.Select(CreateSavedTabState).ToList(),
+            Tabs = _tabs
+                .Select(CreateSavedTabState)
+                .Where(savedTab => savedTab is not null)
+                .Select(savedTab => savedTab!)
+                .ToList(),
             SelectedTabIndex = _tabs.Count == 0 ? -1 : Math.Clamp(_centerTabs.SelectedIndex, 0, _tabs.Count - 1)
         };
         state.OpenTabs = state.Tabs
@@ -516,7 +534,7 @@ public partial class MainWindow
         return Path.Combine(GetStateFolder(), "layout-state.json");
     }
 
-    private SavedTabState CreateSavedTabState(TabItem tab)
+    private SavedTabState? CreateSavedTabState(TabItem tab)
     {
         if (_openReaderTabs.TryGetValue(tab, out var readerState))
         {
@@ -533,11 +551,15 @@ public partial class MainWindow
                 IsDisplayExpanded = readerState.IsDisplayExpanded,
                 IsSedrotExpanded = readerState.IsSedrotExpanded,
                 IsCommentariesExpanded = readerState.IsCommentariesExpanded,
+                IsLinksExpanded = readerState.IsLinksExpanded,
                 IsTextsExpanded = readerState.IsTextsExpanded,
                 ShowAliyot = readerState.ShowAliyot,
                 IsSedraContentOpen = readerState.IsSedraContentOpen,
                 SelectedSedraKey = readerState.SelectedSedraKey,
                 SelectedCommentaryRef = readerState.SelectedCommentaryRef,
+                SelectedLinkCategories = readerState.SelectedLinkCategories
+                    .OrderBy(category => category, StringComparer.OrdinalIgnoreCase)
+                    .ToList(),
                 IsCommentaryContentOpen = readerState.IsCommentaryContentOpen,
                 SelectedCommentarySourceKey = readerState.SelectedCommentarySourceKey,
                 SelectedCommentarySourceTitleEnglish = readerState.SelectedCommentarySourceTitleEnglish,
@@ -549,10 +571,22 @@ public partial class MainWindow
             };
         }
 
+        var title = tab.Tag as string ?? "Tab";
+        if (!IsKnownUtilityTabTitle(title))
+        {
+            return null;
+        }
+
         return new SavedTabState
         {
             Kind = SavedTabKind.Utility,
-            Title = tab.Tag as string ?? "Tab"
+            Title = title
         };
+    }
+
+    private static bool IsKnownUtilityTabTitle(string? title)
+    {
+        return string.Equals(title, LibraryManagerTabTitle, StringComparison.Ordinal) ||
+            string.Equals(title, SettingsTabTitle, StringComparison.Ordinal);
     }
 }

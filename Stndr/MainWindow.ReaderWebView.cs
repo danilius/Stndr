@@ -710,6 +710,8 @@ public partial class MainWindow
         RestoreReaderWebScroll(state, 0);
         _ = RestoreReaderWebScrollAfterDelayAsync(state, 150);
         _ = RestoreReaderWebScrollAfterDelayAsync(state, 450);
+        _ = RestoreReaderWebScrollAfterDelayAsync(state, 900);
+        _ = RestoreReaderWebScrollAfterDelayAsync(state, 1400);
     }
 
     private async Task RestoreReaderWebScrollAfterDelayAsync(ReaderTabState state, int delayMilliseconds)
@@ -726,6 +728,18 @@ public partial class MainWindow
 
     private void RestoreReaderWebScroll(ReaderTabState state, int delayMilliseconds)
     {
+        if (!string.IsNullOrWhiteSpace(state.PendingExactReferenceWithinWork))
+        {
+            ScrollReaderToExactReference(state, state.PendingExactReferenceWithinWork);
+            if (delayMilliseconds >= 1400)
+            {
+                state.PendingExactReferenceWithinWork = string.Empty;
+                Dispatcher.UIThread.Post(() => state.IsApplyingWebScrollRestore = false, DispatcherPriority.Background);
+            }
+
+            return;
+        }
+
         ScrollReaderWebViewToOffset(state, state.ReaderWebScrollOffset);
         if (delayMilliseconds >= 450)
         {

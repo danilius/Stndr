@@ -3,8 +3,10 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
@@ -26,6 +28,7 @@ public partial class MainWindow
 {
     private const double SedraPickerMinimumColumnWidth = 180;
     private const double SedraPickerColumnGap = 6;
+    private const int LinkPreviewCountPerCategory = 12;
 
     private void UpdateTabHeaderStates()
     {
@@ -124,6 +127,26 @@ public partial class MainWindow
             {
                 readerState.IsCommentariesExpanded = value;
                 SaveLayoutState();
+            }));
+
+        _rightPanelBody.Children.Add(CreateReaderToolsGroup(
+            CreateLinksGroupHeader(readerState),
+            CreateReaderLinksTools(readerState),
+            readerState.IsLinksExpanded,
+            value =>
+            {
+                readerState.IsLinksExpanded = value;
+                SaveLinksPreferences(readerState);
+                SaveLayoutState();
+                if (!value)
+                {
+                    readerState.LinksLoadCts?.Cancel();
+                    readerState.LinksLoadCts = null;
+                    return;
+                }
+
+                EnsureLinksLoadedForCurrentSelection(readerState);
+                UpdateReaderTools();
             }));
 
         var textTools = new StackPanel { Spacing = 6 };
@@ -334,6 +357,20 @@ public partial class MainWindow
         layout.Children.Add(titleBlock);
         Grid.SetColumn(titleBlock, 1);
         return layout;
+    }
+
+    private static string FormatLinksHeaderTitle(ReaderTabState readerState)
+    {
+        return readerState.Links.Count > 0 ? $"Links ({readerState.Links.Count})" : "Links";
+    }
+
+    private Control CreateLinksGroupHeader(ReaderTabState readerState)
+    {
+        return new TextBlock
+        {
+            Text = FormatLinksHeaderTitle(readerState),
+            VerticalAlignment = VerticalAlignment.Center
+        };
     }
 
     private string FormatSedrotHeading(ReaderTabState readerState)
@@ -669,6 +706,825 @@ public partial class MainWindow
             : CreateCommentarySourcePicker(readerState, groups));
 
         return panel;
+    }
+
+    private Control CreateReaderLinksTools(ReaderTabState readerState)
+    {
+        var panel = new StackPanel
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Spacing = 8
+        };
+
+        if (readerState.SelectedReaderRow is null || string.IsNullOrWhiteSpace(readerState.SelectedLinksRef))
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = "Select a paragraph to see links.",
+                TextWrapping = TextWrapping.Wrap
+            });
+            return panel;
+        }
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = readerState.SelectedLinksRef,
+            Foreground = new SolidColorBrush(Color.Parse("#667085")),
+            FontSize = Math.Max(10, GetSelectedUiFontSize() - 1),
+            TextWrapping = TextWrapping.Wrap
+        });
+
+        if (readerState.IsLinksLoading)
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = "Loading links...",
+                TextWrapping = TextWrapping.Wrap
+            });
+            return panel;
+        }
+
+        if (!string.IsNullOrWhiteSpace(readerState.LinksError))
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = readerState.LinksError,
+                Foreground = new SolidColorBrush(Color.Parse("#B42318")),
+                TextWrapping = TextWrapping.Wrap
+            });
+            return panel;
+        }
+
+        if (readerState.Links.Count == 0)
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = string.Equals(readerState.LoadedLinksRef, readerState.SelectedLinksRef, StringComparison.Ordinal)
+                    ? "No links for this paragraph."
+                    : "Open this expander to load cached or live links for the selected paragraph.",
+                TextWrapping = TextWrapping.Wrap
+            });
+            return panel;
+        }
+
+        var groups = GetLinkCategoryGroups(readerState.Links);
+        EnsureSelectedLinkCategories(readerState, groups);
+
+        panel.Children.Add(CreateLinkCategoryFilterPanel(readerState, groups));
+
+        var filteredGroups = groups
+            .Where(group => readerState.SelectedLinkCategories.Contains(group.Category))
+            .ToList();
+        if (filteredGroups.Count == 0)
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = "No categories selected for this work.",
+                TextWrapping = TextWrapping.Wrap
+            });
+            return panel;
+        }
+
+        foreach (var group in filteredGroups)
+        {
+            panel.Children.Add(CreateLinkCategorySection(readerState, group));
+        }
+
+        return panel;
+    }
+
+    private StackPanel CreateLinkCategoryFilterPanel(
+        ReaderTabState readerState,
+        List<LinkCategoryGroup> groups)
+    {
+        var panel = new StackPanel
+        {
+            Spacing = 6
+        };
+
+        var categoryList = new StackPanel
+        {
+            Spacing = 2,
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+        foreach (var group in groups)
+        {
+            categoryList.Children.Add(CreateLinkCategoryToggle(readerState, group));
+        }
+
+        panel.Children.Add(CreateReaderToolsGroup(
+            "Filters",
+            categoryList,
+            readerState.IsLinkCategoryMoreExpanded,
+            value => readerState.IsLinkCategoryMoreExpanded = value));
+
+        return panel;
+    }
+
+    private Control CreateLinkCategoryToggle(ReaderTabState readerState, LinkCategoryGroup group)
+    {
+        var option = new CheckBox
+        {
+            Content = $"{group.Category} ({group.Items.Count})",
+            IsChecked = readerState.SelectedLinkCategories.Contains(group.Category),
+            Margin = new Thickness(0, 0, 0, 4)
+        };
+
+        option.IsCheckedChanged += (_, _) =>
+        {
+            if (option.IsChecked == true)
+            {
+                readerState.SelectedLinkCategories.Add(group.Category);
+            }
+            else
+            {
+                readerState.SelectedLinkCategories.Remove(group.Category);
+            }
+
+            readerState.HasInitializedLinkCategorySelection = true;
+            SaveLinksPreferences(readerState);
+            UpdateReaderTools();
+            SaveLayoutState();
+        };
+
+        return option;
+    }
+
+    private Control CreateLinkCategorySection(ReaderTabState readerState, LinkCategoryGroup group)
+    {
+        var section = new StackPanel
+        {
+            Spacing = 4
+        };
+
+        section.Children.Add(new Border
+        {
+            Margin = new Thickness(0, 4, 0, 0),
+            Padding = new Thickness(0, 8, 0, 0),
+            BorderBrush = new SolidColorBrush(Color.Parse("#EAECF0")),
+            BorderThickness = new Thickness(0, 1, 0, 0),
+            Child = new TextBlock
+            {
+                Text = $"{group.Category} ({group.Items.Count})",
+                FontWeight = FontWeight.SemiBold,
+                TextWrapping = TextWrapping.Wrap
+            }
+        });
+
+        var isExpanded = readerState.ExpandedLinkCategories.Contains(group.Category);
+        var visibleCount = isExpanded
+            ? group.Items.Count
+            : LinkPreviewCountPerCategory;
+        foreach (var item in group.Items.Take(visibleCount))
+        {
+            section.Children.Add(CreateLinkRowEntry(readerState, item));
+        }
+
+        if (group.Items.Count > LinkPreviewCountPerCategory)
+        {
+            var showMoreButton = new Button
+            {
+                Content = isExpanded
+                    ? "Show fewer"
+                    : $"Show all {group.Items.Count} links",
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Padding = new Thickness(8, 4),
+                FontSize = Math.Max(10, GetSelectedUiFontSize() - 1),
+                Margin = new Thickness(0, 2, 0, 0)
+            };
+            showMoreButton.Click += (_, e) =>
+            {
+                if (readerState.ExpandedLinkCategories.Contains(group.Category))
+                {
+                    readerState.ExpandedLinkCategories.Remove(group.Category);
+                }
+                else
+                {
+                    readerState.ExpandedLinkCategories.Add(group.Category);
+                }
+
+                UpdateReaderTools();
+                e.Handled = true;
+            };
+            section.Children.Add(showMoreButton);
+        }
+
+        return section;
+    }
+
+    private Control CreateLinkRowEntry(ReaderTabState readerState, SefariaLinkItem item)
+    {
+        var useHebrew = readerState.CommentaryLanguage == CommentaryLanguage.Hebrew;
+        var title = useHebrew
+            ? FirstNonEmpty(
+                item.HebrewDisplayTitle,
+                item.DisplayTitle,
+                ExtractReferenceTitle(item.DisplayReference))
+            : FirstNonEmpty(
+                item.DisplayTitle,
+                ExtractReferenceTitle(item.DisplayReference));
+        var heading = BuildLinkHeading(title, item.DisplayReference, item.DisplayTitle, useHebrew);
+
+        var button = new Button
+        {
+            Background = Brushes.Transparent,
+            BorderBrush = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(0),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            Content = new StackPanel
+            {
+                Spacing = 2,
+                Children =
+                {
+                    CreateLinkTextBlock(heading, isEmphasized: true)
+                }
+            }
+        };
+        button.Click += (_, e) =>
+        {
+            ToggleLinkPreview(readerState, item);
+            e.Handled = true;
+        };
+
+        var container = new StackPanel
+        {
+            Spacing = 6,
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+        container.Children.Add(new Border
+        {
+            BorderBrush = new SolidColorBrush(Color.Parse("#EAECF0")),
+            BorderThickness = new Thickness(0, 0, 0, 1),
+            Padding = new Thickness(0, 0, 0, 8),
+            Child = button
+        });
+
+        if (string.Equals(readerState.ExpandedLinkPreviewRef, item.DisplayReference, StringComparison.Ordinal))
+        {
+            container.Children.Add(CreateLinkPreviewCard(readerState));
+        }
+
+        return container;
+    }
+
+    private Control CreateLinkPreviewCard(ReaderTabState readerState)
+    {
+        var panel = new StackPanel
+        {
+            Spacing = 8
+        };
+
+        if (readerState.IsLinkPreviewLoading)
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = "Loading preview...",
+                TextWrapping = TextWrapping.Wrap
+            });
+        }
+        else if (readerState.ActiveLinkPreview is not null)
+        {
+            var previewText = GetPreferredLinkPreviewText(readerState);
+            var hasInstalledFullSource = HasInstalledFullLinkSource(readerState.ActiveLinkPreview);
+            panel.Children.Add(CreateLinkTextBlock(readerState.ActiveLinkPreview.Reference, isEmphasized: true));
+            panel.Children.Add(new TextBlock
+            {
+                Text = readerState.ActiveLinkPreview.IsFromInstalledBook
+                    ? "Preview from local data"
+                    : "Preview from downloaded excerpt",
+                Foreground = new SolidColorBrush(Color.Parse("#667085")),
+                FontSize = Math.Max(10, GetSelectedUiFontSize() - 1),
+                TextWrapping = TextWrapping.Wrap
+            });
+            panel.Children.Add(CreateLinkPreviewBodyTextBlock(previewText));
+
+            var actionRow = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 8
+            };
+
+            var splitButton = new Button
+            {
+                Content = "Show in split view",
+                HorizontalAlignment = HorizontalAlignment.Left
+            };
+            splitButton.Click += (_, e) =>
+            {
+                ShowLinkPreviewInSplitView(readerState);
+                e.Handled = true;
+            };
+            actionRow.Children.Add(splitButton);
+
+            var openButton = new Button
+            {
+                Content = readerState.IsLinkSourceTabLoading ? "Downloading source..." : "Open source in new tab",
+                HorizontalAlignment = HorizontalAlignment.Left,
+                IsEnabled = !readerState.IsLinkSourceTabLoading
+            };
+            openButton.Click += (_, e) =>
+            {
+                _ = OpenLinkSourceInNewTabAsync(readerState);
+                e.Handled = true;
+            };
+            actionRow.Children.Add(openButton);
+            panel.Children.Add(actionRow);
+
+            panel.Children.Add(new TextBlock
+            {
+                Text = hasInstalledFullSource
+                    ? "The full book is already installed and will open in a new tab."
+                    : "The full book is not installed and will be downloaded if you open it in a new tab.",
+                FontFamily = new FontFamily(GetSelectedUiFontFamily()),
+                FontSize = Math.Max(10, GetSelectedUiFontSize() - 1),
+                Foreground = new SolidColorBrush(Color.Parse("#667085")),
+                TextWrapping = TextWrapping.Wrap
+            });
+
+            if (!string.IsNullOrWhiteSpace(readerState.LinkPreviewError))
+            {
+                panel.Children.Add(new TextBlock
+                {
+                    Text = readerState.LinkPreviewError,
+                    FontFamily = new FontFamily(GetSelectedUiFontFamily()),
+                    FontSize = GetSelectedUiFontSize(),
+                    Foreground = new SolidColorBrush(Color.Parse("#B42318")),
+                    TextWrapping = TextWrapping.Wrap
+                });
+            }
+        }
+        else
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = string.IsNullOrWhiteSpace(readerState.LinkPreviewError)
+                    ? "This linked text is not installed."
+                    : readerState.LinkPreviewError,
+                Foreground = new SolidColorBrush(Color.Parse("#B42318")),
+                TextWrapping = TextWrapping.Wrap
+            });
+
+            var downloadButton = new Button
+            {
+                Content = readerState.IsLinkWorkDownloadLoading ? "Downloading..." : "Download work",
+                HorizontalAlignment = HorizontalAlignment.Left,
+                IsEnabled = !readerState.IsLinkWorkDownloadLoading
+            };
+            downloadButton.Click += (_, e) =>
+            {
+                _ = DownloadLinkWorkForPreviewAsync(readerState);
+                e.Handled = true;
+            };
+            panel.Children.Add(downloadButton);
+        }
+
+        return new Border
+        {
+            Background = new SolidColorBrush(Color.Parse("#F9FAFB")),
+            BorderBrush = new SolidColorBrush(Color.Parse("#D0D5DD")),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(12),
+            Child = panel
+        };
+    }
+
+    private Control CreateLinkSplitView(ReaderTabState readerState)
+    {
+        var header = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            Margin = new Thickness(16, 12, 16, 8)
+        };
+        header.Children.Add(new TextBlock
+        {
+            Text = readerState.ActiveLinkPreview?.Reference ?? readerState.ActiveLinkPreviewItem?.DisplayReference ?? "Linked text",
+            FontFamily = new FontFamily(GetSelectedUiFontFamily()),
+            FontSize = GetSelectedUiFontSize(),
+            FontWeight = FontWeight.SemiBold,
+            TextWrapping = TextWrapping.Wrap,
+            VerticalAlignment = VerticalAlignment.Center
+        });
+
+        var closeButton = new Button
+        {
+            Content = "Close split",
+            HorizontalAlignment = HorizontalAlignment.Right
+        };
+        closeButton.Click += (_, e) =>
+        {
+            CloseLinkSplitView(readerState);
+            e.Handled = true;
+        };
+        header.Children.Add(closeButton);
+        Grid.SetColumn(closeButton, 1);
+
+        var content = new StackPanel
+        {
+            Spacing = 12,
+            Margin = new Thickness(16, 0, 16, 16)
+        };
+
+        if (readerState.IsLinkPreviewLoading)
+        {
+            content.Children.Add(new TextBlock
+            {
+                Text = "Loading linked text...",
+                FontFamily = new FontFamily(GetSelectedUiFontFamily()),
+                FontSize = GetSelectedUiFontSize(),
+                TextWrapping = TextWrapping.Wrap
+            });
+        }
+        else if (readerState.ActiveLinkPreview is not null)
+        {
+            content.Children.Add(new TextBlock
+            {
+                Text = readerState.ActiveLinkPreview.IsFromInstalledBook
+                    ? "Showing the locally installed source text"
+                    : "Showing the downloaded linked excerpt",
+                FontFamily = new FontFamily(GetSelectedUiFontFamily()),
+                FontSize = Math.Max(10, GetSelectedUiFontSize() - 1),
+                Foreground = new SolidColorBrush(Color.Parse("#667085")),
+                TextWrapping = TextWrapping.Wrap
+            });
+
+            foreach (var section in GetOrderedLinkPreviewSections(readerState.ActiveLinkPreview, readerState.CommentaryLanguage))
+            {
+                if (string.IsNullOrWhiteSpace(section.Text))
+                {
+                    continue;
+                }
+
+                content.Children.Add(new TextBlock
+                {
+                    Text = section.Label,
+                    FontFamily = new FontFamily(GetSelectedUiFontFamily()),
+                    FontSize = Math.Max(10, GetSelectedUiFontSize() - 1),
+                    FontWeight = FontWeight.SemiBold,
+                    Foreground = new SolidColorBrush(Color.Parse("#475467"))
+                });
+                var previewBodyFontSize = readerState.CommentaryLanguage == CommentaryLanguage.Hebrew
+                    ? GetSelectedHebrewCommentaryFontSize()
+                    : GetSelectedEnglishCommentaryFontSize();
+                content.Children.Add(CreateLinkPreviewBodyTextBlock(
+                    section.Text,
+                    maxLength: null,
+                    fontSizeOverride: previewBodyFontSize));
+            }
+        }
+        else
+        {
+            content.Children.Add(new TextBlock
+            {
+                Text = string.IsNullOrWhiteSpace(readerState.LinkPreviewError)
+                    ? "This linked text is not installed."
+                    : readerState.LinkPreviewError,
+                FontFamily = new FontFamily(GetSelectedUiFontFamily()),
+                FontSize = GetSelectedUiFontSize(),
+                Foreground = new SolidColorBrush(Color.Parse("#B42318")),
+                TextWrapping = TextWrapping.Wrap
+            });
+        }
+
+        var layout = new Grid
+        {
+            RowDefinitions = new RowDefinitions("Auto,*"),
+            Children =
+            {
+                new Border
+                {
+                    BorderBrush = new SolidColorBrush(Color.Parse("#EAECF0")),
+                    BorderThickness = new Thickness(0, 0, 0, 1),
+                    Child = header
+                },
+                new ScrollViewer
+                {
+                    Content = content,
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
+                }
+            }
+        };
+        Grid.SetRow(layout.Children[1], 1);
+        return layout;
+    }
+
+    private Control CreateLinkSourceLoadingView(
+        string workTitle,
+        string workHebrewTitle,
+        out ProgressBar progressBar,
+        out TextBlock statusBlock)
+    {
+        statusBlock = new TextBlock
+        {
+            Text = $"Preparing {FormatTitle(workTitle, workHebrewTitle)}...",
+            FontFamily = new FontFamily(GetSelectedUiFontFamily()),
+            FontSize = GetSelectedUiFontSize(),
+            TextAlignment = TextAlignment.Center,
+            TextWrapping = TextWrapping.Wrap,
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
+        progressBar = new ProgressBar
+        {
+            IsIndeterminate = true,
+            Minimum = 0,
+            Maximum = 100,
+            Width = 280,
+            Height = 18
+        };
+
+        return new Grid
+        {
+            Background = Brushes.White,
+            Children =
+            {
+                new StackPanel
+                {
+                    Spacing = 16,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Children =
+                    {
+                        statusBlock,
+                        progressBar
+                    }
+                }
+            }
+        };
+    }
+
+    private Control CreateLinkSourceErrorView(string message)
+    {
+        return new Grid
+        {
+            Background = Brushes.White,
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = $"The linked work could not be opened.\n{message}",
+                    FontFamily = new FontFamily(GetSelectedUiFontFamily()),
+                    FontSize = GetSelectedUiFontSize(),
+                    Foreground = new SolidColorBrush(Color.Parse("#B42318")),
+                    TextAlignment = TextAlignment.Center,
+                    TextWrapping = TextWrapping.Wrap,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(32)
+                }
+            }
+        };
+    }
+
+    private bool HasInstalledFullLinkSource(SefariaLinkPreview preview)
+    {
+        return _sefariaLibrary.GetFullInstalledVersionsForTitle(preview.WorkTitle).Count > 0;
+    }
+
+    private string GetPreferredLinkPreviewText(ReaderTabState readerState)
+    {
+        if (readerState.ActiveLinkPreview is null)
+        {
+            return string.Empty;
+        }
+
+        var text = readerState.CommentaryLanguage == CommentaryLanguage.Hebrew
+            ? FirstNonEmpty(
+                readerState.ActiveLinkPreview.HebrewText,
+                readerState.ActiveLinkPreview.EnglishText)
+            : FirstNonEmpty(
+                readerState.ActiveLinkPreview.EnglishText,
+                readerState.ActiveLinkPreview.HebrewText);
+        return NormalizeLinkPreviewText(text, 420);
+    }
+
+    private TextBlock CreateLinkTextBlock(
+        string text,
+        bool isEmphasized = false,
+        IBrush? foreground = null,
+        double? fontSizeOverride = null)
+    {
+        var useHebrew = ContainsHebrewText(text);
+        return new TextBlock
+        {
+            Text = text,
+            FontFamily = new FontFamily(useHebrew ? GetSelectedHebrewFontFamily() : GetSelectedEnglishFontFamily()),
+            FontSize = fontSizeOverride ?? GetSelectedLinkPanelFontSize(useHebrew),
+            FontWeight = isEmphasized ? FontWeight.SemiBold : FontWeight.Normal,
+            FlowDirection = useHebrew ? FlowDirection.RightToLeft : FlowDirection.LeftToRight,
+            Foreground = foreground ?? new SolidColorBrush(Color.Parse("#344054")),
+            TextWrapping = TextWrapping.Wrap
+        };
+    }
+
+    private static string BuildLinkHeading(
+        string displayTitle,
+        string fullReference,
+        string englishTitle,
+        bool useHebrew)
+    {
+        var referenceTitle = FirstNonEmpty(
+            englishTitle,
+            ExtractReferenceTitle(fullReference));
+        var location = ExtractLinkLocation(fullReference, referenceTitle);
+        if (string.IsNullOrWhiteSpace(location))
+        {
+            return displayTitle;
+        }
+
+        return $"{displayTitle}, {FormatLinkLocationLabel(location, useHebrew)}";
+    }
+
+    private static string ExtractLinkLocation(string fullReference, string title)
+    {
+        if (string.IsNullOrWhiteSpace(fullReference) || string.IsNullOrWhiteSpace(title))
+        {
+            return string.Empty;
+        }
+
+        var prefix = title + " ";
+        return fullReference.StartsWith(prefix, StringComparison.Ordinal)
+            ? fullReference[prefix.Length..].Trim()
+            : string.Empty;
+    }
+
+    private static string ExtractReferenceTitle(string fullReference)
+    {
+        if (string.IsNullOrWhiteSpace(fullReference))
+        {
+            return string.Empty;
+        }
+
+        var parts = fullReference.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        var endIndex = parts.Length;
+        while (endIndex > 0 && parts[endIndex - 1].Any(char.IsDigit))
+        {
+            endIndex--;
+        }
+
+        return endIndex == parts.Length
+            ? fullReference.Trim()
+            : string.Join(' ', parts.Take(endIndex));
+    }
+
+    private static string FormatLinkLocationLabel(string location, bool useHebrew)
+    {
+        if (int.TryParse(location, out _))
+        {
+            return useHebrew ? $"פרק {location}" : $"Chapter {location}";
+        }
+
+        return location;
+    }
+
+    private TextBlock CreateLinkPreviewBodyTextBlock(
+        string text,
+        int? maxLength = 420,
+        double? fontSizeOverride = null)
+    {
+        var normalizedText = NormalizeLinkPreviewText(text, maxLength);
+        var useHebrew = ContainsHebrewText(normalizedText);
+        var fontSize = fontSizeOverride ?? GetSelectedLinkPanelFontSize(useHebrew);
+        return new TextBlock
+        {
+            Text = normalizedText,
+            FontFamily = new FontFamily(useHebrew ? GetSelectedHebrewFontFamily() : GetSelectedEnglishFontFamily()),
+            FontSize = fontSize,
+            FlowDirection = useHebrew ? FlowDirection.RightToLeft : FlowDirection.LeftToRight,
+            TextWrapping = TextWrapping.Wrap,
+            LineHeight = fontSize + 10
+        };
+    }
+
+    private IEnumerable<(string Label, string Text)> GetOrderedLinkPreviewSections(
+        SefariaLinkPreview preview,
+        CommentaryLanguage preferredLanguage)
+    {
+        if (preferredLanguage == CommentaryLanguage.Hebrew)
+        {
+            if (!string.IsNullOrWhiteSpace(preview.HebrewText))
+            {
+                yield return ("Hebrew", preview.HebrewText);
+            }
+
+            if (!string.IsNullOrWhiteSpace(preview.EnglishText))
+            {
+                yield return ("English", preview.EnglishText);
+            }
+
+            yield break;
+        }
+
+        if (!string.IsNullOrWhiteSpace(preview.EnglishText))
+        {
+            yield return ("English", preview.EnglishText);
+        }
+
+        if (!string.IsNullOrWhiteSpace(preview.HebrewText))
+        {
+            yield return ("Hebrew", preview.HebrewText);
+        }
+    }
+
+    private double GetSelectedLinkPanelFontSize(bool isHebrew)
+    {
+        return isHebrew ? GetSelectedHebrewCommentaryFontSize() : GetSelectedEnglishCommentaryFontSize();
+    }
+
+    private double GetSelectedLinkSecondaryFontSize(bool isHebrew)
+    {
+        return Math.Max(10, GetSelectedLinkPanelFontSize(isHebrew) - 1);
+    }
+
+    private static string NormalizeLinkPreviewText(string text, int? maxLength)
+    {
+        text = Regex.Replace(text, "<.*?>", " ");
+        text = WebUtility.HtmlDecode(text);
+        text = Regex.Replace(text, @"\s+", " ").Trim();
+        if (maxLength is > 0 && text.Length > maxLength.Value)
+        {
+            text = text[..maxLength.Value].TrimEnd() + "...";
+        }
+
+        return text;
+    }
+
+    private static bool ContainsHebrewText(string text)
+    {
+        foreach (var character in text)
+        {
+            if (character >= '\u0590' && character <= '\u05FF')
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static List<LinkCategoryGroup> GetLinkCategoryGroups(IEnumerable<SefariaLinkItem> items)
+    {
+        return items
+            .GroupBy(item => item.Category, StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(group => group.Count())
+            .ThenBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(group => new LinkCategoryGroup(
+                group.Key,
+                group
+                    .OrderBy(item => item.DisplayTitle, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(item => item.DisplayReference, StringComparer.OrdinalIgnoreCase)
+                    .ToList()))
+            .ToList();
+    }
+
+    private void EnsureSelectedLinkCategories(ReaderTabState readerState, List<LinkCategoryGroup> groups)
+    {
+        var availableCategories = new HashSet<string>(
+            groups.Select(group => group.Category),
+            StringComparer.OrdinalIgnoreCase);
+        var selectedCategories = new HashSet<string>(
+            readerState.SelectedLinkCategories
+                .Where(availableCategories.Contains),
+            StringComparer.OrdinalIgnoreCase);
+
+        if (selectedCategories.Count == 0 &&
+            groups.Count > 0 &&
+            !readerState.HasInitializedLinkCategorySelection)
+        {
+            selectedCategories = new HashSet<string>(
+                GetDefaultLinkCategorySelection(groups),
+                StringComparer.OrdinalIgnoreCase);
+        }
+
+        if (selectedCategories.SetEquals(readerState.SelectedLinkCategories))
+        {
+            return;
+        }
+
+        readerState.SelectedLinkCategories = selectedCategories;
+        readerState.HasInitializedLinkCategorySelection = true;
+        SaveLinksPreferences(readerState);
+    }
+
+    private static IEnumerable<string> GetDefaultLinkCategorySelection(List<LinkCategoryGroup> groups)
+    {
+        var preferred = groups.FirstOrDefault(group =>
+            string.Equals(group.Category, "Quoting Commentary", StringComparison.OrdinalIgnoreCase));
+        if (preferred is not null)
+        {
+            return new[] { preferred.Category };
+        }
+
+        return groups
+            .Take(1)
+            .Select(group => group.Category);
     }
 
     private Control CreateCommentarySourcePicker(

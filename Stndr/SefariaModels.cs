@@ -296,10 +296,12 @@ public enum HebrewMarksMode
 
 public sealed class AppSettings
 {
+    public string DataStorageFolder { get; set; } = AppSettingsService.DefaultDataStorageFolder;
     public InstalledBookTitleDisplay InstalledBookTitleDisplay { get; set; } = InstalledBookTitleDisplay.Both;
     public Dictionary<string, string> SelectedHebrewTextsByBook { get; set; } = new();
     public Dictionary<string, string> SelectedTranslationsByBook { get; set; } = new();
     public Dictionary<string, ReaderDisplayMode> ReaderDisplayModesByBook { get; set; } = new();
+    public Dictionary<string, ReaderLinksPreferences> ReaderLinksPreferencesByBook { get; set; } = new();
     public List<string> PinnedCommentarySourceKeys { get; set; } = new();
     public string HebrewReaderFontFamily { get; set; } = string.Empty;
     public string EnglishReaderFontFamily { get; set; } = string.Empty;
@@ -313,6 +315,12 @@ public sealed class AppSettings
     public double HebrewDisplayFontSize { get; set; } = 18;
     public double SingleLanguageReaderColumnLetters { get; set; } = 80;
     public double DualLanguageReaderColumnLetters { get; set; } = 120;
+}
+
+public sealed class ReaderLinksPreferences
+{
+    public bool IsExpanded { get; set; }
+    public List<string> SelectedCategories { get; set; } = new();
 }
 
 public sealed record ReaderTextUnit(
@@ -359,4 +367,122 @@ public sealed class CachedSefariaCommentarySet
     public string AnchorRef { get; set; } = string.Empty;
     public DateTime RetrievedAtUtc { get; set; }
     public List<SefariaCommentaryItem> Items { get; set; } = new();
+}
+
+public sealed class SefariaLinkItem
+{
+    public string Ref { get; set; } = string.Empty;
+    public string AnchorRef { get; set; } = string.Empty;
+    public string SourceRef { get; set; } = string.Empty;
+    public string SourceHeRef { get; set; } = string.Empty;
+    public string IndexTitle { get; set; } = string.Empty;
+    public string CollectiveTitleEnglish { get; set; } = string.Empty;
+    public string CollectiveTitleHebrew { get; set; } = string.Empty;
+    public string Category { get; set; } = string.Empty;
+    public string Type { get; set; } = string.Empty;
+    public bool SourceHasEnglish { get; set; }
+    public int AnchorVerse { get; set; }
+
+    [JsonIgnore]
+    public string DisplayTitle => FirstNonEmptyDisplayValue(
+        CollectiveTitleEnglish,
+        IndexTitle,
+        ExtractReferenceTitle(DisplayReference));
+
+    [JsonIgnore]
+    public string HebrewDisplayTitle => string.IsNullOrWhiteSpace(CollectiveTitleHebrew)
+        ? DisplayTitle
+        : CollectiveTitleHebrew;
+
+    [JsonIgnore]
+    public string DisplayReference => string.IsNullOrWhiteSpace(SourceRef)
+        ? Ref
+        : SourceRef;
+
+    private static string FirstNonEmptyDisplayValue(params string[] values)
+    {
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+        }
+
+        return string.Empty;
+    }
+
+    private static string ExtractReferenceTitle(string fullReference)
+    {
+        if (string.IsNullOrWhiteSpace(fullReference))
+        {
+            return string.Empty;
+        }
+
+        var parts = fullReference.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        var endIndex = parts.Length;
+        while (endIndex > 0 && ContainsDigit(parts[endIndex - 1]))
+        {
+            endIndex--;
+        }
+
+        return endIndex == parts.Length
+            ? fullReference.Trim()
+            : string.Join(' ', parts, 0, endIndex);
+    }
+
+    private static bool ContainsDigit(string value)
+    {
+        foreach (var character in value)
+        {
+            if (char.IsDigit(character))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+}
+
+public sealed class SefariaLinkPreview
+{
+    public string Reference { get; set; } = string.Empty;
+    public string WorkTitle { get; set; } = string.Empty;
+    public string WorkHebrewTitle { get; set; } = string.Empty;
+    public string ReferenceWithinWork { get; set; } = string.Empty;
+    public string EnglishText { get; set; } = string.Empty;
+    public string HebrewText { get; set; } = string.Empty;
+    public bool IsFromInstalledBook { get; set; }
+    public bool IsExcerptOnly { get; set; }
+    public List<InstalledSefariaBook> Versions { get; set; } = new();
+    public CachedSefariaLinkPreview? CachedPreview { get; set; }
+}
+
+public sealed class CachedSefariaLinkPreview
+{
+    public string Id { get; set; } = string.Empty;
+    public string FullReference { get; set; } = string.Empty;
+    public string WorkTitle { get; set; } = string.Empty;
+    public string WorkHebrewTitle { get; set; } = string.Empty;
+    public string ReferenceWithinWork { get; set; } = string.Empty;
+    public string EnglishText { get; set; } = string.Empty;
+    public string HebrewText { get; set; } = string.Empty;
+    public string EnglishVersionTitle { get; set; } = string.Empty;
+    public string HebrewVersionTitle { get; set; } = string.Empty;
+    public List<string> Categories { get; set; } = new();
+    public DateTime RetrievedAtUtc { get; set; }
+}
+
+public sealed class CachedSefariaLinkSet
+{
+    public string Id { get; set; } = string.Empty;
+    public string AnchorRef { get; set; } = string.Empty;
+    public DateTime RetrievedAtUtc { get; set; }
+    public List<SefariaLinkItem> Items { get; set; } = new();
 }

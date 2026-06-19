@@ -25,6 +25,7 @@ public partial class MainWindow : Window
 {
     private const double CollapsedPanelWidth = 40;
     private const double DefaultExpandedPanelWidth = 280;
+    private const double DefaultLinkSplitWidth = 420;
     private const double DefaultReaderFontSize = 15;
     private const double MinReaderFontSize = 11;
     private const double MaxReaderFontSize = 28;
@@ -66,8 +67,8 @@ public partial class MainWindow : Window
     private Button? _libraryCancelButton;
 
     private ObservableCollection<TabItem>? _tabs;
-    private readonly SefariaLibraryService _sefariaLibrary = new();
     private readonly AppSettingsService _settingsService = new();
+    private readonly SefariaLibraryService _sefariaLibrary;
     private readonly Dictionary<TabItem, ReaderTabState> _openReaderTabs = new();
     private readonly Dictionary<TabItem, Control> _tabContents = new();
     private AppSettings _settings = new();
@@ -119,6 +120,7 @@ public partial class MainWindow : Window
         };
 
         _settings = _settingsService.Load();
+        _sefariaLibrary = new SefariaLibraryService(_settings.DataStorageFolder);
         ApplyUiFontSetting();
         InitializeNavigationItems();
         ApplyLeftPanelState(false, DefaultExpandedPanelWidth);
