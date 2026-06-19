@@ -81,7 +81,7 @@ public partial class MainWindow
         };
         _libraryStatus = new TextBlock
         {
-            Text = $"Data folder: {_sefariaLibrary.DataFolder}",
+            Text = $"Data folder: {_sefariaLibrary.StorageRootFolder}",
             TextWrapping = TextWrapping.Wrap
         };
         _libraryVersionBox = new ComboBox
@@ -198,7 +198,7 @@ public partial class MainWindow
                 .OrderBy(n => n.Order)
                 .Select(CreateLibraryTreeItem)
                 .ToList();
-            _libraryStatus.Text = $"Loaded from {_sefariaLibrary.IndexFilePath}";
+            _libraryStatus.Text = $"Loaded from {_sefariaLibrary.StorageRootFolder}";
         }
         catch (Exception ex)
         {

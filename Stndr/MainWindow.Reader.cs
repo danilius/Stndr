@@ -86,6 +86,31 @@ public partial class MainWindow
             return;
         }
 
+        var state = CreateReaderTabState(book, installedVersions, savedState);
+        var readerContent = InitializeReaderTabContent(state);
+        var tab = CreateTab(FormatTitle(state.Primary.Title, state.Primary.HebrewTitle), readerContent);
+        tab.Tag = state.Primary.Title;
+        _openReaderTabs[tab] = state;
+        _tabs.Add(tab);
+        if (selectAfterOpen)
+        {
+            _centerTabs.SelectedItem = tab;
+        }
+
+        state.ReaderWebScrollOffset = savedState?.ScrollOffset ?? state.Primary.LastScrollOffset;
+
+        if (renderImmediately)
+        {
+            RenderReaderContent(state);
+        }
+        UpdateReaderTools();
+    }
+
+    private ReaderTabState CreateReaderTabState(
+        InstalledSefariaBook book,
+        List<InstalledSefariaBook> installedVersions,
+        SavedTabState? savedState)
+    {
         var hebrewTexts = installedVersions.Where(SefariaLibraryService.IsHebrew).ToList();
         var primary = GetSavedHebrewText(book.Title, hebrewTexts)
             ?? hebrewTexts.FirstOrDefault()
@@ -109,32 +134,11 @@ public partial class MainWindow
             DisplayMode = GetSavedDisplayMode(book.Title, selectedTranslation is not null)
         };
 
+        ApplySavedLinksPreferences(state);
         ApplySavedReaderState(state, savedState);
         SaveSelectedHebrewText(state);
         SaveSelectedTranslation(state);
-
-        var reader = CreateReaderView(state, out var readerList, out var titleBlock, out var versionBlock);
-        state.ReaderList = readerList;
-        state.TitleBlock = titleBlock;
-        state.ChapterBlock = reader.Tag as TextBlock;
-        state.VersionBlock = versionBlock;
-
-        var tab = CreateTab(FormatTitle(primary.Title, primary.HebrewTitle), reader);
-        tab.Tag = primary.Title;
-        _openReaderTabs[tab] = state;
-        _tabs.Add(tab);
-        if (selectAfterOpen)
-        {
-            _centerTabs.SelectedItem = tab;
-        }
-
-        state.ReaderWebScrollOffset = savedState?.ScrollOffset ?? state.Primary.LastScrollOffset;
-
-        if (renderImmediately)
-        {
-            RenderReaderContent(state);
-        }
-        UpdateReaderTools();
+        return state;
     }
 
     private void RestoreReaderTab(
@@ -179,11 +183,15 @@ public partial class MainWindow
         state.IsDisplayExpanded = savedState.IsDisplayExpanded;
         state.IsSedrotExpanded = savedState.IsSedrotExpanded;
         state.IsCommentariesExpanded = savedState.IsCommentariesExpanded;
+        state.IsLinksExpanded = savedState.IsLinksExpanded;
         state.IsTextsExpanded = savedState.IsTextsExpanded;
         state.ShowAliyot = savedState.ShowAliyot;
         state.IsSedraContentOpen = savedState.IsSedraContentOpen;
         state.SelectedSedraKey = savedState.SelectedSedraKey;
         state.SelectedCommentaryRef = savedState.SelectedCommentaryRef;
+        state.SelectedLinksRef = savedState.SelectedCommentaryRef;
+        state.SelectedLinkCategories = NormalizeSelectedLinkCategories(savedState.SelectedLinkCategories);
+        state.HasInitializedLinkCategorySelection = true;
         state.IsCommentaryContentOpen = savedState.IsCommentaryContentOpen;
         state.SelectedCommentarySourceKey = string.IsNullOrWhiteSpace(savedState.SelectedCommentarySourceKey)
             ? AllCommentariesSelectionKey
@@ -247,6 +255,7 @@ public partial class MainWindow
         ReaderTabState state,
         out ListBox? readerList,
         out TextBlock titleBlock,
+        out TextBlock chapterBlock,
         out TextBlock versionBlock)
     {
         titleBlock = new TextBlock
@@ -264,7 +273,7 @@ public partial class MainWindow
             TextAlignment = TextAlignment.Center
         };
 
-        var chapterBlock = new TextBlock
+        chapterBlock = new TextBlock
         {
             Foreground = new SolidColorBrush(Color.Parse("#344054")),
             FontSize = 15,
@@ -325,9 +334,71 @@ public partial class MainWindow
                 webView
             }
         };
-        layout.Tag = chapterBlock;
         Grid.SetRow(webView, 1);
 
+        return layout;
+    }
+
+    private Control InitializeReaderTabContent(ReaderTabState state)
+    {
+        var content = CreateReaderTabContent(state, out var readerList, out var titleBlock, out var chapterBlock, out var versionBlock);
+        state.ReaderList = readerList;
+        state.TitleBlock = titleBlock;
+        state.ChapterBlock = chapterBlock;
+        state.VersionBlock = versionBlock;
+        return content;
+    }
+
+    private Control CreateReaderTabContent(
+        ReaderTabState state,
+        out ListBox? readerList,
+        out TextBlock titleBlock,
+        out TextBlock chapterBlock,
+        out TextBlock versionBlock)
+    {
+        var mainReader = CreateReaderView(state, out readerList, out titleBlock, out chapterBlock, out versionBlock);
+        var splitHost = new ContentControl();
+        var splitBorder = new Border
+        {
+            Background = Brushes.White,
+            BorderBrush = new SolidColorBrush(Color.Parse("#D0D5DD")),
+            BorderThickness = new Thickness(1, 0, 0, 0),
+            IsVisible = false,
+            Child = splitHost
+        };
+        var splitter = new GridSplitter
+        {
+            Width = 6,
+            ResizeDirection = GridResizeDirection.Columns,
+            ResizeBehavior = GridResizeBehavior.PreviousAndNext,
+            Background = new SolidColorBrush(Color.Parse("#EAECF0")),
+            IsVisible = false
+        };
+        var splitterColumn = new ColumnDefinition(0, GridUnitType.Pixel);
+        var contentColumn = new ColumnDefinition(0, GridUnitType.Pixel);
+        var layout = new Grid
+        {
+            ColumnDefinitions =
+            {
+                new ColumnDefinition(1, GridUnitType.Star),
+                splitterColumn,
+                contentColumn
+            },
+            Children =
+            {
+                mainReader,
+                splitter,
+                splitBorder
+            }
+        };
+        Grid.SetColumn(splitter, 1);
+        Grid.SetColumn(splitBorder, 2);
+
+        state.LinkSplitSplitterColumn = splitterColumn;
+        state.LinkSplitContentColumn = contentColumn;
+        state.LinkSplitSplitter = splitter;
+        state.LinkSplitBorder = splitBorder;
+        state.LinkSplitContentHost = splitHost;
         return layout;
     }
 
@@ -550,15 +621,24 @@ public partial class MainWindow
     {
         state.CommentaryLoadCts?.Cancel();
         state.CommentaryLoadCts = null;
+        state.LinksLoadCts?.Cancel();
+        state.LinksLoadCts = null;
+        ClearActiveLinkPreview(state);
 
         state.SelectedReaderRow = row is { IsChapterHeading: false } ? row : null;
         UpdateReaderChapterHeader(state, row);
         state.SelectedCommentaryRef = state.SelectedReaderRow is null
             ? string.Empty
             : BuildSefariaAnchorRef(state, state.SelectedReaderRow, preferTranslation: false);
+        state.SelectedLinksRef = state.SelectedCommentaryRef;
         state.Commentaries = new List<SefariaCommentaryItem>();
+        state.Links = new List<SefariaLinkItem>();
+        state.ExpandedLinkCategories.Clear();
+        state.LoadedLinksRef = string.Empty;
         state.CommentaryError = string.Empty;
+        state.LinksError = string.Empty;
         state.IsCommentaryLoading = false;
+        state.IsLinksLoading = false;
 
         if (string.IsNullOrWhiteSpace(state.SelectedCommentaryRef))
         {
@@ -567,6 +647,7 @@ public partial class MainWindow
         }
 
         state.IsCommentaryLoading = true;
+        EnsureLinksLoadedForCurrentSelection(state);
         UpdateReaderTools();
 
         var cts = new CancellationTokenSource();
@@ -595,12 +676,519 @@ public partial class MainWindow
 
         state.SelectedReaderRow = row;
         state.SelectedCommentaryRef = savedRef;
+        state.SelectedLinksRef = savedRef;
         state.IsCommentaryLoading = true;
         UpdateReaderChapterHeader(state, row);
+        EnsureLinksLoadedForCurrentSelection(state);
 
         var cts = new CancellationTokenSource();
         state.CommentaryLoadCts = cts;
         _ = LoadCommentariesForSelectionAsync(state, savedRef, cts);
+    }
+
+    private void ClearActiveLinkPreview(ReaderTabState state)
+    {
+        state.LinkPreviewLoadCts?.Cancel();
+        state.LinkPreviewLoadCts = null;
+        state.ExpandedLinkPreviewRef = string.Empty;
+        state.ActiveLinkPreviewItem = null;
+        state.ActiveLinkPreview = null;
+        state.IsLinkPreviewLoading = false;
+        state.IsLinkWorkDownloadLoading = false;
+        state.LinkPreviewError = string.Empty;
+        CloseLinkSplitView(state);
+    }
+
+    private void ApplySavedLinksPreferences(ReaderTabState state)
+    {
+        if (!_settings.ReaderLinksPreferencesByBook.TryGetValue(state.WorkTitle, out var preferences) ||
+            preferences is null)
+        {
+            return;
+        }
+
+        state.IsLinksExpanded = preferences.IsExpanded;
+        state.SelectedLinkCategories = NormalizeSelectedLinkCategories(preferences.SelectedCategories);
+        state.HasInitializedLinkCategorySelection = true;
+    }
+
+    private void SaveLinksPreferences(ReaderTabState state)
+    {
+        _settings.ReaderLinksPreferencesByBook[state.WorkTitle] = new ReaderLinksPreferences
+        {
+            IsExpanded = state.IsLinksExpanded,
+            SelectedCategories = state.SelectedLinkCategories
+                .OrderBy(category => category, StringComparer.OrdinalIgnoreCase)
+                .ToList()
+        };
+        _settingsService.Save(_settings);
+    }
+
+    private static HashSet<string> NormalizeSelectedLinkCategories(IEnumerable<string>? categories)
+    {
+        return new HashSet<string>(
+            (categories ?? Enumerable.Empty<string>())
+                .Where(category => !string.IsNullOrWhiteSpace(category))
+                .Where(category => !string.Equals(category, "Commentary", StringComparison.OrdinalIgnoreCase)),
+            StringComparer.OrdinalIgnoreCase);
+    }
+
+    private void EnsureLinksLoadedForCurrentSelection(ReaderTabState state)
+    {
+        if (!state.IsLinksExpanded ||
+            string.IsNullOrWhiteSpace(state.SelectedLinksRef) ||
+            (state.Links.Count > 0 &&
+             string.Equals(state.LoadedLinksRef, state.SelectedLinksRef, StringComparison.Ordinal)) ||
+            (state.IsLinksLoading &&
+             string.Equals(state.LoadedLinksRef, state.SelectedLinksRef, StringComparison.Ordinal)))
+        {
+            return;
+        }
+
+        state.LinksLoadCts?.Cancel();
+        state.LinksLoadCts = null;
+        state.Links = new List<SefariaLinkItem>();
+        state.LoadedLinksRef = state.SelectedLinksRef;
+        state.LinksError = string.Empty;
+        state.IsLinksLoading = true;
+
+        var cts = new CancellationTokenSource();
+        state.LinksLoadCts = cts;
+        _ = LoadLinksForSelectionAsync(state, state.SelectedLinksRef, cts);
+    }
+
+    private async Task LoadLinksForSelectionAsync(
+        ReaderTabState state,
+        string anchorRef,
+        CancellationTokenSource cts)
+    {
+        var requestedAnchorRef = anchorRef;
+        var appliedResults = false;
+        try
+        {
+            var links = await _sefariaLibrary.GetLinksAsync(anchorRef, cts.Token);
+            if (cts.IsCancellationRequested ||
+                !ReferenceEquals(state.LinksLoadCts, cts) ||
+                !string.Equals(state.SelectedLinksRef, requestedAnchorRef, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            state.Links = links;
+            state.LoadedLinksRef = requestedAnchorRef;
+            state.LinksError = string.Empty;
+            appliedResults = true;
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch
+        {
+            if (IsActiveLinksLoad(state, requestedAnchorRef, cts))
+            {
+                state.LinksError = "Links could not be loaded.";
+            }
+        }
+        finally
+        {
+            if (IsActiveLinksLoad(state, requestedAnchorRef, cts) ||
+                (appliedResults && !cts.IsCancellationRequested && ReferenceEquals(state.LinksLoadCts, cts)))
+            {
+                state.IsLinksLoading = false;
+                state.LinksLoadCts = null;
+                UpdateReaderTools();
+            }
+
+            cts.Dispose();
+        }
+    }
+
+    private static bool IsActiveLinksLoad(
+        ReaderTabState state,
+        string requestedAnchorRef,
+        CancellationTokenSource cts)
+    {
+        return !cts.IsCancellationRequested &&
+            ReferenceEquals(state.LinksLoadCts, cts) &&
+            string.Equals(state.SelectedLinksRef, requestedAnchorRef, StringComparison.Ordinal);
+    }
+
+    private void ToggleLinkPreview(ReaderTabState state, SefariaLinkItem item)
+    {
+        var linkReference = item.DisplayReference;
+        if (string.Equals(state.ExpandedLinkPreviewRef, linkReference, StringComparison.Ordinal))
+        {
+            ClearActiveLinkPreview(state);
+            UpdateReaderTools();
+            return;
+        }
+
+        state.LinkPreviewLoadCts?.Cancel();
+        state.LinkPreviewLoadCts = null;
+        state.ExpandedLinkPreviewRef = linkReference;
+        state.ActiveLinkPreviewItem = item;
+        state.ActiveLinkPreview = null;
+        state.IsLinkPreviewLoading = true;
+        state.IsLinkWorkDownloadLoading = false;
+        state.LinkPreviewError = string.Empty;
+        if (state.IsLinkSplitOpen)
+        {
+            UpdateLinkSplitView(state);
+        }
+        UpdateReaderTools();
+
+        var cts = new CancellationTokenSource();
+        state.LinkPreviewLoadCts = cts;
+        _ = LoadLinkPreviewAsync(state, item, cts);
+    }
+
+    private async Task LoadLinkPreviewAsync(
+        ReaderTabState state,
+        SefariaLinkItem item,
+        CancellationTokenSource cts)
+    {
+        var requestedReference = item.DisplayReference;
+        try
+        {
+            var preview = await _sefariaLibrary.GetLinkPreviewAsync(item, cts.Token);
+            if (cts.IsCancellationRequested ||
+                !ReferenceEquals(state.LinkPreviewLoadCts, cts) ||
+                !string.Equals(state.ExpandedLinkPreviewRef, requestedReference, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            if (preview is null)
+            {
+                state.LinkPreviewError = "This linked text is not installed and no preview excerpt could be downloaded.";
+                state.ActiveLinkPreview = null;
+            }
+            else
+            {
+                state.ActiveLinkPreview = preview;
+                state.LinkPreviewError = string.Empty;
+            }
+
+            if (state.IsLinkSplitOpen)
+            {
+                UpdateLinkSplitView(state);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch
+        {
+            if (!cts.IsCancellationRequested &&
+                ReferenceEquals(state.LinkPreviewLoadCts, cts) &&
+                string.Equals(state.ExpandedLinkPreviewRef, requestedReference, StringComparison.Ordinal))
+            {
+                state.LinkPreviewError = "This linked text is not installed and no preview excerpt could be downloaded.";
+                state.ActiveLinkPreview = null;
+            }
+        }
+        finally
+        {
+            if (ReferenceEquals(state.LinkPreviewLoadCts, cts))
+            {
+                state.IsLinkPreviewLoading = false;
+                state.LinkPreviewLoadCts = null;
+                if (state.IsLinkSplitOpen)
+                {
+                    UpdateLinkSplitView(state);
+                }
+                UpdateReaderTools();
+            }
+
+            cts.Dispose();
+        }
+    }
+
+    private void ShowLinkPreviewInSplitView(ReaderTabState state)
+    {
+        if (state.ActiveLinkPreviewItem is null)
+        {
+            return;
+        }
+
+        state.IsLinkSplitOpen = true;
+        ApplyLinkSplitVisibility(state, isVisible: true);
+        UpdateLinkSplitView(state);
+    }
+
+    private void CloseLinkSplitView(ReaderTabState state)
+    {
+        state.IsLinkSplitOpen = false;
+        if (state.LinkSplitContentHost is not null)
+        {
+            state.LinkSplitContentHost.Content = null;
+        }
+
+        ApplyLinkSplitVisibility(state, isVisible: false);
+    }
+
+    private void ApplyLinkSplitVisibility(ReaderTabState state, bool isVisible)
+    {
+        if (state.LinkSplitSplitterColumn is null ||
+            state.LinkSplitContentColumn is null ||
+            state.LinkSplitSplitter is null ||
+            state.LinkSplitBorder is null)
+        {
+            return;
+        }
+
+        state.LinkSplitSplitterColumn.Width = new GridLength(isVisible ? 6 : 0, GridUnitType.Pixel);
+        state.LinkSplitContentColumn.Width = new GridLength(isVisible ? DefaultLinkSplitWidth : 0, GridUnitType.Pixel);
+        state.LinkSplitSplitter.IsVisible = isVisible;
+        state.LinkSplitBorder.IsVisible = isVisible;
+    }
+
+    private void UpdateLinkSplitView(ReaderTabState state)
+    {
+        if (!state.IsLinkSplitOpen || state.LinkSplitContentHost is null)
+        {
+            return;
+        }
+
+        ApplyLinkSplitVisibility(state, isVisible: true);
+        state.LinkSplitContentHost.Content = CreateLinkSplitView(state);
+    }
+
+    private void RefreshOpenLinkSplitViews()
+    {
+        foreach (var state in _openReaderTabs.Values)
+        {
+            if (!state.IsLinkSplitOpen)
+            {
+                continue;
+            }
+
+            UpdateLinkSplitView(state);
+        }
+    }
+
+    private async Task DownloadLinkWorkForPreviewAsync(ReaderTabState state)
+    {
+        if (state.ActiveLinkPreviewItem is null || state.IsLinkWorkDownloadLoading)
+        {
+            return;
+        }
+
+        state.IsLinkWorkDownloadLoading = true;
+        state.LinkPreviewError = "Downloading linked work...";
+        UpdateReaderTools();
+
+        try
+        {
+            await _sefariaLibrary.DownloadLinkWorkAsync(
+                string.IsNullOrWhiteSpace(state.ActiveLinkPreviewItem.IndexTitle)
+                    ? state.ActiveLinkPreviewItem.DisplayReference
+                    : state.ActiveLinkPreviewItem.IndexTitle,
+                state.CommentaryLanguage,
+                new Progress<double>(_ => { }),
+                CancellationToken.None);
+
+            RefreshInstalledBooksTree();
+            state.LinkPreviewError = string.Empty;
+            var cts = new CancellationTokenSource();
+            state.LinkPreviewLoadCts = cts;
+            state.IsLinkPreviewLoading = true;
+            UpdateReaderTools();
+            _ = LoadLinkPreviewAsync(state, state.ActiveLinkPreviewItem, cts);
+        }
+        catch (Exception ex)
+        {
+            state.LinkPreviewError = $"The linked work could not be downloaded: {ex.Message}";
+        }
+        finally
+        {
+            state.IsLinkWorkDownloadLoading = false;
+            UpdateReaderTools();
+        }
+    }
+
+    private async Task OpenLinkSourceInNewTabAsync(ReaderTabState state)
+    {
+        if (state.ActiveLinkPreview is null || state.IsLinkSourceTabLoading)
+        {
+            return;
+        }
+
+        state.IsLinkSourceTabLoading = true;
+        UpdateReaderTools();
+
+        TabItem? loadingTab = null;
+        try
+        {
+            var preview = state.ActiveLinkPreview;
+            var fullVersions = _sefariaLibrary.GetFullInstalledVersionsForTitle(preview.WorkTitle);
+            if (fullVersions.Count > 0)
+            {
+                OpenInstalledLinkSource(preview, state.CommentaryLanguage, fullVersions);
+                return;
+            }
+
+            if (_tabs is null || _centerTabs is null)
+            {
+                return;
+            }
+
+            var loadingContent = CreateLinkSourceLoadingView(preview.WorkTitle, preview.WorkHebrewTitle, out var progressBar, out var statusBlock);
+            loadingTab = CreateTab(FormatTitle(preview.WorkTitle, preview.WorkHebrewTitle), loadingContent);
+            loadingTab.Tag = preview.WorkTitle;
+            _tabs.Add(loadingTab);
+            _centerTabs.SelectedItem = loadingTab;
+
+            var progress = new Progress<double>(percent =>
+            {
+                progressBar.IsIndeterminate = false;
+                progressBar.Value = percent;
+                statusBlock.Text = $"Downloading {preview.WorkTitle}: {percent:0}%";
+            });
+
+            await _sefariaLibrary.DownloadLinkWorkAsync(
+                preview.WorkTitle,
+                state.CommentaryLanguage,
+                progress,
+                CancellationToken.None);
+
+            RefreshInstalledBooksTree();
+            fullVersions = _sefariaLibrary.GetFullInstalledVersionsForTitle(preview.WorkTitle);
+            if (fullVersions.Count == 0)
+            {
+                throw new InvalidOperationException($"No installed versions were found for {preview.WorkTitle} after download.");
+            }
+
+            PopulateReaderTabWithInstalledLinkSource(loadingTab, preview, fullVersions, state.CommentaryLanguage);
+        }
+        catch (Exception ex)
+        {
+            state.LinkPreviewError = $"The full source could not be opened: {ex.Message}";
+            if (loadingTab is not null)
+            {
+                CloseTab(loadingTab);
+            }
+        }
+        finally
+        {
+            state.IsLinkSourceTabLoading = false;
+            UpdateReaderTools();
+        }
+    }
+
+    private void OpenInstalledLinkSource(
+        SefariaLinkPreview preview,
+        CommentaryLanguage language,
+        List<InstalledSefariaBook> fullVersions)
+    {
+        var existing = FindReaderTabByWorkTitle(preview.WorkTitle);
+        if (existing.Key is not null)
+        {
+            if (_centerTabs is not null)
+            {
+                _centerTabs.SelectedItem = existing.Key;
+            }
+
+            ScrollReaderStateToReference(existing.Value, preview.ReferenceWithinWork);
+            return;
+        }
+
+        var targetBook = SelectInstalledLinkSourceBook(fullVersions, language);
+        if (targetBook is null)
+        {
+            return;
+        }
+
+        OpenInstalledBook(targetBook);
+        var opened = FindReaderTabByWorkTitle(preview.WorkTitle);
+        if (opened.Key is not null)
+        {
+            ScrollReaderStateToReference(opened.Value, preview.ReferenceWithinWork);
+        }
+    }
+
+    private void PopulateReaderTabWithInstalledLinkSource(
+        TabItem tab,
+        SefariaLinkPreview preview,
+        List<InstalledSefariaBook> fullVersions,
+        CommentaryLanguage language)
+    {
+        var targetBook = SelectInstalledLinkSourceBook(fullVersions, language);
+        if (targetBook is null)
+        {
+            throw new InvalidOperationException($"No installed versions are available for {preview.WorkTitle}.");
+        }
+
+        var readerState = CreateReaderTabState(targetBook, fullVersions, null);
+        var readerContent = InitializeReaderTabContent(readerState);
+        ReplaceTabContent(tab, readerContent);
+        _openReaderTabs[tab] = readerState;
+        tab.Tag = readerState.WorkTitle;
+        RenderReaderContent(readerState);
+        ScrollReaderStateToReference(readerState, preview.ReferenceWithinWork);
+        if (_centerTabs is not null)
+        {
+            _centerTabs.SelectedItem = tab;
+        }
+
+        UpdateReaderTools();
+    }
+
+    private KeyValuePair<TabItem, ReaderTabState> FindReaderTabByWorkTitle(string workTitle)
+    {
+        return _openReaderTabs.FirstOrDefault(pair =>
+            string.Equals(pair.Value.WorkTitle, workTitle, StringComparison.Ordinal));
+    }
+
+    private InstalledSefariaBook? SelectInstalledLinkSourceBook(
+        IReadOnlyList<InstalledSefariaBook> versions,
+        CommentaryLanguage language)
+    {
+        return language == CommentaryLanguage.Hebrew
+            ? versions.FirstOrDefault(SefariaLibraryService.IsHebrew) ??
+                versions.FirstOrDefault()
+            : versions.FirstOrDefault(version => !SefariaLibraryService.IsHebrew(version)) ??
+                versions.FirstOrDefault();
+    }
+
+    private void ScrollReaderStateToReference(ReaderTabState state, string referenceWithinWork)
+    {
+        if (string.IsNullOrWhiteSpace(referenceWithinWork))
+        {
+            return;
+        }
+
+        state.PendingExactReferenceWithinWork = NormalizeReaderUnitReference(referenceWithinWork);
+        Dispatcher.UIThread.Post(
+            () => ScrollReaderToExactReference(state, referenceWithinWork),
+            DispatcherPriority.Background);
+    }
+
+    private void ScrollReaderToExactReference(ReaderTabState state, string referenceWithinWork)
+    {
+        var normalizedReference = string.IsNullOrWhiteSpace(referenceWithinWork)
+            ? string.Empty
+            : referenceWithinWork.Trim().Replace(':', '.');
+        if (string.IsNullOrWhiteSpace(normalizedReference))
+        {
+            return;
+        }
+
+        var row = state.ReaderRows
+            .Where(candidate => !candidate.IsChapterHeading)
+            .FirstOrDefault(candidate =>
+                string.Equals(candidate.Primary?.Reference, normalizedReference, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(candidate.Translation?.Reference, normalizedReference, StringComparison.OrdinalIgnoreCase));
+        if (row is null)
+        {
+            return;
+        }
+
+        ScrollReaderRowToTop(state, row);
+        state.SelectedReaderRow = row;
+        UpdateReaderChapterHeader(state, row);
     }
 
     private async Task LoadCommentariesForSelectionAsync(

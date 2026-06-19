@@ -77,6 +77,20 @@ public sealed partial class SefariaLibraryService
         var content = IsTalmudTitle(book.Title)
             ? await DownloadTalmudTractateAsync(book.Title, book.SelectedVersion, progress, cancellationToken)
             : await DownloadWithRetryAsync(book.Title, book.SelectedVersion, progress, cancellationToken);
+        if (!IsTalmudTitle(book.Title) &&
+            !IsDownloadedBookJson(content) &&
+            book.SelectedVersion is not null)
+        {
+            progress.Report(0);
+            var fallbackContent = await DownloadTextApiPageAsync(book.Title, book.SelectedVersion, cancellationToken);
+            if (IsDownloadedBookJson(fallbackContent))
+            {
+                content = fallbackContent;
+            }
+
+            progress.Report(100);
+        }
+
         ValidateDownloadedBookJson(content, book.Title, book.SelectedVersion);
         var filePath = GetBookFilePath(book.Title, book.SelectedVersion);
         await File.WriteAllTextAsync(filePath, content, Encoding.UTF8, cancellationToken);

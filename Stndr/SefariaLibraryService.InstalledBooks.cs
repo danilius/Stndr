@@ -577,7 +577,8 @@ public sealed partial class SefariaLibraryService
             using var document = JsonDocument.Parse(json);
             var root = document.RootElement;
             var hasText = root.TryGetProperty("text", out var text) &&
-                text.ValueKind == JsonValueKind.Array;
+                (text.ValueKind == JsonValueKind.Array ||
+                 HasArrayTextChild(text));
             var hasPages = root.TryGetProperty("pages", out var pages) &&
                 pages.ValueKind == JsonValueKind.Array &&
                 pages.GetArrayLength() > 0;
@@ -591,6 +592,28 @@ public sealed partial class SefariaLibraryService
         {
             return false;
         }
+    }
+
+    private static bool HasArrayTextChild(JsonElement text)
+    {
+        if (text.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        if (text.TryGetProperty(string.Empty, out var defaultText) &&
+            defaultText.ValueKind == JsonValueKind.Array)
+        {
+            return true;
+        }
+
+        if (text.TryGetProperty("default", out defaultText) &&
+            defaultText.ValueKind == JsonValueKind.Array)
+        {
+            return true;
+        }
+
+        return text.EnumerateObject().Any(property => property.Value.ValueKind == JsonValueKind.Array);
     }
 
     private static void ApplyJsonMetadata(InstalledSefariaBook record, string json)

@@ -54,11 +54,13 @@ public partial class MainWindow
         public bool IsDisplayExpanded { get; set; } = true;
         public bool IsSedrotExpanded { get; set; } = true;
         public bool IsCommentariesExpanded { get; set; } = true;
+        public bool IsLinksExpanded { get; set; }
         public bool IsTextsExpanded { get; set; } = true;
         public bool ShowAliyot { get; set; }
         public bool IsSedraContentOpen { get; set; }
         public string SelectedSedraKey { get; set; } = string.Empty;
         public string SelectedCommentaryRef { get; set; } = string.Empty;
+        public List<string> SelectedLinkCategories { get; set; } = new();
         public bool IsCommentaryContentOpen { get; set; }
         public string SelectedCommentarySourceKey { get; set; } = AllCommentariesSelectionKey;
         public string SelectedCommentarySourceTitleEnglish { get; set; } = string.Empty;
@@ -85,33 +87,59 @@ public partial class MainWindow
         public bool IsDisplayExpanded { get; set; } = true;
         public bool IsSedrotExpanded { get; set; } = true;
         public bool IsCommentariesExpanded { get; set; } = true;
+        public bool IsLinksExpanded { get; set; }
         public bool IsTextsExpanded { get; set; } = true;
         public bool ShowAliyot { get; set; }
         public bool IsSedraContentOpen { get; set; }
         public string SelectedSedraKey { get; set; } = string.Empty;
         public ReaderDisplayRow? SelectedReaderRow { get; set; }
         public string SelectedCommentaryRef { get; set; } = string.Empty;
+        public string SelectedLinksRef { get; set; } = string.Empty;
+        public string LoadedLinksRef { get; set; } = string.Empty;
+        public string ExpandedLinkPreviewRef { get; set; } = string.Empty;
         public bool IsCommentaryContentOpen { get; set; }
         public string SelectedCommentarySourceKey { get; set; } = AllCommentariesSelectionKey;
         public string SelectedCommentarySourceTitleEnglish { get; set; } = string.Empty;
         public string SelectedCommentarySourceTitleHebrew { get; set; } = string.Empty;
         public HashSet<string> PinnedCommentarySourceKeys { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+        public HashSet<string> SelectedLinkCategories { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+        public HashSet<string> ExpandedLinkCategories { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+        public bool HasInitializedLinkCategorySelection { get; set; }
+        public bool IsLinkCategoryMoreExpanded { get; set; }
         public List<SefariaCommentaryItem> Commentaries { get; set; } = new();
+        public List<SefariaLinkItem> Links { get; set; } = new();
+        public SefariaLinkItem? ActiveLinkPreviewItem { get; set; }
+        public SefariaLinkPreview? ActiveLinkPreview { get; set; }
         public bool IsCommentaryLoading { get; set; }
+        public bool IsLinksLoading { get; set; }
+        public bool IsLinkPreviewLoading { get; set; }
+        public bool IsLinkWorkDownloadLoading { get; set; }
+        public bool IsLinkSourceTabLoading { get; set; }
+        public bool IsLinkSplitOpen { get; set; }
         public string CommentaryError { get; set; } = string.Empty;
+        public string LinksError { get; set; } = string.Empty;
+        public string LinkPreviewError { get; set; } = string.Empty;
         public CommentaryLanguage CommentaryLanguage { get; set; } = CommentaryLanguage.English;
         public CancellationTokenSource? CommentaryLoadCts { get; set; }
+        public CancellationTokenSource? LinksLoadCts { get; set; }
+        public CancellationTokenSource? LinkPreviewLoadCts { get; set; }
         public CancellationTokenSource? ReadingPositionSaveCts { get; set; }
         public ListBox? ReaderList { get; set; }
         public NativeWebView? ReaderWebView { get; set; }
         public double ReaderWebScrollOffset { get; set; }
         public bool HasAppliedInitialWebScroll { get; set; }
         public bool IsApplyingWebScrollRestore { get; set; }
+        public string PendingExactReferenceWithinWork { get; set; } = string.Empty;
         public Flyout? DisplayFlyout { get; set; }
         public bool IsReaderScrollTrackingAttached { get; set; }
         public TextBlock? TitleBlock { get; set; }
         public TextBlock? ChapterBlock { get; set; }
         public TextBlock? VersionBlock { get; set; }
+        public ColumnDefinition? LinkSplitSplitterColumn { get; set; }
+        public ColumnDefinition? LinkSplitContentColumn { get; set; }
+        public GridSplitter? LinkSplitSplitter { get; set; }
+        public Border? LinkSplitBorder { get; set; }
+        public ContentControl? LinkSplitContentHost { get; set; }
         public string CurrentChapterKey { get; set; } = string.Empty;
     }
 
@@ -154,6 +182,10 @@ public partial class MainWindow
         string EnglishTitle,
         string HebrewTitle,
         List<SefariaCommentaryItem> Items);
+
+    private sealed record LinkCategoryGroup(
+        string Category,
+        List<SefariaLinkItem> Items);
 
     private sealed class ReaderNavigationChapter
     {

@@ -47,6 +47,7 @@ public partial class MainWindow
                             FontSize = 24,
                             FontWeight = FontWeight.SemiBold
                         },
+                        CreateDataStorageFolderSettingRow(),
                         new TextBlock
                         {
                             Text = "Title language",
@@ -140,6 +141,7 @@ public partial class MainWindow
                             {
                                 _settings.HebrewCommentaryFontSize = size;
                                 _settingsService.Save(_settings);
+                                RefreshOpenLinkSplitViews();
                                 UpdateReaderTools();
                             }),
                         CreateFontSizeSettingRow(
@@ -151,6 +153,7 @@ public partial class MainWindow
                             {
                                 _settings.EnglishCommentaryFontSize = size;
                                 _settingsService.Save(_settings);
+                                RefreshOpenLinkSplitViews();
                                 UpdateReaderTools();
                             }),
                         CreateLetterCountSettingRow(
@@ -173,6 +176,83 @@ public partial class MainWindow
                             })
                     }
                 }
+            }
+        };
+    }
+
+    private Control CreateDataStorageFolderSettingRow()
+    {
+        var statusText = new TextBlock
+        {
+            Foreground = new SolidColorBrush(Color.Parse("#475467")),
+            TextWrapping = TextWrapping.Wrap
+        };
+
+        var textBox = new TextBox
+        {
+            MinWidth = 420,
+            Text = _settings.DataStorageFolder
+        };
+
+        void ApplyFolderSelection()
+        {
+            try
+            {
+                var nextFolder = AppSettingsService.NormalizeDataStorageFolder(textBox.Text);
+                textBox.Text = nextFolder;
+                if (string.Equals(_settings.DataStorageFolder, nextFolder, StringComparison.OrdinalIgnoreCase))
+                {
+                    statusText.Text = $"Using {nextFolder}";
+                    return;
+                }
+
+                _settings.DataStorageFolder = nextFolder;
+                _settingsService.Save(_settings);
+                _sefariaLibrary.SetStorageRootFolder(nextFolder);
+                statusText.Text = $"Using {nextFolder}";
+                RefreshInstalledBooksTree();
+                UpdateLibraryDetails();
+                RefreshOpenReaderTabs();
+                UpdateReaderTools();
+                _ = LoadSefariaLibraryAsync();
+            }
+            catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException or NotSupportedException)
+            {
+                statusText.Text = $"Could not use that folder: {ex.Message}";
+            }
+        }
+
+        textBox.LostFocus += (_, _) => ApplyFolderSelection();
+        textBox.KeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Enter)
+            {
+                ApplyFolderSelection();
+                e.Handled = true;
+            }
+        };
+
+        statusText.Text = $"Using {_settings.DataStorageFolder}";
+
+        return new StackPanel
+        {
+            Spacing = 6,
+            Margin = new Thickness(0, 0, 0, 8),
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = "Data storage folder",
+                    FontWeight = FontWeight.SemiBold
+                },
+                new TextBlock
+                {
+                    Text = "Shared root folder for settings, downloaded texts, and local Sefaria caches.",
+                    Foreground = new SolidColorBrush(Color.Parse("#475467")),
+                    TextWrapping = TextWrapping.Wrap
+                },
+                textBox,
+                statusText
             }
         };
     }

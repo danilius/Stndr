@@ -18,25 +18,42 @@ public sealed partial class SefariaLibraryService
     private const string IndexFileName = "sefaria_index.json";
     private const string InstalledBooksFileName = "installed-books.json";
     private const string CommentariesDbFileName = "commentaries.db";
+    private const string LinksDbFileName = "links.db";
 
     private static readonly HttpClient HttpClient = CreateHttpClient();
     private static readonly SemaphoreSlim CommentaryCacheGate = new(1, 1);
+    private static readonly SemaphoreSlim LinksCacheGate = new(1, 1);
 
     public SefariaLibraryService()
+        : this(null)
+    {
+    }
+
+    public SefariaLibraryService(string? storageRootFolder)
     {
         ProjectFolder = ResolveProjectFolder();
-        DataFolder = Path.Combine(ProjectFolder, "Data", SefariaFolderName);
-        IndexFilePath = Path.Combine(DataFolder, IndexFileName);
-        InstalledBooksFilePath = Path.Combine(DataFolder, InstalledBooksFileName);
-        CommentariesDbPath = Path.Combine(DataFolder, CommentariesDbFileName);
-        Directory.CreateDirectory(DataFolder);
+        SetStorageRootFolder(storageRootFolder);
     }
 
     public string ProjectFolder { get; }
-    public string DataFolder { get; }
-    public string IndexFilePath { get; }
-    public string InstalledBooksFilePath { get; }
-    public string CommentariesDbPath { get; }
+    public string StorageRootFolder { get; private set; } = string.Empty;
+    public string DataFolder { get; private set; } = string.Empty;
+    public string IndexFilePath { get; private set; } = string.Empty;
+    public string InstalledBooksFilePath { get; private set; } = string.Empty;
+    public string CommentariesDbPath { get; private set; } = string.Empty;
+    public string LinksDbPath { get; private set; } = string.Empty;
+
+    public void SetStorageRootFolder(string? storageRootFolder)
+    {
+        StorageRootFolder = AppSettingsService.NormalizeDataStorageFolder(storageRootFolder);
+        DataFolder = Path.Combine(StorageRootFolder, SefariaFolderName);
+        IndexFilePath = Path.Combine(DataFolder, IndexFileName);
+        InstalledBooksFilePath = Path.Combine(DataFolder, InstalledBooksFileName);
+        CommentariesDbPath = Path.Combine(DataFolder, CommentariesDbFileName);
+        LinksDbPath = Path.Combine(DataFolder, LinksDbFileName);
+        Directory.CreateDirectory(StorageRootFolder);
+        Directory.CreateDirectory(DataFolder);
+    }
 
     public async Task<SefariaCategoryNode> LoadLibraryAsync(CancellationToken cancellationToken)
     {
