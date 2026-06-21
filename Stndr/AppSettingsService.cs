@@ -109,4 +109,5 @@ public sealed class AppSettingsService
 
         return Path.Combine(Directory.GetCurrentDirectory(), "Stndr");
     }
+
 }

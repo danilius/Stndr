@@ -16,57 +16,12 @@ public sealed partial class SefariaLibraryService
 {
     public async Task<List<SefariaVersionOption>> GetAvailableVersionsAsync(string title, CancellationToken cancellationToken)
     {
-        var versions = new List<SefariaVersionOption>();
-        var sectionRef = GetVersionProbeRef(title);
-        var url = $"https://www.sefaria.org/api/v3/texts/{Uri.EscapeDataString(sectionRef)}?version=all";
-
-        using var response = await HttpClient.GetAsync(url, cancellationToken);
-        response.EnsureSuccessStatusCode();
-
-        var json = await response.Content.ReadAsStringAsync(cancellationToken);
-        using var document = JsonDocument.Parse(json);
-        if (!document.RootElement.TryGetProperty("available_versions", out var availableVersions) ||
-            availableVersions.ValueKind != JsonValueKind.Array)
+        if (TryGetCachedAvailableVersions(title, out var cachedVersions))
         {
-            return versions;
+            return cachedVersions;
         }
 
-        foreach (var item in availableVersions.EnumerateArray())
-        {
-            if (!item.TryGetProperty("versionTitle", out var versionTitleElement))
-            {
-                continue;
-            }
-
-            var versionTitle = versionTitleElement.GetString();
-            if (string.IsNullOrWhiteSpace(versionTitle))
-            {
-                continue;
-            }
-
-            var languageCode = item.TryGetProperty("language", out var langElement)
-                ? langElement.GetString()
-                : null;
-
-            var languageFamilyName = item.TryGetProperty("languageFamilyName", out var familyElement)
-                ? familyElement.GetString()
-                : null;
-
-            languageCode = NormalizeLanguageCode(languageCode, languageFamilyName);
-
-            versions.Add(new SefariaVersionOption
-            {
-                LanguageCode = languageCode,
-                LanguageFamilyName = languageFamilyName,
-                VersionTitle = versionTitle,
-                DisplayText = $"{versionTitle} ({languageCode})"
-            });
-        }
-
-        return versions
-            .GroupBy(v => $"{v.LanguageCode}|{v.VersionTitle}", StringComparer.OrdinalIgnoreCase)
-            .Select(g => g.First())
-            .ToList();
+        return new List<SefariaVersionOption>();
     }
 
     public async Task DownloadBookAsync(

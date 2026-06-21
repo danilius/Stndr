@@ -46,7 +46,7 @@ public sealed partial class SefariaLibraryService
 
     public List<InstalledSefariaBook> GetInstalledBooks()
     {
-        var installed = LoadInstalledBooks();
+        var installed = LoadInstalledBooks(true);
         var changed = false;
 
         foreach (var filePath in Directory.EnumerateFiles(DataFolder, "*.json"))
@@ -178,7 +178,7 @@ public sealed partial class SefariaLibraryService
 
     public void SaveReadingPosition(InstalledSefariaBook book, double verticalOffset)
     {
-        var installed = LoadInstalledBooks();
+        var installed = LoadInstalledBooks(true);
         var existing = installed.FirstOrDefault(item => string.Equals(item.Key, book.Key, StringComparison.Ordinal)) ??
             installed.FirstOrDefault(item => string.Equals(item.FilePath, book.FilePath, StringComparison.OrdinalIgnoreCase));
         if (existing is null)
@@ -447,21 +447,35 @@ public sealed partial class SefariaLibraryService
         List<float> CategoryOrders,
         float Order);
 
-    private List<InstalledSefariaBook> LoadInstalledBooks()
+    private List<InstalledSefariaBook> LoadInstalledBooks(bool forceRefresh = false)
     {
-        if (!File.Exists(InstalledBooksFilePath))
+        lock (_installedBooksCacheGate)
         {
-            return new List<InstalledSefariaBook>();
-        }
+            if (!forceRefresh && _installedBooksCache is not null)
+            {
+                return CloneInstalledBooks(_installedBooksCache);
+            }
 
-        try
-        {
-            var json = ReadJsonTextFile(InstalledBooksFilePath);
-            return JsonSerializer.Deserialize<List<InstalledSefariaBook>>(json) ?? new List<InstalledSefariaBook>();
-        }
-        catch
-        {
-            return new List<InstalledSefariaBook>();
+            List<InstalledSefariaBook> installed;
+            if (!File.Exists(InstalledBooksFilePath))
+            {
+                installed = new List<InstalledSefariaBook>();
+            }
+            else
+            {
+                try
+                {
+                    var json = ReadJsonTextFile(InstalledBooksFilePath);
+                    installed = JsonSerializer.Deserialize<List<InstalledSefariaBook>>(json) ?? new List<InstalledSefariaBook>();
+                }
+                catch
+                {
+                    installed = new List<InstalledSefariaBook>();
+                }
+            }
+
+            _installedBooksCache = CloneInstalledBooks(installed);
+            return CloneInstalledBooks(_installedBooksCache);
         }
     }
 
@@ -469,11 +483,15 @@ public sealed partial class SefariaLibraryService
     {
         var json = JsonSerializer.Serialize(installed, new JsonSerializerOptions { WriteIndented = true });
         File.WriteAllText(InstalledBooksFilePath, json, Encoding.UTF8);
+        lock (_installedBooksCacheGate)
+        {
+            _installedBooksCache = CloneInstalledBooks(installed);
+        }
     }
 
     private void UpsertInstalledBook(InstalledSefariaBook book)
     {
-        var installed = LoadInstalledBooks();
+        var installed = LoadInstalledBooks(true);
         var existing = installed.FindIndex(item => string.Equals(item.Key, book.Key, StringComparison.Ordinal));
         if (existing >= 0)
         {
@@ -708,5 +726,22 @@ public sealed partial class SefariaLibraryService
 
         record.LanguageCode = versionSegment[..languageSeparator].Trim().ToLowerInvariant();
         record.VersionTitle = versionSegment[(languageSeparator + 1)..].Trim();
+    }
+
+    private static List<InstalledSefariaBook> CloneInstalledBooks(IEnumerable<InstalledSefariaBook> installed)
+    {
+        return installed.Select(book => new InstalledSefariaBook
+        {
+            Title = book.Title,
+            HebrewTitle = book.HebrewTitle,
+            Categories = new List<string>(book.Categories),
+            HebrewCategories = new List<string?>(book.HebrewCategories),
+            CategoryOrders = new List<float>(book.CategoryOrders),
+            Order = book.Order,
+            LanguageCode = book.LanguageCode,
+            VersionTitle = book.VersionTitle,
+            FilePath = book.FilePath,
+            LastScrollOffset = book.LastScrollOffset
+        }).ToList();
     }
 }

@@ -61,9 +61,15 @@ public partial class MainWindow : Window
     private TextBlock? _libraryHebrewTitle;
     private TextBlock? _libraryDescription;
     private TextBlock? _libraryStatus;
+    private TextBlock? _libraryBookVersionLabel;
     private ComboBox? _libraryVersionBox;
+    private StackPanel? _libraryCategoryVersionPanel;
+    private ComboBox? _libraryCategoryHebrewVersionBox;
+    private ComboBox? _libraryCategoryEnglishVersionBox;
     private ProgressBar? _libraryProgress;
     private Button? _libraryDownloadButton;
+    private Button? _libraryDeleteHebrewButton;
+    private Button? _libraryDeleteTranslationButton;
     private Button? _libraryCancelButton;
 
     private ObservableCollection<TabItem>? _tabs;
@@ -81,7 +87,10 @@ public partial class MainWindow : Window
     private double _rightExpandedWidth = DefaultExpandedPanelWidth;
     private SefariaCategoryNode? _sefariaRoot;
     private SefariaBookNode? _selectedSefariaBook;
+    private SefariaCategoryNode? _selectedSefariaCategory;
     private CancellationTokenSource? _sefariaDownloadCts;
+    private CancellationTokenSource? _categoryInstallProgressCts;
+    private MainWindow.CategorySelectionProgress? _cachedCategoryProgress;
     private List<FontOption>? _allFontOptions;
     private List<FontOption>? _hebrewFontOptions;
 

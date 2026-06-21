@@ -17,12 +17,15 @@ public sealed partial class SefariaLibraryService
     private const string SefariaFolderName = "Sefaria";
     private const string IndexFileName = "sefaria_index.json";
     private const string InstalledBooksFileName = "installed-books.json";
+    private const string VersionMetadataFileName = "version-metadata.db";
     private const string CommentariesDbFileName = "commentaries.db";
     private const string LinksDbFileName = "links.db";
 
     private static readonly HttpClient HttpClient = CreateHttpClient();
     private static readonly SemaphoreSlim CommentaryCacheGate = new(1, 1);
     private static readonly SemaphoreSlim LinksCacheGate = new(1, 1);
+    private readonly object _installedBooksCacheGate = new();
+    private List<InstalledSefariaBook>? _installedBooksCache;
 
     public SefariaLibraryService()
         : this(null)
@@ -40,6 +43,7 @@ public sealed partial class SefariaLibraryService
     public string DataFolder { get; private set; } = string.Empty;
     public string IndexFilePath { get; private set; } = string.Empty;
     public string InstalledBooksFilePath { get; private set; } = string.Empty;
+    public string VersionMetadataDbPath { get; private set; } = string.Empty;
     public string CommentariesDbPath { get; private set; } = string.Empty;
     public string LinksDbPath { get; private set; } = string.Empty;
 
@@ -49,6 +53,7 @@ public sealed partial class SefariaLibraryService
         DataFolder = Path.Combine(StorageRootFolder, SefariaFolderName);
         IndexFilePath = Path.Combine(DataFolder, IndexFileName);
         InstalledBooksFilePath = Path.Combine(DataFolder, InstalledBooksFileName);
+        VersionMetadataDbPath = Path.Combine(DataFolder, VersionMetadataFileName);
         CommentariesDbPath = Path.Combine(DataFolder, CommentariesDbFileName);
         LinksDbPath = Path.Combine(DataFolder, LinksDbFileName);
         Directory.CreateDirectory(StorageRootFolder);
