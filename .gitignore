@@ -40,3 +40,7 @@ publish/
 *.zip
 *.msix
 *.appx
+
+# Local extractor output
+artifacts/sefaria-export/
+Tools/SefariaDumpExtractor/output/

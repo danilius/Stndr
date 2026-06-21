@@ -5,6 +5,10 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Stndr", "Stndr\Stndr.csproj", "{201EBF09-0FAA-495E-9EE0-EE34712B4957}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tools", "Tools", "{07C2787E-EAC7-C090-1BA3-A61EC2A24D84}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SefariaDumpExtractor", "Tools\SefariaDumpExtractor\SefariaDumpExtractor.csproj", "{B73FD44C-534B-4AAE-BB34-B0BF96517197}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -27,8 +31,23 @@ Global
 		{201EBF09-0FAA-495E-9EE0-EE34712B4957}.Release|x64.Build.0 = Release|Any CPU
 		{201EBF09-0FAA-495E-9EE0-EE34712B4957}.Release|x86.ActiveCfg = Release|Any CPU
 		{201EBF09-0FAA-495E-9EE0-EE34712B4957}.Release|x86.Build.0 = Release|Any CPU
+		{B73FD44C-534B-4AAE-BB34-B0BF96517197}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B73FD44C-534B-4AAE-BB34-B0BF96517197}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B73FD44C-534B-4AAE-BB34-B0BF96517197}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{B73FD44C-534B-4AAE-BB34-B0BF96517197}.Debug|x64.Build.0 = Debug|Any CPU
+		{B73FD44C-534B-4AAE-BB34-B0BF96517197}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{B73FD44C-534B-4AAE-BB34-B0BF96517197}.Debug|x86.Build.0 = Debug|Any CPU
+		{B73FD44C-534B-4AAE-BB34-B0BF96517197}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B73FD44C-534B-4AAE-BB34-B0BF96517197}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B73FD44C-534B-4AAE-BB34-B0BF96517197}.Release|x64.ActiveCfg = Release|Any CPU
+		{B73FD44C-534B-4AAE-BB34-B0BF96517197}.Release|x64.Build.0 = Release|Any CPU
+		{B73FD44C-534B-4AAE-BB34-B0BF96517197}.Release|x86.ActiveCfg = Release|Any CPU
+		{B73FD44C-534B-4AAE-BB34-B0BF96517197}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{B73FD44C-534B-4AAE-BB34-B0BF96517197} = {07C2787E-EAC7-C090-1BA3-A61EC2A24D84}
 	EndGlobalSection
 EndGlobal
