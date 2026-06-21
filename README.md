@@ -28,6 +28,37 @@ dotnet build .\Stndr.sln
 - `Stndr/Assets/` - application icons and visual assets.
 - `Stndr/Data/` - local settings, cached Sefaria index, downloaded texts, and commentary cache. This folder is generated locally and is not tracked by Git.
 
+## Sefaria metadata LiteDB ingestion (POC)
+
+This repository now includes a metadata-ingestion path that reads selected collections from a MongoDB dump archive (`*.tar.gz`) and writes a query-oriented LiteDB file.
+
+Run from repository root:
+
+```powershell
+dotnet run --project .\Stndr\Stndr.csproj -- --ingest-sefaria-metadata --dump "F:\Git Repos\Stendr\sefaria dump_small.tar.gz" --out "F:\Git Repos\Stendr\Stndr\Data\Sefaria\metadata.db"
+```
+
+Optional flag:
+
+- `--batch-size <int>` (default: `5000`)
+
+Collections populated:
+
+- `works` (from `index.bson`)
+- `versions` (from `texts.bson`, metadata only)
+- `categories` (from `category.bson`)
+- `terms` (from `term.bson`)
+- `title_lookup` (cross-entity normalized title lookup)
+- `link_edges` (bidirectional edges from `links.bson`)
+- `topic_links` (from `topic_links.bson`)
+- `ingestion_info` (ingestion summary and source dump info)
+
+Deterministic keying contract for source text JSON linkage:
+
+- `text_version_key = <workKey>|<languageCode>|<versionTitle>`
+- `json_file_name = <safeWorkKey>__<safeLanguage_versionTitle>.json` (or `__default.json` when version title is blank)
+- file-name sanitization uses the same invalid-character stripping helper as existing downloaded-text file paths.
+
 ## Notes
 
 - The app uses Sefaria APIs and locally cached Sefaria data.

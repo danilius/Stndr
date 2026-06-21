@@ -307,12 +307,7 @@ public sealed partial class SefariaLibraryService
 
     private static string GetSafeFileName(string value)
     {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return "unknown";
-        }
-
-        return string.Join("_", value.Split(Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries));
+        return SefariaFileNames.SanitizeForFileName(value);
     }
 
     private Dictionary<string, InstalledIndexOrder> BuildIndexOrderLookup()
