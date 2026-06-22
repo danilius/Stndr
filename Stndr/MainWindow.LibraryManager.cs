@@ -16,6 +16,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 
@@ -24,6 +25,8 @@ namespace Stndr;
 
 public partial class MainWindow
 {
+    private const double LibraryVersionDropdownWidth = 400;
+
     private sealed record CategoryBulkTarget(
         string ActionTitle,
         string Description,
@@ -40,6 +43,47 @@ public partial class MainWindow
         {
             return DisplayText;
         }
+    }
+
+    private sealed class SingleBookVersionChoice
+    {
+        public SefariaVersionOption? Version { get; init; }
+        public string DisplayText { get; init; } = string.Empty;
+        public bool IsNone { get; init; }
+
+        public override string ToString()
+        {
+            return DisplayText;
+        }
+    }
+
+    private static void ApplyVersionDropdownItemTooltips(ComboBox comboBox)
+    {
+        var itemStyle = new Style(selector => selector.OfType<ComboBoxItem>());
+        itemStyle.Setters.Add(new Setter(ToolTip.TipProperty, new Avalonia.Data.Binding(".")));
+        itemStyle.Setters.Add(new Setter(Layoutable.MaxWidthProperty, LibraryVersionDropdownWidth));
+        comboBox.Styles.Add(itemStyle);
+
+        var textStyle = new Style(selector => selector.OfType<ComboBoxItem>().Descendant().OfType<TextBlock>());
+        textStyle.Setters.Add(new Setter(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis));
+        comboBox.Styles.Add(textStyle);
+    }
+
+    private static void SetComboBoxSelectionToolTip(ComboBox? comboBox)
+    {
+        if (comboBox is null)
+        {
+            return;
+        }
+
+        var selectedText = comboBox.SelectedItem switch
+        {
+            SingleBookVersionChoice singleChoice => singleChoice.DisplayText,
+            CategoryVersionChoice categoryChoice => categoryChoice.DisplayText,
+            _ => comboBox.SelectedItem?.ToString() ?? string.Empty
+        };
+
+        ToolTip.SetTip(comboBox, string.IsNullOrWhiteSpace(selectedText) ? null : selectedText);
     }
 
     private Control CreateLibraryManagerView()
@@ -99,32 +143,102 @@ public partial class MainWindow
         };
         _libraryStatus = new TextBlock
         {
-            Text = $"Data folder: {_sefariaLibrary.StorageRootFolder}",
+            Text = _sefariaLibrary.IsConfigured
+                ? $"Data folder: {_sefariaLibrary.StorageRootFolder}"
+                : "No data folder set. Choose one in the Settings tab to download and manage texts.",
             TextWrapping = TextWrapping.Wrap
         };
         _libraryBookVersionLabel = new TextBlock
         {
-            Text = "Version",
+            Text = "Hebrew text",
             FontWeight = FontWeight.SemiBold
         };
         _libraryVersionBox = new ComboBox
         {
-            MinWidth = 320,
+            Width = LibraryVersionDropdownWidth,
+            MaxWidth = LibraryVersionDropdownWidth,
+            HorizontalAlignment = HorizontalAlignment.Left,
             IsEnabled = false
         };
+        ApplyVersionDropdownItemTooltips(_libraryVersionBox);
         _libraryVersionBox.SelectionChanged += OnLibraryVersionChanged;
+        _libraryTranslationVersionBox = new ComboBox
+        {
+            Width = LibraryVersionDropdownWidth,
+            MaxWidth = LibraryVersionDropdownWidth,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            IsEnabled = false
+        };
+        ApplyVersionDropdownItemTooltips(_libraryTranslationVersionBox);
+        _libraryTranslationVersionBox.SelectionChanged += OnLibraryTranslationVersionChanged;
+        _librarySingleHebrewActionButton = new Button
+        {
+            Content = "Download",
+            IsEnabled = false,
+            MinWidth = 120,
+            HorizontalAlignment = HorizontalAlignment.Left
+        };
+        _librarySingleHebrewActionButton.Click += async (_, _) => await DownloadOrDeleteSelectedHebrewAsync();
+        _librarySingleTranslationActionButton = new Button
+        {
+            Content = "Download",
+            IsEnabled = false,
+            MinWidth = 120,
+            HorizontalAlignment = HorizontalAlignment.Left
+        };
+        _librarySingleTranslationActionButton.Click += async (_, _) => await DownloadOrDeleteSelectedTranslationAsync();
+        _libraryBookVersionPanel = new StackPanel
+        {
+            Spacing = 8,
+            IsVisible = true,
+            Children =
+            {
+                _libraryBookVersionLabel,
+                _libraryVersionBox,
+                _librarySingleHebrewActionButton,
+                new TextBlock
+                {
+                    Text = "Translation",
+                    FontWeight = FontWeight.SemiBold
+                },
+                _libraryTranslationVersionBox,
+                _librarySingleTranslationActionButton
+            }
+        };
         _libraryCategoryHebrewVersionBox = new ComboBox
         {
-            MinWidth = 320,
+            Width = LibraryVersionDropdownWidth,
+            MaxWidth = LibraryVersionDropdownWidth,
+            HorizontalAlignment = HorizontalAlignment.Left,
             IsEnabled = false
         };
-        _libraryCategoryHebrewVersionBox.SelectionChanged += (_, _) => UpdateLibraryDetails();
+        ApplyVersionDropdownItemTooltips(_libraryCategoryHebrewVersionBox);
+        _libraryCategoryHebrewVersionBox.SelectionChanged += OnLibraryCategoryVersionChanged;
         _libraryCategoryEnglishVersionBox = new ComboBox
         {
-            MinWidth = 320,
+            Width = LibraryVersionDropdownWidth,
+            MaxWidth = LibraryVersionDropdownWidth,
+            HorizontalAlignment = HorizontalAlignment.Left,
             IsEnabled = false
         };
-        _libraryCategoryEnglishVersionBox.SelectionChanged += (_, _) => UpdateLibraryDetails();
+        ApplyVersionDropdownItemTooltips(_libraryCategoryEnglishVersionBox);
+        _libraryCategoryEnglishVersionBox.SelectionChanged += OnLibraryCategoryVersionChanged;
+        _libraryCategoryHebrewActionButton = new Button
+        {
+            Content = "Download",
+            IsEnabled = false,
+            MinWidth = 120,
+            HorizontalAlignment = HorizontalAlignment.Left
+        };
+        _libraryCategoryHebrewActionButton.Click += async (_, _) => await DownloadOrDeleteSelectedHebrewAsync();
+        _libraryCategoryTranslationActionButton = new Button
+        {
+            Content = "Download",
+            IsEnabled = false,
+            MinWidth = 120,
+            HorizontalAlignment = HorizontalAlignment.Left
+        };
+        _libraryCategoryTranslationActionButton.Click += async (_, _) => await DownloadOrDeleteSelectedTranslationAsync();
         _libraryCategoryVersionPanel = new StackPanel
         {
             Spacing = 8,
@@ -137,12 +251,14 @@ public partial class MainWindow
                     FontWeight = FontWeight.SemiBold
                 },
                 _libraryCategoryHebrewVersionBox,
+                _libraryCategoryHebrewActionButton,
                 new TextBlock
                 {
                     Text = "Translation",
                     FontWeight = FontWeight.SemiBold
                 },
-                _libraryCategoryEnglishVersionBox
+                _libraryCategoryEnglishVersionBox,
+                _libraryCategoryTranslationActionButton
             }
         };
 
@@ -153,29 +269,6 @@ public partial class MainWindow
             Height = 8,
             IsVisible = false
         };
-        _libraryDownloadButton = new Button
-        {
-            Content = "Download",
-            IsEnabled = false,
-            MinWidth = 100
-        };
-        _libraryDownloadButton.Click += async (_, _) => await DownloadOrDeleteSelectedBookAsync();
-        _libraryDeleteHebrewButton = new Button
-        {
-            Content = "Delete Hebrew",
-            IsEnabled = false,
-            MinWidth = 120,
-            IsVisible = false
-        };
-        _libraryDeleteHebrewButton.Click += async (_, _) => await DeleteSelectedCategoryHebrewAsync();
-        _libraryDeleteTranslationButton = new Button
-        {
-            Content = "Delete translation",
-            IsEnabled = false,
-            MinWidth = 140,
-            IsVisible = false
-        };
-        _libraryDeleteTranslationButton.Click += async (_, _) => await DeleteSelectedCategoryTranslationAsync();
 
         _libraryCancelButton = new Button
         {
@@ -204,8 +297,7 @@ public partial class MainWindow
                         Margin = new Thickness(0, 2, 0, 0)
                     },
                     _libraryDescription,
-                    _libraryBookVersionLabel,
-                    _libraryVersionBox,
+                    _libraryBookVersionPanel,
                     _libraryCategoryVersionPanel,
                     _libraryProgress,
                     new StackPanel
@@ -214,9 +306,6 @@ public partial class MainWindow
                         Spacing = 8,
                         Children =
                         {
-                            _libraryDownloadButton,
-                            _libraryDeleteHebrewButton,
-                            _libraryDeleteTranslationButton,
                             _libraryCancelButton
                         }
                     }
@@ -256,6 +345,16 @@ public partial class MainWindow
             return;
         }
 
+        if (!_sefariaLibrary.IsConfigured)
+        {
+            _libraryTree.ItemsSource = null;
+            _selectedSefariaBook = null;
+            _selectedSefariaCategory = null;
+            UpdateLibraryDetails();
+            _libraryStatus.Text = "No data folder set. Choose one in the Settings tab to download and manage texts.";
+            return;
+        }
+
         _libraryStatus.Text = "Loading Sefaria index...";
         _libraryTree.ItemsSource = null;
         _selectedSefariaBook = null;
@@ -265,6 +364,8 @@ public partial class MainWindow
         try
         {
             _sefariaRoot = await _sefariaLibrary.LoadLibraryAsync(CancellationToken.None);
+            _libraryStatus.Text = "Loading Sefaria versions...";
+            await PopulateLibraryBookVersionsAsync(_sefariaRoot);
             _libraryTree.ItemsSource = _sefariaRoot.Contents
                 .OrderBy(n => n.Order)
                 .Select(CreateLibraryTreeItem)
@@ -274,6 +375,26 @@ public partial class MainWindow
         catch (Exception ex)
         {
             _libraryStatus.Text = $"Failed to load Sefaria index: {ex.Message}";
+        }
+    }
+
+    private async Task PopulateLibraryBookVersionsAsync(SefariaCategoryNode root)
+    {
+        var versionsLookup = await _sefariaLibrary.GetAllAvailableVersionsLookupAsync(CancellationToken.None);
+        foreach (var book in EnumerateBooks(root))
+        {
+            if (versionsLookup.TryGetValue(book.Title, out var versions))
+            {
+                book.Versions = versions;
+            }
+            else
+            {
+                book.Versions = new List<SefariaVersionOption>();
+            }
+
+            book.SelectedVersion = book.Versions.FirstOrDefault(IsHebrewCategoryVersion) ?? book.Versions.FirstOrDefault();
+            book.IsVersionsLoaded = true;
+            book.IsLoadingVersions = false;
         }
     }
 
@@ -381,6 +502,7 @@ public partial class MainWindow
     {
         try
         {
+            var selectionVersion = Interlocked.Increment(ref _librarySelectionVersion);
             var horizontalOffset = _libraryTreeScrollViewer?.Offset.X ?? 0;
             var item = e.AddedItems.Count > 0 ? e.AddedItems[0] as TreeViewItem : null;
             item ??= _selectedLibraryTreeItem;
@@ -391,28 +513,34 @@ public partial class MainWindow
 
             if (_selectedSefariaBook is not null)
             {
+                var selectedBook = _selectedSefariaBook;
                 _cachedCategoryProgress = null;
                 CancelCategoryInstallProgressRefresh();
-                _ = EnsureVersionsLoadedAsync(_selectedSefariaBook);
-                Dispatcher.UIThread.Post(() =>
+                await EnsureVersionsLoadedAsync(selectedBook);
+                if (selectionVersion != Volatile.Read(ref _librarySelectionVersion) ||
+                    !ReferenceEquals(_selectedSefariaBook, selectedBook))
                 {
-                    UpdateSelectedBookDownloadedState();
-                    UpdateLibraryDetails();
-                    RestoreLibraryTreeHorizontalOffset(horizontalOffset);
-                }, DispatcherPriority.Background);
+                    return;
+                }
+                UpdateSelectedBookDownloadedState();
+                UpdateLibraryDetails();
+                RestoreLibraryTreeHorizontalOffset(horizontalOffset);
                 return;
             }
 
             if (_selectedSefariaCategory is not null && item is not null)
             {
+                var selectedCategory = _selectedSefariaCategory;
                 CancelCategoryInstallProgressRefresh();
                 _cachedCategoryProgress = null;
-                _ = EnsureCategoryVersionChoicesLoadedAsync(_selectedSefariaCategory, item);
-                Dispatcher.UIThread.Post(() =>
+                await EnsureCategoryVersionChoicesLoadedAsync(selectedCategory, item);
+                if (selectionVersion != Volatile.Read(ref _librarySelectionVersion) ||
+                    !ReferenceEquals(_selectedSefariaCategory, selectedCategory))
                 {
-                    UpdateLibraryDetails();
-                    RestoreLibraryTreeHorizontalOffset(horizontalOffset);
-                }, DispatcherPriority.Background);
+                    return;
+                }
+                UpdateLibraryDetails();
+                RestoreLibraryTreeHorizontalOffset(horizontalOffset);
             }
         }
         catch (Exception ex)
@@ -448,11 +576,11 @@ public partial class MainWindow
         }
     }
 
-    private Task EnsureVersionsLoadedAsync(SefariaBookNode book)
+    private async Task EnsureVersionsLoadedAsync(SefariaBookNode book)
     {
         if (book.IsVersionsLoaded || book.IsLoadingVersions)
         {
-            return Task.CompletedTask;
+            return;
         }
 
         book.IsLoadingVersions = true;
@@ -466,13 +594,12 @@ public partial class MainWindow
             if (_sefariaLibrary.TryGetCachedAvailableVersions(book.Title, out var cachedVersions))
             {
                 book.Versions = cachedVersions;
-                book.SelectedVersion = book.Versions.FirstOrDefault();
-                book.IsVersionsLoaded = true;
-                book.IsLoadingVersions = false;
-                return Task.CompletedTask;
             }
-            book.Versions = new List<SefariaVersionOption>();
-            book.SelectedVersion = null;
+            else
+            {
+                book.Versions = await _sefariaLibrary.GetAvailableVersionsAsync(book.Title, CancellationToken.None);
+            }
+            book.SelectedVersion = book.Versions.FirstOrDefault();
             book.IsVersionsLoaded = true;
             book.IsLoadingVersions = false;
         }
@@ -484,17 +611,15 @@ public partial class MainWindow
                 _libraryStatus.Text = $"Could not load versions for {book.Title}: {ex.Message}";
             }
         }
-
-        return Task.CompletedTask;
     }
 
-    private Task EnsureCategoryVersionChoicesLoadedAsync(SefariaCategoryNode category, TreeViewItem item)
+    private async Task EnsureCategoryVersionChoicesLoadedAsync(SefariaCategoryNode category, TreeViewItem item)
     {
         try
         {
             if (_libraryCategoryHebrewVersionBox is null || _libraryCategoryEnglishVersionBox is null)
             {
-                return Task.CompletedTask;
+                return;
             }
 
             if (!TryCreateCategoryBulkTarget(category, item, out var target))
@@ -503,7 +628,7 @@ public partial class MainWindow
                 _libraryCategoryEnglishVersionBox.ItemsSource = null;
                 _libraryCategoryHebrewVersionBox.IsEnabled = false;
                 _libraryCategoryEnglishVersionBox.IsEnabled = false;
-                return Task.CompletedTask;
+                return;
             }
 
             var representativeBook = target.Books
@@ -516,15 +641,15 @@ public partial class MainWindow
                 _libraryCategoryEnglishVersionBox.ItemsSource = null;
                 _libraryCategoryHebrewVersionBox.IsEnabled = false;
                 _libraryCategoryEnglishVersionBox.IsEnabled = false;
-                return Task.CompletedTask;
+                return;
             }
 
-            if (!_sefariaLibrary.TryGetCachedAvailableVersions(representativeBook.Title, out var representativeVersions))
+            if (!representativeBook.IsVersionsLoaded)
             {
-                representativeVersions = new List<SefariaVersionOption>();
+                var representativeVersions = await _sefariaLibrary.GetAvailableVersionsAsync(representativeBook.Title, CancellationToken.None);
+                representativeBook.Versions = representativeVersions;
+                representativeBook.IsVersionsLoaded = true;
             }
-
-            representativeBook.Versions = representativeVersions;
             _libraryCategoryHebrewVersionBox.ItemsSource = BuildCategoryVersionChoices(new List<SefariaBookNode> { representativeBook }, true, "Default Hebrew (category)");
             _libraryCategoryEnglishVersionBox.ItemsSource = BuildCategoryVersionChoices(new List<SefariaBookNode> { representativeBook }, false, "Default translation (category)");
             _libraryCategoryHebrewVersionBox.SelectedIndex = 0;
@@ -532,7 +657,6 @@ public partial class MainWindow
             _libraryCategoryHebrewVersionBox.IsEnabled = !_isSefariaDownloading;
             _libraryCategoryEnglishVersionBox.IsEnabled = !_isSefariaDownloading;
             ScheduleCategoryInstallProgressRefresh(target);
-            return Task.CompletedTask;
         }
         catch (Exception ex)
         {
@@ -540,7 +664,6 @@ public partial class MainWindow
             {
                 _libraryStatus.Text = $"Failed to load category versions: {ex.Message}";
             }
-            return Task.CompletedTask;
         }
     }
 
@@ -588,12 +711,48 @@ public partial class MainWindow
             return false;
         }
 
+        if (LooksLikeTranslationVersionTitle(version.VersionTitle))
+        {
+            return false;
+        }
+
         if (string.IsNullOrWhiteSpace(version.LanguageFamilyName))
         {
             return true;
         }
 
         return string.Equals(version.LanguageFamilyName, "hebrew", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool LooksLikeTranslationVersionTitle(string? versionTitle)
+    {
+        if (string.IsNullOrWhiteSpace(versionTitle))
+        {
+            return false;
+        }
+
+        var normalized = versionTitle.ToLowerInvariant();
+        if (normalized.Contains("translation") ||
+            normalized.Contains("translated") ||
+            normalized.Contains("trans.") ||
+            normalized.Contains(" trans "))
+        {
+            return true;
+        }
+
+        var start = normalized.LastIndexOf("[", StringComparison.Ordinal);
+        var end = normalized.LastIndexOf("]", StringComparison.Ordinal);
+        if (start >= 0 && end > start)
+        {
+            var code = normalized[(start + 1)..end].Trim();
+            if (!string.IsNullOrWhiteSpace(code) &&
+                !string.Equals(code, "he", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static List<string> GetCategoryPath(TreeViewItem item)
@@ -716,55 +875,114 @@ public partial class MainWindow
 
     private void OnLibraryVersionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        if (_selectedSefariaBook is null || _libraryVersionBox?.SelectedItem is not SefariaVersionOption version)
+        if (_suppressLibraryVersionChangeEvents)
         {
             return;
         }
 
-        _selectedSefariaBook.SelectedVersion = version;
+        if (_selectedSefariaBook is null ||
+            _libraryVersionBox?.SelectedItem is not SingleBookVersionChoice choice ||
+            choice.Version is null)
+        {
+            return;
+        }
+
+        _selectedSefariaBook.SelectedVersion = choice.Version;
         UpdateSelectedBookDownloadedState();
         UpdateLibraryDetails();
     }
 
-    private async Task DownloadOrDeleteSelectedBookAsync()
+    private void OnLibraryTranslationVersionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressLibraryVersionChangeEvents)
+        {
+            return;
+        }
+
+        if (_selectedSefariaBook is null)
+        {
+            return;
+        }
+
+        UpdateSelectedBookDownloadedState();
+        UpdateLibraryDetails();
+    }
+
+    private async Task DownloadOrDeleteSelectedHebrewAsync()
+    {
+        if (_selectedSefariaBook is not null)
+        {
+            await DownloadOrDeleteSelectedSingleBookLanguageAsync(downloadHebrew: true);
+            return;
+        }
+
+        if (_selectedSefariaCategory is null ||
+            _selectedLibraryTreeItem is null ||
+            !TryCreateCategoryBulkTarget(_selectedSefariaCategory, _selectedLibraryTreeItem, out var categoryTarget))
+        {
+            return;
+        }
+
+        var installProgress = _cachedCategoryProgress ?? GetSelectedCategoryInstallProgress(
+            categoryTarget,
+            _libraryCategoryHebrewVersionBox?.SelectedItem as CategoryVersionChoice,
+            _libraryCategoryEnglishVersionBox?.SelectedItem as CategoryVersionChoice);
+        var hebrewFullyInstalled = installProgress.TotalBooks > 0 && installProgress.HebrewInstalledBooks == installProgress.TotalBooks;
+        if (hebrewFullyInstalled)
+        {
+            await DeleteSelectedCategoryHebrewAsync();
+        }
+        else
+        {
+            await DownloadCategoryAsync(categoryTarget, includeHebrew: true, includeTranslation: false);
+        }
+    }
+
+    private async Task DownloadOrDeleteSelectedTranslationAsync()
+    {
+        if (_selectedSefariaBook is not null)
+        {
+            await DownloadOrDeleteSelectedSingleBookLanguageAsync(downloadHebrew: false);
+            return;
+        }
+
+        if (_selectedSefariaCategory is null ||
+            _selectedLibraryTreeItem is null ||
+            !TryCreateCategoryBulkTarget(_selectedSefariaCategory, _selectedLibraryTreeItem, out var categoryTarget))
+        {
+            return;
+        }
+
+        var installProgress = _cachedCategoryProgress ?? GetSelectedCategoryInstallProgress(
+            categoryTarget,
+            _libraryCategoryHebrewVersionBox?.SelectedItem as CategoryVersionChoice,
+            _libraryCategoryEnglishVersionBox?.SelectedItem as CategoryVersionChoice);
+        var translationFullyInstalled = installProgress.TotalBooks > 0 && installProgress.TranslationInstalledBooks == installProgress.TotalBooks;
+        if (translationFullyInstalled)
+        {
+            await DeleteSelectedCategoryTranslationAsync();
+        }
+        else
+        {
+            await DownloadCategoryAsync(categoryTarget, includeHebrew: false, includeTranslation: true);
+        }
+    }
+
+    private async Task DownloadOrDeleteSelectedSingleBookLanguageAsync(bool downloadHebrew)
     {
         if (_selectedSefariaBook is null)
         {
-            if (_selectedSefariaCategory is not null &&
-                _selectedLibraryTreeItem is not null &&
-                TryCreateCategoryBulkTarget(_selectedSefariaCategory, _selectedLibraryTreeItem, out var categoryTarget))
-            {
-                if (_cachedCategoryProgress is not null && _cachedCategoryProgress.IsSelectedPairFullyInstalled)
-                {
-                    await DeleteCategoryAsync(categoryTarget);
-                }
-                else
-                {
-                    await DownloadCategoryAsync(categoryTarget);
-                }
-            }
             return;
         }
 
         await EnsureVersionsLoadedAsync(_selectedSefariaBook);
-        UpdateSelectedBookDownloadedState();
-
-        if (_selectedSefariaBook.IsDownloaded)
+        var book = _selectedSefariaBook;
+        var selectedVersion = downloadHebrew ? GetSelectedSingleBookHebrewVersion(book) : GetSelectedSingleBookTranslationVersion();
+        if (selectedVersion is null)
         {
-            try
-            {
-                CloseReaderTabsForBook(_selectedSefariaBook);
-                _sefariaLibrary.DeleteBook(_selectedSefariaBook);
-                _selectedSefariaBook.IsDownloaded = false;
-                _selectedSefariaBook.DownloadProgress = 0;
-                RefreshInstalledBooksTree();
-                UpdateLibraryDetails();
-            }
-            catch (Exception ex)
-            {
-                SetLibraryStatus($"Failed to delete {_selectedSefariaBook.Title}: {ex.Message}");
-            }
-
+            SetLibraryStatus(downloadHebrew
+                ? $"No Hebrew version is available for {book.Title}."
+                : $"No translation is selected for {book.Title}.");
             return;
         }
 
@@ -774,43 +992,57 @@ public partial class MainWindow
             return;
         }
 
+        var isInstalled = HasInstalledExactVersion(book.Title, selectedVersion);
+        if (isInstalled)
+        {
+            try
+            {
+                CloseReaderTabsForBook(book);
+                _sefariaLibrary.DeleteBook(CreateBookVersionTarget(book, selectedVersion));
+                book.IsDownloaded = IsSelectedSingleBookPairInstalled(book);
+                RefreshInstalledBooksTree();
+                RefreshOpenReaderTabForBook(book);
+                SetLibraryStatus($"{(downloadHebrew ? "Hebrew" : "Translation")} deleted for {book.Title}.");
+            }
+            catch (Exception ex)
+            {
+                SetLibraryStatus($"Failed to delete {book.Title}: {ex.Message}");
+            }
+
+            UpdateLibraryDetails();
+            return;
+        }
+
         _isSefariaDownloading = true;
-        _selectedSefariaBook.IsDownloading = true;
-        _selectedSefariaBook.DownloadProgress = 0;
+        book.IsDownloading = true;
+        book.DownloadProgress = 0;
         _sefariaDownloadCts = new CancellationTokenSource();
         UpdateLibraryDetails();
 
         try
         {
-            var book = _selectedSefariaBook;
-            var requestedVersion = book.SelectedVersion;
-
-            await DownloadBookVersionAsync(book, requestedVersion, _sefariaDownloadCts.Token);
-            book.IsDownloaded = true;
+            SetLibraryStatus($"Downloading {book.Title}: {(downloadHebrew ? "Hebrew" : "Translation")}");
+            await DownloadBookVersionAsync(book, selectedVersion, _sefariaDownloadCts.Token);
+            book.IsDownloaded = IsSelectedSingleBookPairInstalled(book);
             book.DownloadProgress = 100;
-
-            var downloadedDefaultHebrew = await DownloadDefaultHebrewFallbackIfNeededAsync(book, requestedVersion, _sefariaDownloadCts.Token);
-
             RefreshInstalledBooksTree();
             RefreshOpenReaderTabForBook(book);
-            SetLibraryStatus(downloadedDefaultHebrew
-                ? $"Downloaded {book.Title} and the default Hebrew text."
-                : $"Downloaded {book.Title} to {_sefariaLibrary.GetExistingDownloadPath(book)}");
+            SetLibraryStatus($"{(downloadHebrew ? "Hebrew" : "Translation")} downloaded for {book.Title}.");
         }
         catch (OperationCanceledException)
         {
-            _selectedSefariaBook.DownloadProgress = 0;
-            SetLibraryStatus($"Cancelled download of {_selectedSefariaBook.Title}.");
+            book.DownloadProgress = 0;
+            SetLibraryStatus($"Cancelled download of {book.Title}.");
         }
         catch (Exception ex)
         {
-            _selectedSefariaBook.DownloadProgress = 0;
+            book.DownloadProgress = 0;
             SetLibraryStatus($"Download failed: {ex.Message}");
         }
         finally
         {
             _isSefariaDownloading = false;
-            _selectedSefariaBook.IsDownloading = false;
+            book.IsDownloading = false;
             _sefariaDownloadCts?.Dispose();
             _sefariaDownloadCts = null;
             UpdateSelectedBookDownloadedState();
@@ -843,43 +1075,7 @@ public partial class MainWindow
         }
     }
 
-    private async Task<bool> DownloadDefaultHebrewFallbackIfNeededAsync(
-        SefariaBookNode book,
-        SefariaVersionOption? requestedVersion,
-        CancellationToken cancellationToken)
-    {
-        if (!IsEnglishVersion(requestedVersion))
-        {
-            return false;
-        }
-
-        var installedVersions = _sefariaLibrary.GetInstalledVersionsForTitle(book.Title);
-        if (installedVersions.Any(SefariaLibraryService.IsHebrew))
-        {
-            return false;
-        }
-
-        var defaultHebrewVersion = book.Versions.FirstOrDefault(IsHebrewVersion);
-        if (defaultHebrewVersion is null)
-        {
-            return false;
-        }
-
-        await DownloadBookVersionAsync(book, defaultHebrewVersion, cancellationToken);
-        return true;
-    }
-
-    private static bool IsEnglishVersion(SefariaVersionOption? version)
-    {
-        return string.Equals(version?.LanguageCode, "en", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool IsHebrewVersion(SefariaVersionOption version)
-    {
-        return string.Equals(version.LanguageCode, "he", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private async Task DownloadCategoryAsync(CategoryBulkTarget target)
+    private async Task DownloadCategoryAsync(CategoryBulkTarget target, bool includeHebrew, bool includeTranslation)
     {
         if (_isSefariaDownloading)
         {
@@ -917,7 +1113,7 @@ public partial class MainWindow
                 var hasHebrew = HasInstalledMatchingSelection(installedVersions, true, hebrewChoice);
                 var hasTranslation = HasInstalledMatchingSelection(installedVersions, false, englishChoice);
 
-                if (!hasHebrew)
+                if (includeHebrew && !hasHebrew)
                 {
                     var hebrewVersion = SelectBulkVersion(book, true, hebrewChoice);
                     if (hebrewVersion is null)
@@ -932,7 +1128,7 @@ public partial class MainWindow
                     }
                 }
 
-                if (!hasTranslation)
+                if (includeTranslation && !hasTranslation)
                 {
                     var englishVersion = SelectBulkVersion(book, false, englishChoice);
                     if (englishVersion is null)
@@ -1247,6 +1443,91 @@ public partial class MainWindow
                matchingVersions.FirstOrDefault();
     }
 
+    private static List<SingleBookVersionChoice> BuildSingleBookVersionChoices(
+        IEnumerable<SefariaVersionOption> versions,
+        bool hebrewChoices,
+        bool includeNoneOption)
+    {
+        var choices = new List<SingleBookVersionChoice>();
+        choices.AddRange(versions
+            .Where(version => hebrewChoices ? IsHebrewCategoryVersion(version) : !IsHebrewCategoryVersion(version))
+            .Select(version => new SingleBookVersionChoice
+            {
+                Version = version,
+                DisplayText = string.IsNullOrWhiteSpace(version.DisplayText) ? version.VersionTitle : version.DisplayText
+            }));
+
+        if (includeNoneOption)
+        {
+            choices.Add(new SingleBookVersionChoice
+            {
+                Version = null,
+                IsNone = true,
+                DisplayText = "No translation"
+            });
+        }
+
+        return choices;
+    }
+
+    private SefariaVersionOption? GetSelectedSingleBookHebrewVersion(SefariaBookNode book)
+    {
+        if (_libraryVersionBox?.SelectedItem is SingleBookVersionChoice { Version: not null } selected)
+        {
+            return selected.Version;
+        }
+
+        return book.Versions.FirstOrDefault(IsHebrewCategoryVersion) ?? book.Versions.FirstOrDefault();
+    }
+
+    private SefariaVersionOption? GetSelectedSingleBookTranslationVersion()
+    {
+        if (_libraryTranslationVersionBox?.SelectedItem is not SingleBookVersionChoice selected)
+        {
+            if (_selectedSefariaBook is null)
+            {
+                return null;
+            }
+
+            return _selectedSefariaBook.Versions.FirstOrDefault(version => !IsHebrewCategoryVersion(version));
+        }
+
+        if (selected.IsNone)
+        {
+            return null;
+        }
+
+        return selected.Version;
+    }
+
+    private bool HasInstalledExactVersion(string title, SefariaVersionOption version)
+    {
+        return _sefariaLibrary.GetInstalledVersionSummariesForTitle(title).Any(installed =>
+            string.Equals(installed.LanguageCode, version.LanguageCode, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(installed.VersionTitle, version.VersionTitle, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private bool IsSelectedSingleBookPairInstalled(SefariaBookNode book)
+    {
+        var selectedHebrew = GetSelectedSingleBookHebrewVersion(book);
+        var selectedTranslation = GetSelectedSingleBookTranslationVersion();
+        var hasHebrew = selectedHebrew is null || HasInstalledExactVersion(book.Title, selectedHebrew);
+        var hasTranslation = selectedTranslation is null || HasInstalledExactVersion(book.Title, selectedTranslation);
+        return hasHebrew && hasTranslation;
+    }
+
+    private static SefariaBookNode CreateBookVersionTarget(SefariaBookNode source, SefariaVersionOption version)
+    {
+        return new SefariaBookNode
+        {
+            Title = source.Title,
+            HebrewTitle = source.HebrewTitle,
+            Categories = source.Categories,
+            PrimaryCategory = source.PrimaryCategory,
+            SelectedVersion = version
+        };
+    }
+
     private void UpdateSelectedBookDownloadedState()
     {
         if (_selectedSefariaBook is null)
@@ -1254,7 +1535,46 @@ public partial class MainWindow
             return;
         }
 
-        _selectedSefariaBook.IsDownloaded = _sefariaLibrary.IsBookDownloaded(_selectedSefariaBook);
+        _selectedSefariaBook.IsDownloaded = IsSelectedSingleBookPairInstalled(_selectedSefariaBook);
+    }
+
+    private void PopulateSingleBookVersionBoxes(SefariaBookNode book)
+    {
+        if (_libraryVersionBox is null || _libraryTranslationVersionBox is null)
+        {
+            return;
+        }
+
+        var hebrewChoices = BuildSingleBookVersionChoices(book.Versions, true, false);
+        if (hebrewChoices.Count == 0)
+        {
+            hebrewChoices = book.Versions
+                .Select(version => new SingleBookVersionChoice
+                {
+                    Version = version,
+                    DisplayText = string.IsNullOrWhiteSpace(version.DisplayText) ? version.VersionTitle : version.DisplayText
+                })
+                .ToList();
+        }
+
+        var translationChoices = BuildSingleBookVersionChoices(book.Versions, false, true);
+
+        _suppressLibraryVersionChangeEvents = true;
+        try
+        {
+            _libraryVersionBox.ItemsSource = hebrewChoices;
+            _libraryTranslationVersionBox.ItemsSource = translationChoices;
+            _libraryVersionBox.SelectedItem = hebrewChoices.FirstOrDefault(choice => choice.Version is not null);
+            _libraryTranslationVersionBox.SelectedItem = translationChoices.FirstOrDefault(choice => choice.Version is not null)
+                ?? translationChoices.FirstOrDefault();
+        }
+        finally
+        {
+            _suppressLibraryVersionChangeEvents = false;
+        }
+
+        book.SelectedVersion = (_libraryVersionBox.SelectedItem as SingleBookVersionChoice)?.Version ?? book.SelectedVersion;
+        _libraryVersionBoxesBook = book;
     }
 
     private void UpdateLibraryDetails()
@@ -1263,14 +1583,17 @@ public partial class MainWindow
             _libraryHebrewTitle is null ||
             _libraryDescription is null ||
             _libraryBookVersionLabel is null ||
+            _libraryBookVersionPanel is null ||
             _libraryVersionBox is null ||
+            _libraryTranslationVersionBox is null ||
             _libraryCategoryVersionPanel is null ||
             _libraryCategoryHebrewVersionBox is null ||
             _libraryCategoryEnglishVersionBox is null ||
             _libraryProgress is null ||
-            _libraryDownloadButton is null ||
-            _libraryDeleteHebrewButton is null ||
-            _libraryDeleteTranslationButton is null ||
+            _librarySingleHebrewActionButton is null ||
+            _librarySingleTranslationActionButton is null ||
+            _libraryCategoryHebrewActionButton is null ||
+            _libraryCategoryTranslationActionButton is null ||
             _libraryCancelButton is null)
         {
             return;
@@ -1281,22 +1604,34 @@ public partial class MainWindow
             _libraryTitle.Text = FormatTitle(_selectedSefariaBook.Title, _selectedSefariaBook.HebrewTitle);
             _libraryHebrewTitle.Text = string.Empty;
             _libraryDescription.Text = GetBookDescription(_selectedSefariaBook);
-            _libraryBookVersionLabel.IsVisible = true;
-            _libraryVersionBox.IsVisible = true;
+            _libraryBookVersionPanel.IsVisible = true;
             _libraryCategoryVersionPanel.IsVisible = false;
-            _libraryVersionBox.ItemsSource = _selectedSefariaBook.Versions;
-            _libraryVersionBox.SelectedItem = _selectedSefariaBook.SelectedVersion;
-            _libraryVersionBox.IsEnabled = _selectedSefariaBook.Versions.Count > 0 && !_isSefariaDownloading;
+
+            if (!ReferenceEquals(_libraryVersionBoxesBook, _selectedSefariaBook))
+            {
+                PopulateSingleBookVersionBoxes(_selectedSefariaBook);
+            }
+
+            var hebrewChoiceCount = (_libraryVersionBox.ItemsSource as IReadOnlyCollection<SingleBookVersionChoice>)?.Count ?? 0;
+            var translationChoiceCount = (_libraryTranslationVersionBox.ItemsSource as IReadOnlyCollection<SingleBookVersionChoice>)?.Count ?? 0;
+
+            SetComboBoxSelectionToolTip(_libraryVersionBox);
+            SetComboBoxSelectionToolTip(_libraryTranslationVersionBox);
+
+            _libraryVersionBox.IsEnabled = hebrewChoiceCount > 0 && !_isSefariaDownloading;
+            _libraryTranslationVersionBox.IsEnabled = translationChoiceCount > 0 && !_isSefariaDownloading;
 
             _libraryProgress.Value = _selectedSefariaBook.DownloadProgress;
             _libraryProgress.IsVisible = _selectedSefariaBook.IsDownloading;
 
-            _libraryDownloadButton.Content = _selectedSefariaBook.IsDownloaded ? "Delete" : "Download";
-            _libraryDownloadButton.IsEnabled = !_isSefariaDownloading && !_selectedSefariaBook.IsLoadingVersions;
-            _libraryDeleteHebrewButton.IsVisible = false;
-            _libraryDeleteHebrewButton.IsEnabled = false;
-            _libraryDeleteTranslationButton.IsVisible = false;
-            _libraryDeleteTranslationButton.IsEnabled = false;
+            var selectedHebrewVersion = GetSelectedSingleBookHebrewVersion(_selectedSefariaBook);
+            var selectedTranslationVersion = GetSelectedSingleBookTranslationVersion();
+            var hasHebrewInstalled = selectedHebrewVersion is not null && HasInstalledExactVersion(_selectedSefariaBook.Title, selectedHebrewVersion);
+            var hasTranslationInstalled = selectedTranslationVersion is not null && HasInstalledExactVersion(_selectedSefariaBook.Title, selectedTranslationVersion);
+            _librarySingleHebrewActionButton.Content = hasHebrewInstalled ? "Delete" : "Download";
+            _librarySingleHebrewActionButton.IsEnabled = !_isSefariaDownloading && !_selectedSefariaBook.IsLoadingVersions && selectedHebrewVersion is not null;
+            _librarySingleTranslationActionButton.Content = hasTranslationInstalled ? "Delete" : "Download";
+            _librarySingleTranslationActionButton.IsEnabled = !_isSefariaDownloading && !_selectedSefariaBook.IsLoadingVersions && selectedTranslationVersion is not null;
             _libraryCancelButton.IsEnabled = _selectedSefariaBook.IsDownloading;
             return;
         }
@@ -1311,38 +1646,41 @@ public partial class MainWindow
             _libraryDescription.Text = installProgress is null
                 ? $"{categoryTarget.Description}{Environment.NewLine}Installed (selected pair): checking..."
                 : $"{categoryTarget.Description}{Environment.NewLine}Installed (selected pair): {installProgress.SelectedPairInstalledBooks}/{installProgress.TotalBooks} books";
-            _libraryBookVersionLabel.IsVisible = false;
-            _libraryVersionBox.IsVisible = false;
+            _libraryBookVersionPanel.IsVisible = false;
             _libraryCategoryVersionPanel.IsVisible = true;
             _libraryCategoryHebrewVersionBox.IsEnabled = !_isSefariaDownloading;
             _libraryCategoryEnglishVersionBox.IsEnabled = !_isSefariaDownloading;
             _libraryProgress.IsVisible = _isSefariaDownloading;
-            _libraryDownloadButton.Content = installProgress is not null && installProgress.IsSelectedPairFullyInstalled ? "Delete" : "Download all";
-            _libraryDownloadButton.IsEnabled = !_isSefariaDownloading && categoryTarget.Books.Count > 0;
-            _libraryDeleteHebrewButton.IsVisible = true;
-            _libraryDeleteHebrewButton.IsEnabled = !_isSefariaDownloading && installProgress is not null && installProgress.HebrewInstalledBooks > 0;
-            _libraryDeleteTranslationButton.IsVisible = true;
-            _libraryDeleteTranslationButton.IsEnabled = !_isSefariaDownloading && installProgress is not null && installProgress.TranslationInstalledBooks > 0;
+            var hebrewFullyInstalled = installProgress is not null && installProgress.TotalBooks > 0 && installProgress.HebrewInstalledBooks == installProgress.TotalBooks;
+            var translationFullyInstalled = installProgress is not null && installProgress.TotalBooks > 0 && installProgress.TranslationInstalledBooks == installProgress.TotalBooks;
+            _libraryCategoryHebrewActionButton.Content = hebrewFullyInstalled ? "Delete" : "Download";
+            _libraryCategoryHebrewActionButton.IsEnabled = !_isSefariaDownloading && categoryTarget.Books.Count > 0;
+            _libraryCategoryTranslationActionButton.Content = translationFullyInstalled ? "Delete" : "Download";
+            _libraryCategoryTranslationActionButton.IsEnabled = !_isSefariaDownloading && categoryTarget.Books.Count > 0;
             _libraryCancelButton.IsEnabled = _isSefariaDownloading;
+            SetComboBoxSelectionToolTip(_libraryCategoryHebrewVersionBox);
+            SetComboBoxSelectionToolTip(_libraryCategoryEnglishVersionBox);
             return;
         }
 
         _libraryTitle.Text = "Select a book";
         _libraryHebrewTitle.Text = string.Empty;
         _libraryDescription.Text = "Choose a book from the library tree to see its description.";
-        _libraryBookVersionLabel.IsVisible = true;
-        _libraryVersionBox.IsVisible = true;
+        _libraryBookVersionPanel.IsVisible = true;
         _libraryCategoryVersionPanel.IsVisible = false;
         _libraryVersionBox.ItemsSource = null;
+        _libraryTranslationVersionBox.ItemsSource = null;
+        _libraryVersionBoxesBook = null;
         _libraryVersionBox.IsEnabled = false;
+        _libraryTranslationVersionBox.IsEnabled = false;
         _libraryProgress.IsVisible = false;
-        _libraryDownloadButton.Content = "Download";
-        _libraryDownloadButton.IsEnabled = false;
-        _libraryDeleteHebrewButton.IsVisible = false;
-        _libraryDeleteHebrewButton.IsEnabled = false;
-        _libraryDeleteTranslationButton.IsVisible = false;
-        _libraryDeleteTranslationButton.IsEnabled = false;
+        _librarySingleHebrewActionButton.Content = "Download";
+        _librarySingleHebrewActionButton.IsEnabled = false;
+        _librarySingleTranslationActionButton.Content = "Download";
+        _librarySingleTranslationActionButton.IsEnabled = false;
         _libraryCancelButton.IsEnabled = false;
+        SetComboBoxSelectionToolTip(_libraryVersionBox);
+        SetComboBoxSelectionToolTip(_libraryTranslationVersionBox);
     }
 
     private void SetLibraryStatus(string message)
@@ -1363,6 +1701,21 @@ public partial class MainWindow
         _categoryInstallProgressCts.Cancel();
         _categoryInstallProgressCts.Dispose();
         _categoryInstallProgressCts = null;
+    }
+
+    private void OnLibraryCategoryVersionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_selectedSefariaCategory is null ||
+            _selectedLibraryTreeItem is null ||
+            !TryCreateCategoryBulkTarget(_selectedSefariaCategory, _selectedLibraryTreeItem, out var target))
+        {
+            UpdateLibraryDetails();
+            return;
+        }
+
+        _cachedCategoryProgress = null;
+        UpdateLibraryDetails();
+        ScheduleCategoryInstallProgressRefresh(target);
     }
 
     private void ScheduleCategoryInstallProgressRefresh(CategoryBulkTarget target)

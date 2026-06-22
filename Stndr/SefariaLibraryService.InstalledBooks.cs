@@ -46,13 +46,19 @@ public sealed partial class SefariaLibraryService
 
     public List<InstalledSefariaBook> GetInstalledBooks()
     {
+        if (!IsConfigured || string.IsNullOrEmpty(SourcesFolder) || !Directory.Exists(SourcesFolder))
+        {
+            return new List<InstalledSefariaBook>();
+        }
+
         var installed = LoadInstalledBooks(true);
         var changed = false;
 
-        foreach (var filePath in Directory.EnumerateFiles(DataFolder, "*.json"))
+        foreach (var filePath in Directory.EnumerateFiles(SourcesFolder, "*.json"))
         {
             var fileName = Path.GetFileName(filePath);
             if (string.Equals(fileName, IndexFileName, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(fileName, BooksManifestFileName, StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(fileName, InstalledBooksFileName, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
@@ -208,6 +214,17 @@ public sealed partial class SefariaLibraryService
             .ToList();
     }
 
+    public List<InstalledSefariaBook> GetInstalledVersionSummariesForTitle(string title)
+    {
+        return LoadInstalledBooks()
+            .Where(book => string.Equals(book.Title, title, StringComparison.Ordinal))
+            .GroupBy(book => book.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .OrderByDescending(IsHebrew)
+            .ThenBy(book => book.VersionTitle, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
     private static IEnumerable<InstalledSefariaBook> ExpandTalmudBilingualVersions(InstalledSefariaBook book)
     {
         if (!IsTalmud(book))
@@ -297,12 +314,12 @@ public sealed partial class SefariaLibraryService
             ? "default"
             : GetSafeFileName($"{version.LanguageCode}_{version.VersionTitle}");
 
-        return Path.Combine(DataFolder, $"{safeTitle}__{versionSegment}.json");
+        return Path.Combine(SourcesFolder, $"{safeTitle}__{versionSegment}.json");
     }
 
     private string GetLegacyBookFilePath(string title)
     {
-        return Path.Combine(DataFolder, $"{GetSafeFileName(title)}.json");
+        return Path.Combine(SourcesFolder, $"{GetSafeFileName(title)}.json");
     }
 
     private static string GetSafeFileName(string value)
@@ -668,7 +685,7 @@ public sealed partial class SefariaLibraryService
 
         if (metadataRoot.TryGetProperty("language", out var language))
         {
-            record.LanguageCode = language.GetString() ?? record.LanguageCode;
+            record.LanguageCode = NormalizeDownloadedLanguageCode(language.GetString(), record.LanguageCode);
         }
 
         if (IsHebrew(record) && metadataRoot.TryGetProperty("heVersionTitle", out var heVersionTitle))
@@ -701,6 +718,22 @@ public sealed partial class SefariaLibraryService
         }
 
         return root;
+    }
+
+    private static string NormalizeDownloadedLanguageCode(string? language, string fallback)
+    {
+        if (string.IsNullOrWhiteSpace(language))
+        {
+            return fallback;
+        }
+
+        return language.Trim().ToLowerInvariant() switch
+        {
+            "hebrew" => "he",
+            "english" => "en",
+            var code when code.Length >= 2 => code[..2],
+            _ => fallback
+        };
     }
 
     private static void ApplyFileNameMetadata(InstalledSefariaBook record, string filePath)

@@ -19,6 +19,7 @@ _ReSharper*/
 
 # Local app data and downloaded content
 Stndr/Data/
+/Data/
 
 # OS and local shortcuts
 Thumbs.db

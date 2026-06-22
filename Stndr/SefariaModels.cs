@@ -181,6 +181,7 @@ public sealed class SefariaVersionOption
     public string LanguageCode { get; set; } = "en";
     public string VersionTitle { get; set; } = string.Empty;
     public string DisplayText { get; set; } = string.Empty;
+    public string DownloadUrl { get; set; } = string.Empty;
 
     public string DownloadSegment => $"{LanguageCode} - {VersionTitle}";
 
@@ -296,7 +297,8 @@ public enum HebrewMarksMode
 
 public sealed class AppSettings
 {
-    public string DataStorageFolder { get; set; } = AppSettingsService.DefaultDataStorageFolder;
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string DataStorageFolder { get; set; } = string.Empty;
     public InstalledBookTitleDisplay InstalledBookTitleDisplay { get; set; } = InstalledBookTitleDisplay.Both;
     public Dictionary<string, string> SelectedHebrewTextsByBook { get; set; } = new();
     public Dictionary<string, string> SelectedTranslationsByBook { get; set; } = new();
