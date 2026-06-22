@@ -790,10 +790,26 @@ public partial class MainWindow
         var topLevel = NormalizeCategoryKey(path[0]);
         var selected = NormalizeCategoryKey(category.DisplayTitle);
 
+        bool isBavliOrYerushalmi = topLevel == "talmud" && (selected == "bavli" || selected == "yerushalmi");
+        bool isMishneTorahOrShulchan = (topLevel == "halakhah" || topLevel == "halacha") &&
+            (selected.Contains("mishne torah") || selected.Contains("mishneh torah") ||
+             selected.Contains("shulchan aruch") || selected.Contains("shulchan arukh"));
+
         if (topLevel == "tanakh" && IsTanakhMajorCategory(selected) && EnumerateBooks(category).Any())
         {
             target = CreateBulkTarget(category);
             return target.Books.Count > 0;
+        }
+
+        if (isBavliOrYerushalmi || isMishneTorahOrShulchan)
+        {
+            var coreBooks = EnumerateCoreBooks(category, selected).ToList();
+            if (coreBooks.Count == 0)
+            {
+                return false;
+            }
+            target = CreateBulkTarget(category, coreBooks);
+            return true;
         }
 
         if ((topLevel == "mishnah" || topLevel == "talmud") && path.Count >= 2 && EnumerateBooks(category).Any())
@@ -844,13 +860,14 @@ public partial class MainWindow
         return string.Join(" ", cleaned.Split(' ', StringSplitOptions.RemoveEmptyEntries));
     }
 
-    private static CategoryBulkTarget CreateBulkTarget(SefariaCategoryNode category)
+    private static CategoryBulkTarget CreateBulkTarget(SefariaCategoryNode category, IEnumerable<SefariaBookNode>? books = null)
     {
-        var books = EnumerateBooks(category).ToList();
+        books ??= EnumerateBooks(category);
+        var bookList = books.ToList();
         return new CategoryBulkTarget(
             $"Download all {category.DisplayTitle}",
             $"Download Hebrew and translation texts for all books in {category.DisplayTitle}. Already-installed versions are skipped.",
-            books);
+            bookList);
     }
 
     private static IEnumerable<SefariaBookNode> EnumerateBooks(SefariaCategoryNode category)
@@ -871,6 +888,82 @@ public partial class MainWindow
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// For special top-level bulk categories (Bavli, Yerushalmi, Mishne Torah, Shulchan Aruch),
+    /// returns only the core works (actual masechtot or core books), excluding commentaries,
+    /// guides, minor tractates, rishonim, and other auxiliary content.
+    /// </summary>
+    private static IEnumerable<SefariaBookNode> EnumerateCoreBooks(SefariaCategoryNode category, string normalizedKey)
+    {
+        if (normalizedKey == "bavli" || normalizedKey == "yerushalmi")
+        {
+            // Only descend into Seder subcategories to get the actual masechtot.
+            // This excludes "Minor Tractates", "Guides", "Commentary", etc.
+            foreach (var child in category.Contents.OfType<SefariaCategoryNode>())
+            {
+                var childKey = NormalizeCategoryKey(child.DisplayTitle);
+                if (childKey.StartsWith("seder"))
+                {
+                    foreach (var book in EnumerateBooks(child))
+                    {
+                        yield return book;
+                    }
+                }
+                // All other direct children (Guides, Minor Tractates, Commentary, etc.) are skipped.
+            }
+        }
+        else if (normalizedKey.Contains("mishne torah") || normalizedKey.Contains("mishneh torah") ||
+                 normalizedKey.Contains("shulchan aruch") || normalizedKey.Contains("shulchan arukh"))
+        {
+            // For Mishne Torah and Shulchan Aruch, include direct books and recurse only into
+            // non-auxiliary subcategories. Skip commentaries, rishonim, etc.
+            foreach (var node in category.Contents)
+            {
+                if (node is SefariaBookNode book)
+                {
+                    yield return book;
+                    continue;
+                }
+
+                if (node is SefariaCategoryNode childCategory)
+                {
+                    var childKey = NormalizeCategoryKey(childCategory.DisplayTitle);
+                    if (IsAuxiliarySubcategory(childKey))
+                    {
+                        continue;
+                    }
+                    foreach (var coreBook in EnumerateBooks(childCategory))
+                    {
+                        yield return coreBook;
+                    }
+                }
+            }
+        }
+        else
+        {
+            foreach (var coreBook in EnumerateBooks(category))
+            {
+                yield return coreBook;
+            }
+        }
+    }
+
+    private static bool IsAuxiliarySubcategory(string normalizedKey)
+    {
+        if (string.IsNullOrWhiteSpace(normalizedKey))
+        {
+            return false;
+        }
+
+        return normalizedKey.Contains("commentar") ||
+               normalizedKey.Contains("guide") ||
+               normalizedKey.Contains("minor") ||
+               normalizedKey.Contains("rishon") ||
+               normalizedKey.Contains("introduction") ||
+               normalizedKey.Contains("preface") ||
+               normalizedKey.Contains("aggadah");
     }
 
     private void OnLibraryVersionChanged(object? sender, SelectionChangedEventArgs e)
