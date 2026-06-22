@@ -41,3 +41,6 @@ publish/
 *.zip
 *.msix
 *.appx
+
+# Temporary export files
+Sefaria-Export.txt
