@@ -14,15 +14,24 @@ namespace Stndr;
 
 public sealed partial class SefariaLibraryService
 {
-    private const string SefariaFolderName = "Sefaria";
-    private const string IndexFileName = "sefaria_index.json";
+    private const string SourcesFolderName = "sources";
+    private const string DatabaseFolderName = "database";
+    private const string IndexFileName = "sefaria_toc.json";
+    private const string BooksManifestFileName = "sefaria_books.json";
     private const string InstalledBooksFileName = "installed-books.json";
+    private const string VersionMetadataFileName = "version-metadata.db";
     private const string CommentariesDbFileName = "commentaries.db";
     private const string LinksDbFileName = "links.db";
+    private const string ExportTableOfContentsUrl = "https://storage.googleapis.com/sefaria-export/table_of_contents.json";
+    private const string ExportBooksManifestUrl = "https://raw.githubusercontent.com/Sefaria/Sefaria-Export/master/books.json";
 
     private static readonly HttpClient HttpClient = CreateHttpClient();
     private static readonly SemaphoreSlim CommentaryCacheGate = new(1, 1);
     private static readonly SemaphoreSlim LinksCacheGate = new(1, 1);
+    private readonly object _installedBooksCacheGate = new();
+    private readonly SemaphoreSlim _booksManifestGate = new(1, 1);
+    private List<InstalledSefariaBook>? _installedBooksCache;
+    private Dictionary<string, List<SefariaVersionOption>>? _booksManifestCache;
 
     public SefariaLibraryService()
         : this(null)
@@ -37,22 +46,52 @@ public sealed partial class SefariaLibraryService
 
     public string ProjectFolder { get; }
     public string StorageRootFolder { get; private set; } = string.Empty;
-    public string DataFolder { get; private set; } = string.Empty;
+    public string SourcesFolder { get; private set; } = string.Empty;
+    public string DatabaseFolder { get; private set; } = string.Empty;
+    public bool IsConfigured { get; private set; }
     public string IndexFilePath { get; private set; } = string.Empty;
+    public string BooksManifestFilePath { get; private set; } = string.Empty;
     public string InstalledBooksFilePath { get; private set; } = string.Empty;
+    public string VersionMetadataDbPath { get; private set; } = string.Empty;
     public string CommentariesDbPath { get; private set; } = string.Empty;
     public string LinksDbPath { get; private set; } = string.Empty;
 
     public void SetStorageRootFolder(string? storageRootFolder)
     {
-        StorageRootFolder = AppSettingsService.NormalizeDataStorageFolder(storageRootFolder);
-        DataFolder = Path.Combine(StorageRootFolder, SefariaFolderName);
-        IndexFilePath = Path.Combine(DataFolder, IndexFileName);
-        InstalledBooksFilePath = Path.Combine(DataFolder, InstalledBooksFileName);
-        CommentariesDbPath = Path.Combine(DataFolder, CommentariesDbFileName);
-        LinksDbPath = Path.Combine(DataFolder, LinksDbFileName);
+        _booksManifestCache = null;
+        lock (_installedBooksCacheGate)
+        {
+            _installedBooksCache = null;
+        }
+
+        if (string.IsNullOrWhiteSpace(storageRootFolder))
+        {
+            IsConfigured = false;
+            StorageRootFolder = string.Empty;
+            SourcesFolder = string.Empty;
+            DatabaseFolder = string.Empty;
+            IndexFilePath = string.Empty;
+            BooksManifestFilePath = string.Empty;
+            InstalledBooksFilePath = string.Empty;
+            VersionMetadataDbPath = string.Empty;
+            CommentariesDbPath = string.Empty;
+            LinksDbPath = string.Empty;
+            return;
+        }
+
+        IsConfigured = true;
+        StorageRootFolder = Path.GetFullPath(storageRootFolder.Trim());
+        SourcesFolder = Path.Combine(StorageRootFolder, SourcesFolderName);
+        DatabaseFolder = Path.Combine(StorageRootFolder, DatabaseFolderName);
+        IndexFilePath = Path.Combine(SourcesFolder, IndexFileName);
+        BooksManifestFilePath = Path.Combine(SourcesFolder, BooksManifestFileName);
+        InstalledBooksFilePath = Path.Combine(DatabaseFolder, InstalledBooksFileName);
+        VersionMetadataDbPath = Path.Combine(DatabaseFolder, VersionMetadataFileName);
+        CommentariesDbPath = Path.Combine(DatabaseFolder, CommentariesDbFileName);
+        LinksDbPath = Path.Combine(DatabaseFolder, LinksDbFileName);
         Directory.CreateDirectory(StorageRootFolder);
-        Directory.CreateDirectory(DataFolder);
+        Directory.CreateDirectory(SourcesFolder);
+        Directory.CreateDirectory(DatabaseFolder);
     }
 
     public async Task<SefariaCategoryNode> LoadLibraryAsync(CancellationToken cancellationToken)
@@ -84,7 +123,7 @@ public sealed partial class SefariaLibraryService
             }
         }
 
-        var request = new HttpRequestMessage(HttpMethod.Get, "https://www.sefaria.org/api/index/");
+        var request = new HttpRequestMessage(HttpMethod.Get, ExportTableOfContentsUrl);
         request.Headers.Add("accept", "application/json");
 
         using var response = await HttpClient.SendAsync(request, cancellationToken);
@@ -122,6 +161,28 @@ public sealed partial class SefariaLibraryService
         }
 
         return Path.Combine(Directory.GetCurrentDirectory(), "Stndr");
+    }
+
+    private async Task<string> EnsureBooksManifestAvailableAsync(CancellationToken cancellationToken)
+    {
+        if (File.Exists(BooksManifestFilePath))
+        {
+            var content = await File.ReadAllTextAsync(BooksManifestFilePath, cancellationToken);
+            if (!string.IsNullOrWhiteSpace(content))
+            {
+                return content;
+            }
+        }
+
+        var request = new HttpRequestMessage(HttpMethod.Get, ExportBooksManifestUrl);
+        request.Headers.Add("accept", "application/json");
+
+        using var response = await HttpClient.SendAsync(request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        var manifestData = await response.Content.ReadAsStringAsync(cancellationToken);
+        await File.WriteAllTextAsync(BooksManifestFilePath, manifestData, Encoding.UTF8, cancellationToken);
+        return manifestData;
     }
 
     private static void AddLibraryNode(SefariaIndexJsonNode node, SefariaCategoryNode parent)

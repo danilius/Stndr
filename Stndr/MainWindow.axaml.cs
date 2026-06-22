@@ -61,9 +61,18 @@ public partial class MainWindow : Window
     private TextBlock? _libraryHebrewTitle;
     private TextBlock? _libraryDescription;
     private TextBlock? _libraryStatus;
+    private TextBlock? _libraryBookVersionLabel;
     private ComboBox? _libraryVersionBox;
+    private ComboBox? _libraryTranslationVersionBox;
+    private StackPanel? _libraryBookVersionPanel;
+    private StackPanel? _libraryCategoryVersionPanel;
+    private ComboBox? _libraryCategoryHebrewVersionBox;
+    private ComboBox? _libraryCategoryEnglishVersionBox;
     private ProgressBar? _libraryProgress;
-    private Button? _libraryDownloadButton;
+    private Button? _librarySingleHebrewActionButton;
+    private Button? _librarySingleTranslationActionButton;
+    private Button? _libraryCategoryHebrewActionButton;
+    private Button? _libraryCategoryTranslationActionButton;
     private Button? _libraryCancelButton;
 
     private ObservableCollection<TabItem>? _tabs;
@@ -76,12 +85,18 @@ public partial class MainWindow : Window
     private bool _leftCollapsed;
     private bool _rightCollapsed;
     private bool _isSefariaDownloading;
+    private bool _suppressLibraryVersionChangeEvents;
     private bool _hasLoadedLayoutState;
     private double _leftExpandedWidth = DefaultExpandedPanelWidth;
     private double _rightExpandedWidth = DefaultExpandedPanelWidth;
     private SefariaCategoryNode? _sefariaRoot;
     private SefariaBookNode? _selectedSefariaBook;
+    private SefariaBookNode? _libraryVersionBoxesBook;
+    private SefariaCategoryNode? _selectedSefariaCategory;
+    private int _librarySelectionVersion;
     private CancellationTokenSource? _sefariaDownloadCts;
+    private CancellationTokenSource? _categoryInstallProgressCts;
+    private MainWindow.CategorySelectionProgress? _cachedCategoryProgress;
     private List<FontOption>? _allFontOptions;
     private List<FontOption>? _hebrewFontOptions;
 
@@ -119,8 +134,17 @@ public partial class MainWindow : Window
             RestoreSelectedReaderWebScrollAfterTabSwitch();
         };
 
-        _settings = _settingsService.Load();
-        _sefariaLibrary = new SefariaLibraryService(_settings.DataStorageFolder);
+        var configuredDataFolder = _settingsService.GetConfiguredDataFolder();
+        if (configuredDataFolder is not null)
+        {
+            _settings = _settingsService.Load(configuredDataFolder);
+            _sefariaLibrary = new SefariaLibraryService(configuredDataFolder);
+        }
+        else
+        {
+            _settings = new AppSettings();
+            _sefariaLibrary = new SefariaLibraryService(null);
+        }
         ApplyUiFontSetting();
         InitializeNavigationItems();
         ApplyLeftPanelState(false, DefaultExpandedPanelWidth);
@@ -151,6 +175,55 @@ public partial class MainWindow : Window
             _hasLoadedLayoutState = true;
             StartupCompleted?.Invoke(this, EventArgs.Empty);
         }
+
+        // Prompt for a Data folder only after startup has completed, so the (topmost) splash
+        // window has been dismissed and the modal dialog is actually reachable. The Background
+        // priority queues this after the splash-close post raised by StartupCompleted.
+        if (!_sefariaLibrary.IsConfigured)
+        {
+            // Let the splash-close (posted by StartupCompleted at Background priority) run
+            // first, so the modal dialog isn't hidden behind the topmost splash window.
+            await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+            await PromptForDataFolderAsync(isStartup: true);
+        }
+    }
+
+    /// <summary>
+    /// Prompts the user to choose a Data folder. When they confirm, the pointer is written,
+    /// settings are loaded from that folder, and the library is (re)initialized. Returns true
+    /// when a folder was chosen.
+    /// </summary>
+    private async Task<bool> PromptForDataFolderAsync(bool isStartup)
+    {
+        var suggested = _sefariaLibrary.IsConfigured && !string.IsNullOrWhiteSpace(_sefariaLibrary.StorageRootFolder)
+            ? _sefariaLibrary.StorageRootFolder
+            : AppSettingsService.SuggestedDefaultDataFolder;
+
+        var chosen = await DataFolderDialog.ShowAsync(this, suggested);
+        if (string.IsNullOrWhiteSpace(chosen))
+        {
+            return false;
+        }
+
+        ApplyDataFolder(chosen);
+        return true;
+    }
+
+    /// <summary>
+    /// Points the app at the given Data folder: persists the pointer, loads settings from it,
+    /// reinitializes the library and refreshes dependent UI.
+    /// </summary>
+    private void ApplyDataFolder(string dataFolder)
+    {
+        _settingsService.SetConfiguredDataFolder(dataFolder);
+        _settings = _settingsService.Load(dataFolder);
+        _sefariaLibrary.SetStorageRootFolder(dataFolder);
+        ApplyUiFontSetting();
+        RefreshInstalledBooksTree();
+        UpdateLibraryDetails();
+        RefreshOpenReaderTabs();
+        UpdateReaderTools();
+        _ = LoadSefariaLibraryAsync();
     }
 
     private async Task WaitForSelectedTabContentReadyAsync()

@@ -14,83 +14,12 @@ namespace Stndr;
 
 public sealed partial class SefariaLibraryService
 {
-    public async Task<List<SefariaVersionOption>> GetAvailableVersionsAsync(string title, CancellationToken cancellationToken)
-    {
-        var versions = new List<SefariaVersionOption>();
-        var sectionRef = GetVersionProbeRef(title);
-        var url = $"https://www.sefaria.org/api/v3/texts/{Uri.EscapeDataString(sectionRef)}?version=all";
-
-        using var response = await HttpClient.GetAsync(url, cancellationToken);
-        response.EnsureSuccessStatusCode();
-
-        var json = await response.Content.ReadAsStringAsync(cancellationToken);
-        using var document = JsonDocument.Parse(json);
-        if (!document.RootElement.TryGetProperty("available_versions", out var availableVersions) ||
-            availableVersions.ValueKind != JsonValueKind.Array)
-        {
-            return versions;
-        }
-
-        foreach (var item in availableVersions.EnumerateArray())
-        {
-            if (!item.TryGetProperty("versionTitle", out var versionTitleElement))
-            {
-                continue;
-            }
-
-            var versionTitle = versionTitleElement.GetString();
-            if (string.IsNullOrWhiteSpace(versionTitle))
-            {
-                continue;
-            }
-
-            var languageCode = item.TryGetProperty("language", out var langElement)
-                ? langElement.GetString()
-                : null;
-
-            var languageFamilyName = item.TryGetProperty("languageFamilyName", out var familyElement)
-                ? familyElement.GetString()
-                : null;
-
-            languageCode = NormalizeLanguageCode(languageCode, languageFamilyName);
-
-            versions.Add(new SefariaVersionOption
-            {
-                LanguageCode = languageCode,
-                LanguageFamilyName = languageFamilyName,
-                VersionTitle = versionTitle,
-                DisplayText = $"{versionTitle} ({languageCode})"
-            });
-        }
-
-        return versions
-            .GroupBy(v => $"{v.LanguageCode}|{v.VersionTitle}", StringComparer.OrdinalIgnoreCase)
-            .Select(g => g.First())
-            .ToList();
-    }
-
     public async Task DownloadBookAsync(
         SefariaBookNode book,
         IProgress<double> progress,
         CancellationToken cancellationToken)
     {
-        var content = IsTalmudTitle(book.Title)
-            ? await DownloadTalmudTractateAsync(book.Title, book.SelectedVersion, progress, cancellationToken)
-            : await DownloadWithRetryAsync(book.Title, book.SelectedVersion, progress, cancellationToken);
-        if (!IsTalmudTitle(book.Title) &&
-            !IsDownloadedBookJson(content) &&
-            book.SelectedVersion is not null)
-        {
-            progress.Report(0);
-            var fallbackContent = await DownloadTextApiPageAsync(book.Title, book.SelectedVersion, cancellationToken);
-            if (IsDownloadedBookJson(fallbackContent))
-            {
-                content = fallbackContent;
-            }
-
-            progress.Report(100);
-        }
-
+        var content = await DownloadWithRetryAsync(book.Title, book.SelectedVersion, progress, cancellationToken);
         ValidateDownloadedBookJson(content, book.Title, book.SelectedVersion);
         var filePath = GetBookFilePath(book.Title, book.SelectedVersion);
         await File.WriteAllTextAsync(filePath, content, Encoding.UTF8, cancellationToken);
@@ -110,7 +39,7 @@ public sealed partial class SefariaLibraryService
         {
             try
             {
-                return await DownloadTextWithProgressAsync(title, version, progress, cancellationToken);
+                return await DownloadExportTextWithProgressAsync(title, version, progress, cancellationToken);
             }
             catch (HttpRequestException) when (attempt < maxRetries)
             {
@@ -122,144 +51,7 @@ public sealed partial class SefariaLibraryService
         throw new InvalidOperationException("Download failed after multiple attempts.");
     }
 
-
-
-    private async Task<string> DownloadTalmudPageWithTextApiAsync(
-        string title,
-        SefariaVersionOption version,
-        IProgress<double> progress,
-        CancellationToken cancellationToken)
-    {
-        var reference = GetVersionProbeRef(title);
-        var versionParameter = GetTextApiVersionParameter(version);
-        var url = $"https://www.sefaria.org/api/texts/{Uri.EscapeDataString(reference)}?context=0&commentary=0&{versionParameter}={Uri.EscapeDataString(version.VersionTitle)}";
-
-        using var response = await HttpClient.GetAsync(url, cancellationToken);
-        response.EnsureSuccessStatusCode();
-        progress.Report(0);
-        var content = await response.Content.ReadAsStringAsync(cancellationToken);
-        progress.Report(100);
-        return content;
-    }
-
-    private async Task<string> DownloadTalmudTractateAsync(
-        string title,
-        SefariaVersionOption? version,
-        IProgress<double> progress,
-        CancellationToken cancellationToken)
-    {
-        var pages = new List<JsonElement>();
-        var reference = GetVersionProbeRef(title);
-        var totalPages = 0;
-        var downloadedCount = 0;
-        progress.Report(0);
-
-        while (!string.IsNullOrWhiteSpace(reference))
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var pageJson = version is null
-                ? await DownloadTextApiPageAsync(reference, null, cancellationToken)
-                : await DownloadTextApiPageAsync(reference, version, cancellationToken);
-
-            using var document = JsonDocument.Parse(pageJson);
-            var pageRoot = document.RootElement.Clone();
-            pages.Add(pageRoot);
-            downloadedCount++;
-
-            // Try to get total page count from the first page
-            if (totalPages == 0 &&
-                pageRoot.TryGetProperty("length", out var lengthElement) &&
-                lengthElement.TryGetInt32(out var length))
-            {
-                totalPages = length;
-            }
-
-            // Report progress
-            if (totalPages > 0)
-            {
-                progress.Report(Math.Min(99, ((double)downloadedCount / totalPages) * 100));
-            }
-            else
-            {
-                // If we don't know total, estimate conservatively
-                progress.Report(Math.Min(99, downloadedCount * 8));
-            }
-
-            reference = pageRoot.TryGetProperty("next", out var nextElement)
-                ? nextElement.GetString() ?? string.Empty
-                : string.Empty;
-        }
-
-        progress.Report(100);
-        return CreateTalmudTractateJson(title, version, pages);
-    }
-
-    private static async Task<string> DownloadTextApiPageAsync(
-        string reference,
-        SefariaVersionOption? version,
-        CancellationToken cancellationToken)
-    {
-        var url = version is null
-            ? $"https://www.sefaria.org/api/texts/{Uri.EscapeDataString(reference)}?context=0&commentary=0"
-            : $"https://www.sefaria.org/api/texts/{Uri.EscapeDataString(reference)}?context=0&commentary=0&{GetTextApiVersionParameter(version)}={Uri.EscapeDataString(version.VersionTitle)}";
-
-        using var response = await HttpClient.GetAsync(url, cancellationToken);
-        response.EnsureSuccessStatusCode();
-        return await response.Content.ReadAsStringAsync(cancellationToken);
-    }
-
-    private static string GetTextApiVersionParameter(SefariaVersionOption version)
-    {
-        return string.Equals(version.LanguageCode, "he", StringComparison.OrdinalIgnoreCase) ? "vhe" : "ven";
-    }
-
-    private static string CreateTalmudTractateJson(
-        string title,
-        SefariaVersionOption? version,
-        List<JsonElement> pages)
-    {
-        var firstPage = pages.FirstOrDefault();
-        var payload = new Dictionary<string, object?>
-        {
-            ["title"] = title,
-            ["indexTitle"] = title,
-            ["pages"] = pages
-        };
-
-        if (version is not null)
-        {
-            payload["language"] = version.LanguageCode;
-            payload["versionTitle"] = version.VersionTitle;
-        }
-
-        if (firstPage.ValueKind == JsonValueKind.Object)
-        {
-            CopyJsonString(firstPage, payload, "heIndexTitle");
-            CopyJsonString(firstPage, payload, "heBook");
-            CopyJsonString(firstPage, payload, "heVersionTitle");
-            CopyJsonString(firstPage, payload, "versionTitle");
-            if (firstPage.TryGetProperty("categories", out var categories) &&
-                categories.ValueKind == JsonValueKind.Array)
-            {
-                payload["categories"] = categories;
-            }
-        }
-
-        return JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true });
-    }
-
-    private static void CopyJsonString(JsonElement source, Dictionary<string, object?> target, string propertyName)
-    {
-        if (source.TryGetProperty(propertyName, out var value) &&
-            value.ValueKind == JsonValueKind.String &&
-            !string.IsNullOrWhiteSpace(value.GetString()))
-        {
-            target[propertyName] = value.GetString();
-        }
-    }
-
-    private static async Task<string> DownloadTextWithProgressAsync(
+    private static async Task<string> DownloadExportTextWithProgressAsync(
         string title,
         SefariaVersionOption? version,
         IProgress<double> progress,
@@ -302,43 +94,33 @@ public sealed partial class SefariaLibraryService
 
     private static string BuildDownloadUrl(string title, SefariaVersionOption? version)
     {
-        if (version is null ||
-            string.IsNullOrWhiteSpace(version.VersionTitle) ||
-            string.IsNullOrWhiteSpace(version.LanguageCode))
+        if (version is null || string.IsNullOrWhiteSpace(version.DownloadUrl))
         {
-            return $"https://www.sefaria.org/api/texts/{Uri.EscapeDataString(title)}.json";
+            throw new InvalidOperationException($"No export download URL is available for {title}.");
         }
 
-        var segment = $"{title} - {version.LanguageCode} - {version.VersionTitle}.json";
-        return $"https://www.sefaria.org/download/version/{Uri.EscapeDataString(segment)}";
+        return EncodeExportUrl(version.DownloadUrl);
     }
 
-
-    private static string NormalizeLanguageCode(string? languageCode, string? languageFamilyName)
+    private static string EncodeExportUrl(string url)
     {
-        if (!string.IsNullOrWhiteSpace(languageCode))
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var absoluteUri))
         {
-            return languageCode.Trim().ToLowerInvariant();
+            return url;
         }
 
-        var family = languageFamilyName?.Trim().ToLowerInvariant();
-        return family switch
-        {
-            "english" => "en",
-            "hebrew" => "he",
-            _ => string.IsNullOrWhiteSpace(family) ? "en" : family.Length >= 2 ? family[..2] : family
-        };
-    }
+        var queryIndex = url.IndexOfAny(new[] { '?', '#' });
+        var baseUrl = queryIndex >= 0 ? url[..queryIndex] : url;
+        var suffix = queryIndex >= 0 ? url[queryIndex..] : string.Empty;
+        var hostPrefix = $"{absoluteUri.Scheme}://{absoluteUri.Authority}";
+        var rawPath = baseUrl.StartsWith(hostPrefix, StringComparison.OrdinalIgnoreCase)
+            ? baseUrl[hostPrefix.Length..]
+            : absoluteUri.AbsolutePath;
 
-    private string GetVersionProbeRef(string title)
-    {
-        return IsTalmudTitle(title) ? $"{title} 2a" : $"{title} 1";
-    }
+        var encodedPath = string.Join("/",
+            rawPath.Split('/', StringSplitOptions.RemoveEmptyEntries)
+                .Select(segment => Uri.EscapeDataString(Uri.UnescapeDataString(segment))));
 
-    private bool IsTalmudTitle(string title)
-    {
-        var orderLookup = BuildIndexOrderLookup();
-        return orderLookup.TryGetValue(title, out var order) &&
-            order.Categories.Any(category => string.Equals(category, "Talmud", StringComparison.OrdinalIgnoreCase));
+        return $"{hostPrefix}/{encodedPath}{suffix}";
     }
 }

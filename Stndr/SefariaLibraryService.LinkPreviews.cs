@@ -438,7 +438,7 @@ public sealed partial class SefariaLibraryService
     private string GetLegacyLinkPreviewExcerptFilePath(string fullReference, string languageCode)
     {
         return Path.Combine(
-            DataFolder,
+            SourcesFolder,
             LegacyLinkPreviewFolderName,
             $"{GetSafeFileName(fullReference)}__{languageCode}.json");
     }
@@ -450,7 +450,7 @@ public sealed partial class SefariaLibraryService
             return false;
         }
 
-        var excerptFolder = Path.GetFullPath(Path.Combine(DataFolder, LegacyLinkPreviewFolderName));
+        var excerptFolder = Path.GetFullPath(Path.Combine(SourcesFolder, LegacyLinkPreviewFolderName));
         var filePath = Path.GetFullPath(book.FilePath);
         return filePath.StartsWith(excerptFolder + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
             string.Equals(filePath, excerptFolder, StringComparison.OrdinalIgnoreCase);
