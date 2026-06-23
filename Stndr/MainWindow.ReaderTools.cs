@@ -998,7 +998,7 @@ public partial class MainWindow
                 FontSize = Math.Max(10, GetSelectedUiFontSize() - 1),
                 TextWrapping = TextWrapping.Wrap
             });
-            panel.Children.Add(CreateLinkPreviewBodyTextBlock(previewText));
+            panel.Children.Add(CreateLinkPreviewBody(readerState, previewText));
 
             var actionRow = new StackPanel
             {
@@ -1165,13 +1165,12 @@ public partial class MainWindow
                     FontWeight = FontWeight.SemiBold,
                     Foreground = new SolidColorBrush(Color.Parse("#475467"))
                 });
-                var previewBodyFontSize = readerState.CommentaryLanguage == CommentaryLanguage.Hebrew
-                    ? GetSelectedHebrewCommentaryFontSize()
-                    : GetSelectedEnglishCommentaryFontSize();
-                content.Children.Add(CreateLinkPreviewBodyTextBlock(
+                var isHebrewSection = string.Equals(section.Label, "Hebrew", StringComparison.OrdinalIgnoreCase);
+                content.Children.Add(CreateLinkPreviewBody(
+                    readerState,
                     section.Text,
                     maxLength: null,
-                    fontSizeOverride: previewBodyFontSize));
+                    isHebrewOverride: isHebrewSection));
             }
         }
         else
@@ -1384,23 +1383,19 @@ public partial class MainWindow
         return location;
     }
 
-    private TextBlock CreateLinkPreviewBodyTextBlock(
+    private Control CreateLinkPreviewBody(
+        ReaderTabState readerState,
         string text,
         int? maxLength = 420,
-        double? fontSizeOverride = null)
+        bool? isHebrewOverride = null)
     {
         var normalizedText = NormalizeLinkPreviewText(text, maxLength);
-        var useHebrew = ContainsHebrewText(normalizedText);
-        var fontSize = fontSizeOverride ?? GetSelectedLinkPanelFontSize(useHebrew);
-        return new TextBlock
-        {
-            Text = normalizedText,
-            FontFamily = new FontFamily(useHebrew ? GetSelectedHebrewFontFamily() : GetSelectedEnglishFontFamily()),
-            FontSize = fontSize,
-            FlowDirection = useHebrew ? FlowDirection.RightToLeft : FlowDirection.LeftToRight,
-            TextWrapping = TextWrapping.Wrap,
-            LineHeight = fontSize + 10
-        };
+        var isHebrew = isHebrewOverride ?? ContainsHebrewText(normalizedText);
+        return CreateReaderTextBlock(
+            normalizedText,
+            isHebrew,
+            readerState.HebrewMarksMode,
+            GetSelectedLinkPanelFontSize(isHebrew));
     }
 
     private IEnumerable<(string Label, string Text)> GetOrderedLinkPreviewSections(

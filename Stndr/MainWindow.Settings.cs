@@ -106,6 +106,8 @@ public partial class MainWindow
                                 _settings.HebrewReaderFontFamily = family;
                                 _settingsService.Save(_settings);
                                 RefreshOpenReaderTabs();
+                                RefreshOpenLinkSplitViews();
+                                UpdateReaderTools();
                             },
                             size =>
                             {
@@ -125,6 +127,8 @@ public partial class MainWindow
                                 _settings.EnglishReaderFontFamily = family;
                                 _settingsService.Save(_settings);
                                 RefreshOpenReaderTabs();
+                                RefreshOpenLinkSplitViews();
+                                UpdateReaderTools();
                             },
                             size =>
                             {
