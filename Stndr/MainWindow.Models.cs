@@ -83,6 +83,7 @@ public partial class MainWindow
         public List<ReaderDisplayRow> ReaderRows { get; set; } = new();
         public List<ReaderNavigationItem> NavigationItems { get; set; } = new();
         public List<ReaderNavigationChapter> NavigationChapters { get; set; } = new();
+        public BookSchema? Schema { get; set; }
         public bool IsNavigationExpanded { get; set; } = true;
         public bool IsDisplayExpanded { get; set; } = true;
         public bool IsSedrotExpanded { get; set; } = true;

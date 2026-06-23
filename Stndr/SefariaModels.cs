@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.IO;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Stndr;
@@ -487,4 +489,99 @@ public sealed class CachedSefariaLinkSet
     public string AnchorRef { get; set; } = string.Empty;
     public DateTime RetrievedAtUtc { get; set; }
     public List<SefariaLinkItem> Items { get; set; } = new();
+}
+
+public sealed class BookSchema
+{
+    public string Title { get; set; } = string.Empty;
+    public string HeTitle { get; set; } = string.Empty;
+    public int Depth { get; set; }
+    public List<string> SectionNames { get; set; } = new();
+    public List<string> HeSectionNames { get; set; } = new();
+    public Dictionary<string, List<SchemaAltNode>> AltStructures { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public static BookSchema? Load(string filePath)
+    {
+        if (!File.Exists(filePath)) return null;
+        try
+        {
+            var json = File.ReadAllText(filePath);
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            var schema = new BookSchema
+            {
+                Title = GetString(root, "title"),
+                HeTitle = GetString(root, "heTitle"),
+                Depth = GetInt(root, "schema", "depth"),
+            };
+
+            if (root.TryGetProperty("sectionNames", out var sn))
+            {
+                foreach (var item in sn.EnumerateArray())
+                    schema.SectionNames.Add(item.GetString() ?? "");
+            }
+            if (root.TryGetProperty("heSectionNames", out var hsn))
+            {
+                foreach (var item in hsn.EnumerateArray())
+                    schema.HeSectionNames.Add(item.GetString() ?? "");
+            }
+
+            if (root.TryGetProperty("alts", out var alts))
+            {
+                foreach (var altProp in alts.EnumerateObject())
+                {
+                    var nodes = new List<SchemaAltNode>();
+                    if (altProp.Value.TryGetProperty("nodes", out var nodesEl))
+                    {
+                        foreach (var n in nodesEl.EnumerateArray())
+                        {
+                            nodes.Add(new SchemaAltNode
+                            {
+                                Title = GetString(n, "title"),
+                                HeTitle = GetString(n, "heTitle"),
+                                WholeRef = GetString(n, "wholeRef"),
+                                NumericEquivalent = GetInt(n, "numeric_equivalent"),
+                            });
+                        }
+                    }
+                    schema.AltStructures[altProp.Name] = nodes;
+                }
+            }
+
+            return schema;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string GetString(JsonElement el, params string[] path)
+    {
+        var current = el;
+        foreach (var p in path)
+        {
+            if (!current.TryGetProperty(p, out current)) return string.Empty;
+        }
+        return current.ValueKind == JsonValueKind.String ? current.GetString() ?? "" : "";
+    }
+
+    private static int GetInt(JsonElement el, params string[] path)
+    {
+        var current = el;
+        foreach (var p in path)
+        {
+            if (!current.TryGetProperty(p, out current)) return 0;
+        }
+        return current.ValueKind == JsonValueKind.Number && current.TryGetInt32(out var v) ? v : 0;
+    }
+}
+
+public sealed class SchemaAltNode
+{
+    public string Title { get; set; } = string.Empty;
+    public string HeTitle { get; set; } = string.Empty;
+    public string WholeRef { get; set; } = string.Empty;
+    public int NumericEquivalent { get; set; }
 }

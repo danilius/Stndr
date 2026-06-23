@@ -19,11 +19,17 @@ public sealed partial class SefariaLibraryService
         IProgress<double> progress,
         CancellationToken cancellationToken)
     {
-        var content = await DownloadWithRetryAsync(book.Title, book.SelectedVersion, progress, cancellationToken);
+        var textDownload = DownloadWithRetryAsync(book.Title, book.SelectedVersion, progress, cancellationToken);
+        var schemaDownload = EnsureSchemaDownloadedAsync(book.Title, cancellationToken);
+
+        var content = await textDownload;
         ValidateDownloadedBookJson(content, book.Title, book.SelectedVersion);
         var filePath = GetBookFilePath(book.Title, book.SelectedVersion);
         await File.WriteAllTextAsync(filePath, content, Encoding.UTF8, cancellationToken);
         UpsertInstalledBook(CreateInstalledBookRecord(book, filePath, content));
+
+        // Schema download runs in background; UI never waits for it
+        _ = schemaDownload;
     }
 
     private async Task<string> DownloadWithRetryAsync(
@@ -122,5 +128,57 @@ public sealed partial class SefariaLibraryService
                 .Select(segment => Uri.EscapeDataString(Uri.UnescapeDataString(segment))));
 
         return $"{hostPrefix}/{encodedPath}{suffix}";
+    }
+
+    public async Task EnsureSchemaDownloadedAsync(string title, CancellationToken cancellationToken = default)
+    {
+        if (!IsConfigured || string.IsNullOrWhiteSpace(title))
+            return;
+
+        var schemaPath = GetSchemaFilePath(title);
+        if (File.Exists(schemaPath))
+            return;
+
+        var key = GetSchemaKey(title);
+        // Schema filenames in the export use underscores for spaces (e.g. "Rosh_Hashanah" not "Rosh Hashanah")
+        var url = $"https://storage.googleapis.com/sefaria-export/schemas/{Uri.EscapeDataString(key)}.json";
+
+        try
+        {
+            using var response = await HttpClient.GetAsync(url, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                LogSchemaIssue(title, $"Schema not available: HTTP {response.StatusCode}");
+                return;
+            }
+
+            var content = await response.Content.ReadAsStringAsync(cancellationToken);
+            Directory.CreateDirectory(Path.GetDirectoryName(schemaPath)!);
+            await File.WriteAllTextAsync(schemaPath, content, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            // ignore
+        }
+        catch (Exception ex)
+        {
+            LogSchemaIssue(title, ex.Message);
+        }
+    }
+
+    private void LogSchemaIssue(string title, string message)
+    {
+        try
+        {
+            var logDir = Path.Combine(StorageRootFolder, "logs");
+            Directory.CreateDirectory(logDir);
+            var key = GetSchemaKey(title);
+            var logPath = Path.Combine(logDir, $"schema-{GetSafeFileName(key)}.log");
+            File.AppendAllText(logPath, $"[{DateTime.UtcNow:o}] {message}{Environment.NewLine}");
+        }
+        catch
+        {
+            // swallow logging errors
+        }
     }
 }

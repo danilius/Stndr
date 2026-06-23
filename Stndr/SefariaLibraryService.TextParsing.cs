@@ -35,7 +35,8 @@ public sealed partial class SefariaLibraryService
         var root = document.RootElement;
         if (IsTalmud(book))
         {
-            return ReadTalmudTextUnits(book, root);
+            var schema = GetBookSchema(book.Title);
+            return ReadTalmudTextUnits(book, root, schema);
         }
 
         if (!TryGetPrimaryTextElement(root, out var textElement))
@@ -62,11 +63,18 @@ public sealed partial class SefariaLibraryService
         var json = ReadJsonTextFile(book.FilePath);
         using var document = JsonDocument.Parse(json);
         var root = document.RootElement;
+
+        BookSchema? schema = null;
+        if (IsTalmud(book))
+        {
+            schema = GetBookSchema(book.Title);
+        }
+
         if (!IsTalmud(book) ||
             !root.TryGetProperty("pages", out var pages) ||
             pages.ValueKind != JsonValueKind.Array)
         {
-            return ReadDirectTalmudNavigationPages(book, root);
+            return ReadDirectTalmudNavigationPages(book, root, schema);
         }
 
         var navigationPages = new List<ReaderNavigationPage>();
@@ -80,12 +88,21 @@ public sealed partial class SefariaLibraryService
                 continue;
             }
 
-            var pageChapterTitles = GetTalmudChapterTitles(pageRoot);
-            if (!string.IsNullOrWhiteSpace(pageChapterTitles.ChapterTitle) ||
-                !string.IsNullOrWhiteSpace(pageChapterTitles.HebrewChapterTitle))
+            var (schTitle, schHe) = GetChapterTitleFromSchema(schema, page);
+            if (!string.IsNullOrWhiteSpace(schTitle) || !string.IsNullOrWhiteSpace(schHe))
             {
-                chapterTitle = pageChapterTitles.ChapterTitle;
-                hebrewChapterTitle = pageChapterTitles.HebrewChapterTitle;
+                chapterTitle = schTitle;
+                hebrewChapterTitle = schHe;
+            }
+            else
+            {
+                var pageChapterTitles = GetTalmudChapterTitles(pageRoot);
+                if (!string.IsNullOrWhiteSpace(pageChapterTitles.ChapterTitle) ||
+                    !string.IsNullOrWhiteSpace(pageChapterTitles.HebrewChapterTitle))
+                {
+                    chapterTitle = pageChapterTitles.ChapterTitle;
+                    hebrewChapterTitle = pageChapterTitles.HebrewChapterTitle;
+                }
             }
 
             navigationPages.Add(new ReaderNavigationPage(page, chapterTitle, hebrewChapterTitle));
@@ -94,7 +111,7 @@ public sealed partial class SefariaLibraryService
         return navigationPages;
     }
 
-    private static List<ReaderNavigationPage> ReadDirectTalmudNavigationPages(InstalledSefariaBook book, JsonElement root)
+    private static List<ReaderNavigationPage> ReadDirectTalmudNavigationPages(InstalledSefariaBook book, JsonElement root, BookSchema? schema = null)
     {
         if (!IsTalmud(book) ||
             !root.TryGetProperty("text", out var textElement) ||
@@ -108,11 +125,67 @@ public sealed partial class SefariaLibraryService
         var address = 0;
         foreach (var _ in textElement.EnumerateArray())
         {
-            navigationPages.Add(new ReaderNavigationPage(FormatTalmudPageFromAddress(address), string.Empty, string.Empty));
+            var pageLabel = FormatTalmudPageFromAddress(address);
+            var (chapterTitle, hebrewChapterTitle) = GetChapterTitleFromSchema(schema, pageLabel);
+            navigationPages.Add(new ReaderNavigationPage(pageLabel, chapterTitle, hebrewChapterTitle));
             address++;
         }
 
         return navigationPages;
+    }
+
+    private static (string ChapterTitle, string HebrewChapterTitle) GetChapterTitleFromSchema(BookSchema? schema, string page)
+    {
+        if (schema != null && schema.AltStructures.TryGetValue("Chapters", out var chs) && chs.Count > 0)
+        {
+            double current = ToDafNumber(page);
+            SchemaAltNode best = null;
+            double bestStart = -1;
+            foreach (var node in chs)
+            {
+                string startStr = ExtractStartDaf(node.WholeRef);
+                double start = ToDafNumber(startStr);
+                if (current >= start && start > bestStart)
+                {
+                    bestStart = start;
+                    best = node;
+                }
+            }
+            if (best != null)
+            {
+                return (best.Title, best.HeTitle);
+            }
+            var last = chs[^1];
+            return (last.Title, last.HeTitle);
+        }
+        return ("", "");
+    }
+
+    private static double ToDafNumber(string daf)
+    {
+        if (string.IsNullOrWhiteSpace(daf)) return 0;
+        daf = daf.ToLowerInvariant().Trim();
+        int i = 0;
+        while (i < daf.Length && char.IsDigit(daf[i])) i++;
+        if (i == 0) return 0;
+        if (!int.TryParse(daf.Substring(0, i), out int num)) return 0;
+        double val = num;
+        if (i < daf.Length && daf[i] == 'b') val += 0.5;
+        return val;
+    }
+
+    private static string ExtractStartDaf(string wholeRef)
+    {
+        if (string.IsNullOrWhiteSpace(wholeRef)) return "";
+        string s = wholeRef;
+        // Use LAST space to skip multi-word titles like "Rosh Hashanah"
+        int sp = s.LastIndexOf(' ');
+        if (sp >= 0) s = s.Substring(sp + 1);
+        int d = s.IndexOf('-');
+        if (d >= 0) s = s.Substring(0, d);
+        int c = s.IndexOf(':');
+        if (c >= 0) s = s.Substring(0, c);
+        return s.Trim();
     }
 
     public static bool IsHebrew(InstalledSefariaBook book)
@@ -329,7 +402,7 @@ public sealed partial class SefariaLibraryService
         return text.Length > 0 && text[0] == '\uFEFF' ? text[1..] : text;
     }
 
-    private static List<ReaderTextUnit> ReadTalmudTextUnits(InstalledSefariaBook book, JsonElement root)
+    private static List<ReaderTextUnit> ReadTalmudTextUnits(InstalledSefariaBook book, JsonElement root, BookSchema? schema = null)
     {
         var units = new List<ReaderTextUnit>();
         if (root.TryGetProperty("pages", out var pages) && pages.ValueKind == JsonValueKind.Array)
@@ -356,7 +429,7 @@ public sealed partial class SefariaLibraryService
             textElement.ValueKind == JsonValueKind.Array &&
             textElement.EnumerateArray().Any(item => item.ValueKind == JsonValueKind.Array))
         {
-            AppendDirectTalmudTextUnits(textElement, units);
+            AppendDirectTalmudTextUnits(textElement, units, schema, book);
             return units;
         }
 
@@ -365,12 +438,13 @@ public sealed partial class SefariaLibraryService
         return units;
     }
 
-    private static void AppendDirectTalmudTextUnits(JsonElement textElement, List<ReaderTextUnit> units)
+    private static void AppendDirectTalmudTextUnits(JsonElement textElement, List<ReaderTextUnit> units, BookSchema? schema, InstalledSefariaBook book)
     {
         var address = 0;
         foreach (var pageElement in textElement.EnumerateArray())
         {
             var page = FormatTalmudPageFromAddress(address);
+            var (chTitle, chHe) = GetChapterTitleFromSchema(schema, page);
             if (pageElement.ValueKind == JsonValueKind.Array)
             {
                 var paragraphNumber = 1;
@@ -379,7 +453,7 @@ public sealed partial class SefariaLibraryService
                     var paragraphText = CollapseWhitespace(CollectText(paragraph));
                     if (!string.IsNullOrWhiteSpace(paragraphText))
                     {
-                        units.Add(new ReaderTextUnit($"{page}.{paragraphNumber}", paragraphText));
+                        units.Add(new ReaderTextUnit($"{page}.{paragraphNumber}", paragraphText, chTitle, chHe));
                         paragraphNumber++;
                     }
                 }
@@ -389,7 +463,7 @@ public sealed partial class SefariaLibraryService
                 var text = CollapseWhitespace(CollectText(pageElement));
                 if (!string.IsNullOrWhiteSpace(text))
                 {
-                    units.Add(new ReaderTextUnit($"{page}.1", text));
+                    units.Add(new ReaderTextUnit($"{page}.1", text, chTitle, chHe));
                 }
             }
 

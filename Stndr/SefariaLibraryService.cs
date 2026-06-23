@@ -16,6 +16,7 @@ public sealed partial class SefariaLibraryService
 {
     private const string SourcesFolderName = "sources";
     private const string DatabaseFolderName = "database";
+    private const string SchemasFolderName = "schemas";
     private const string IndexFileName = "sefaria_toc.json";
     private const string BooksManifestFileName = "sefaria_books.json";
     private const string InstalledBooksFileName = "installed-books.json";
@@ -48,6 +49,7 @@ public sealed partial class SefariaLibraryService
     public string StorageRootFolder { get; private set; } = string.Empty;
     public string SourcesFolder { get; private set; } = string.Empty;
     public string DatabaseFolder { get; private set; } = string.Empty;
+    public string SchemasFolder { get; private set; } = string.Empty;
     public bool IsConfigured { get; private set; }
     public string IndexFilePath { get; private set; } = string.Empty;
     public string BooksManifestFilePath { get; private set; } = string.Empty;
@@ -55,6 +57,30 @@ public sealed partial class SefariaLibraryService
     public string VersionMetadataDbPath { get; private set; } = string.Empty;
     public string CommentariesDbPath { get; private set; } = string.Empty;
     public string LinksDbPath { get; private set; } = string.Empty;
+    private static string GetSchemaKey(string title)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+            return "unknown";
+        return title.Replace(" ", "_");
+    }
+
+    public string GetSchemaFilePath(string title)
+    {
+        if (string.IsNullOrWhiteSpace(title) || !IsConfigured)
+            return string.Empty;
+        // Schema filenames use _ instead of spaces (e.g. Rosh_Hashanah.json)
+        var key = GetSchemaKey(title);
+        var safe = GetSafeFileName(key);
+        return Path.Combine(SchemasFolder, $"{safe}.json");
+    }
+
+    public bool HasSchema(string title) => File.Exists(GetSchemaFilePath(title));
+
+    public BookSchema? GetBookSchema(string title)
+    {
+        var path = GetSchemaFilePath(title);
+        return BookSchema.Load(path);
+    }
 
     public void SetStorageRootFolder(string? storageRootFolder)
     {
@@ -70,12 +96,14 @@ public sealed partial class SefariaLibraryService
             StorageRootFolder = string.Empty;
             SourcesFolder = string.Empty;
             DatabaseFolder = string.Empty;
+            SchemasFolder = string.Empty;
             IndexFilePath = string.Empty;
             BooksManifestFilePath = string.Empty;
             InstalledBooksFilePath = string.Empty;
             VersionMetadataDbPath = string.Empty;
             CommentariesDbPath = string.Empty;
             LinksDbPath = string.Empty;
+            SchemasFolder = string.Empty;
             return;
         }
 
@@ -83,6 +111,7 @@ public sealed partial class SefariaLibraryService
         StorageRootFolder = Path.GetFullPath(storageRootFolder.Trim());
         SourcesFolder = Path.Combine(StorageRootFolder, SourcesFolderName);
         DatabaseFolder = Path.Combine(StorageRootFolder, DatabaseFolderName);
+        SchemasFolder = Path.Combine(StorageRootFolder, SchemasFolderName);
         IndexFilePath = Path.Combine(SourcesFolder, IndexFileName);
         BooksManifestFilePath = Path.Combine(SourcesFolder, BooksManifestFileName);
         InstalledBooksFilePath = Path.Combine(DatabaseFolder, InstalledBooksFileName);
@@ -92,6 +121,7 @@ public sealed partial class SefariaLibraryService
         Directory.CreateDirectory(StorageRootFolder);
         Directory.CreateDirectory(SourcesFolder);
         Directory.CreateDirectory(DatabaseFolder);
+        Directory.CreateDirectory(SchemasFolder);
     }
 
     public async Task<SefariaCategoryNode> LoadLibraryAsync(CancellationToken cancellationToken)

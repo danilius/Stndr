@@ -87,14 +87,37 @@ public partial class MainWindow
         }
 
         var state = CreateReaderTabState(book, installedVersions, savedState);
-        var readerContent = InitializeReaderTabContent(state);
-        var tab = CreateTab(FormatTitle(state.Primary.Title, state.Primary.HebrewTitle), readerContent);
-        tab.Tag = state.Primary.Title;
-        _openReaderTabs[tab] = state;
-        _tabs.Add(tab);
+        Control tabContent;
+        bool needsSchemaDownload = !_sefariaLibrary.HasSchema(book.Title);
+
+        if (needsSchemaDownload)
+        {
+            tabContent = CreateSchemaDownloadingPlaceholder(book.Title);
+            var tab = CreateTab(FormatTitle(state.Primary.Title, state.Primary.HebrewTitle), tabContent);
+            tab.Tag = state.Primary.Title;
+            _openReaderTabs[tab] = state;
+            _tabs.Add(tab);
+            if (selectAfterOpen)
+            {
+                _centerTabs.SelectedItem = tab;
+            }
+
+            state.ReaderWebScrollOffset = savedState?.ScrollOffset ?? state.Primary.LastScrollOffset;
+
+            // Start background schema download, then swap in real content
+            _ = DownloadSchemaAndActivateReaderAsync(state, tab, renderImmediately);
+            UpdateReaderTools();
+            return;
+        }
+
+        tabContent = InitializeReaderTabContent(state);
+        var normalTab = CreateTab(FormatTitle(state.Primary.Title, state.Primary.HebrewTitle), tabContent);
+        normalTab.Tag = state.Primary.Title;
+        _openReaderTabs[normalTab] = state;
+        _tabs.Add(normalTab);
         if (selectAfterOpen)
         {
-            _centerTabs.SelectedItem = tab;
+            _centerTabs.SelectedItem = normalTab;
         }
 
         state.ReaderWebScrollOffset = savedState?.ScrollOffset ?? state.Primary.LastScrollOffset;
@@ -104,6 +127,45 @@ public partial class MainWindow
             RenderReaderContent(state);
         }
         UpdateReaderTools();
+    }
+
+    private Control CreateSchemaDownloadingPlaceholder(string title)
+    {
+        return new Border
+        {
+            Background = Brushes.White,
+            Child = new TextBlock
+            {
+                Text = "Downloading schema...",
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                FontSize = 16
+            }
+        };
+    }
+
+    private async Task DownloadSchemaAndActivateReaderAsync(ReaderTabState state, TabItem tab, bool renderImmediately)
+    {
+        await _sefariaLibrary.EnsureSchemaDownloadedAsync(state.WorkTitle);
+
+        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (!_openReaderTabs.ContainsKey(tab)) return; // tab closed
+
+            // Replace placeholder with real reader content using proper method
+            var readerContent = InitializeReaderTabContent(state);
+            ReplaceTabContent(tab, readerContent);
+
+            state.Schema = _sefariaLibrary.GetBookSchema(state.WorkTitle);
+
+            if (renderImmediately)
+            {
+                RenderReaderContent(state);
+            }
+
+            // Update navigation expander (persist other tools state)
+            UpdateReaderTools();
+        });
     }
 
     private ReaderTabState CreateReaderTabState(
@@ -138,6 +200,7 @@ public partial class MainWindow
         ApplySavedReaderState(state, savedState);
         SaveSelectedHebrewText(state);
         SaveSelectedTranslation(state);
+        state.Schema = _sefariaLibrary.GetBookSchema(book.Title);
         return state;
     }
 
