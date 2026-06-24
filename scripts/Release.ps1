@@ -177,6 +177,9 @@ function Publish-Runtime {
 
     New-Item -ItemType Directory -Force -Path $publishDir, $outputDir | Out-Null
 
+    Get-ChildItem $outputDir -Include '*.nupkg', 'releases.*.json', 'assets.*.json', 'RELEASES' -File -ErrorAction SilentlyContinue |
+        Remove-Item -Force
+
     if ($DoDownload) {
         Write-Host "==> [$rid] Downloading previous release for delta packages"
         $downloadArgs = @(
