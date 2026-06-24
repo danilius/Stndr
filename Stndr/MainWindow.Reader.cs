@@ -243,6 +243,17 @@ public partial class MainWindow
         NormalizeHebrewMarksMode(state);
 
         state.IsNavigationExpanded = savedState.IsNavigationExpanded;
+        state.NavigationJumpQuery = savedState.NavigationJumpQuery ?? string.Empty;
+        state.NavigationTopicsAllExpanded = savedState.NavigationTopicsAllExpanded;
+        state.ExpandedNavigationTopics.Clear();
+        foreach (var topicKey in savedState.ExpandedNavigationTopicKeys)
+        {
+            if (!string.IsNullOrWhiteSpace(topicKey))
+            {
+                state.ExpandedNavigationTopics[topicKey] = true;
+            }
+        }
+
         state.IsDisplayExpanded = savedState.IsDisplayExpanded;
         state.IsSedrotExpanded = savedState.IsSedrotExpanded;
         state.IsCommentariesExpanded = savedState.IsCommentariesExpanded;
@@ -1498,6 +1509,7 @@ public partial class MainWindow
 
         state.CurrentChapterKey = chapterKey;
         state.ChapterBlock.Text = chapterText;
+        SyncActiveNavigationTopicExpansion(state, chapterKey);
     }
 
     private void UpdateReaderChapterHeaderFromScroll(ReaderTabState state)
@@ -1613,22 +1625,52 @@ public partial class MainWindow
         });
     }
 
-    private static List<ReaderNavigationChapter> BuildReaderNavigationChapters(List<ReaderNavigationItem> navigationItems)
+    private List<ReaderNavigationChapter> BuildReaderNavigationChapters(List<ReaderNavigationItem> navigationItems)
     {
         var chapters = new List<ReaderNavigationChapter>();
+        var sectionIndex = 0;
         foreach (var item in navigationItems)
         {
             var current = chapters.LastOrDefault();
             if (current is null || !string.Equals(current.Title, item.ChapterTitle, StringComparison.Ordinal))
             {
-                current = new ReaderNavigationChapter(item.ChapterTitle);
+                current = new ReaderNavigationChapter(
+                    item.ChapterTitle,
+                    BuildNavigationChapterKey(item.ChapterTitle, sectionIndex));
                 chapters.Add(current);
+                sectionIndex++;
             }
 
             current.Items.Add(item);
         }
 
+        foreach (var chapter in chapters)
+        {
+            chapter.RangeLabel = FormatNavigationTopicRangeLabel(chapter.Items);
+        }
+
         return chapters;
+    }
+
+    private static string BuildNavigationChapterKey(string title, int sectionIndex)
+    {
+        return string.IsNullOrWhiteSpace(title)
+            ? $"section-{sectionIndex}"
+            : title;
+    }
+
+    private string FormatNavigationTopicRangeLabel(IReadOnlyList<ReaderNavigationItem> items)
+    {
+        if (items.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var first = FormatNavigationChapterLabel(items[0].Label);
+        var last = FormatNavigationChapterLabel(items[^1].Label);
+        return string.Equals(first, last, StringComparison.Ordinal)
+            ? first
+            : $"{first}\u2013{last}";
     }
 
     private List<ReaderNavigationPage> BuildReaderNavigationPages(ReaderTabState state)
@@ -1913,6 +1955,116 @@ public partial class MainWindow
 
         builder.Append(ones[number]);
         return builder.ToString();
+    }
+
+    private static bool TryResolveNavigationSimanNumber(string query, out int number)
+    {
+        number = 0;
+        query = query.Trim();
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return false;
+        }
+
+        if (int.TryParse(query, out number))
+        {
+            return number > 0;
+        }
+
+        return TryParseHebrewNumber(query, out number);
+    }
+
+    private static bool TryParseHebrewNumber(string value, out int number)
+    {
+        number = 0;
+        value = NormalizeHebrewNumeralInput(value);
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var sum = 0;
+        for (var index = 0; index < value.Length;)
+        {
+            if (index + 1 < value.Length)
+            {
+                var pair = value.Substring(index, 2);
+                if (pair == "\u05d8\u05d5")
+                {
+                    sum += 15;
+                    index += 2;
+                    continue;
+                }
+
+                if (pair == "\u05d8\u05d6")
+                {
+                    sum += 16;
+                    index += 2;
+                    continue;
+                }
+            }
+
+            if (!TryGetHebrewLetterValue(value[index], out var letterValue))
+            {
+                number = 0;
+                return false;
+            }
+
+            sum += letterValue;
+            index++;
+        }
+
+        number = sum;
+        return number > 0;
+    }
+
+    private static string NormalizeHebrewNumeralInput(string value)
+    {
+        var builder = new StringBuilder(value.Length);
+        foreach (var character in value.Trim())
+        {
+            if (char.IsWhiteSpace(character) ||
+                character is '"' or '\'' or '\u05f3' or '\u05f4')
+            {
+                continue;
+            }
+
+            builder.Append(character);
+        }
+
+        return builder.ToString();
+    }
+
+    private static bool TryGetHebrewLetterValue(char character, out int value)
+    {
+        value = character switch
+        {
+            '\u05d0' => 1,
+            '\u05d1' => 2,
+            '\u05d2' => 3,
+            '\u05d3' => 4,
+            '\u05d4' => 5,
+            '\u05d5' => 6,
+            '\u05d6' => 7,
+            '\u05d7' => 8,
+            '\u05d8' => 9,
+            '\u05d9' => 10,
+            '\u05db' or '\u05da' => 20,
+            '\u05dc' => 30,
+            '\u05de' or '\u05dd' => 40,
+            '\u05e0' or '\u05df' => 50,
+            '\u05e1' => 60,
+            '\u05e2' => 70,
+            '\u05e4' or '\u05e3' => 80,
+            '\u05e6' or '\u05e5' => 90,
+            '\u05e7' => 100,
+            '\u05e8' => 200,
+            '\u05e9' => 300,
+            '\u05ea' => 400,
+            _ => 0
+        };
+
+        return value > 0;
     }
 
     private Control CreateReaderUnit(ReaderTabState state, ReaderTextUnit? primary, ReaderTextUnit? translation)

@@ -548,6 +548,13 @@ public partial class MainWindow
                 DisplayMode = readerState.DisplayMode,
                 HebrewMarksMode = readerState.HebrewMarksMode,
                 IsNavigationExpanded = readerState.IsNavigationExpanded,
+                ExpandedNavigationTopicKeys = readerState.ExpandedNavigationTopics
+                    .Where(pair => pair.Value)
+                    .Select(pair => pair.Key)
+                    .OrderBy(key => key, StringComparer.Ordinal)
+                    .ToList(),
+                NavigationJumpQuery = readerState.NavigationJumpQuery,
+                NavigationTopicsAllExpanded = readerState.NavigationTopicsAllExpanded,
                 IsDisplayExpanded = readerState.IsDisplayExpanded,
                 IsSedrotExpanded = readerState.IsSedrotExpanded,
                 IsCommentariesExpanded = readerState.IsCommentariesExpanded,

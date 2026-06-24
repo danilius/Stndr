@@ -70,6 +70,15 @@ public sealed partial class SefariaLibraryService
             schema = GetBookSchema(book.Title);
         }
 
+        if (IsShulchanArukh(book))
+        {
+            var shulchanPages = ReadShulchanArukhNavigationPages(book, root);
+            if (shulchanPages.Count > 0)
+            {
+                return shulchanPages;
+            }
+        }
+
         if (!IsTalmud(book) ||
             !root.TryGetProperty("pages", out var pages) ||
             pages.ValueKind != JsonValueKind.Array)
@@ -106,6 +115,44 @@ public sealed partial class SefariaLibraryService
             }
 
             navigationPages.Add(new ReaderNavigationPage(page, chapterTitle, hebrewChapterTitle));
+        }
+
+        return navigationPages;
+    }
+
+    private List<ReaderNavigationPage> ReadShulchanArukhNavigationPages(InstalledSefariaBook book, JsonElement root)
+    {
+        var schema = GetBookSchema(book.Title);
+        if (schema is null ||
+            !schema.AltStructures.TryGetValue("Topic", out var topics) ||
+            topics.Count == 0)
+        {
+            return new List<ReaderNavigationPage>();
+        }
+
+        if (!TryGetPrimaryTextElement(root, out var textElement) ||
+            textElement.ValueKind != JsonValueKind.Array)
+        {
+            return new List<ReaderNavigationPage>();
+        }
+
+        var navigationPages = new List<ReaderNavigationPage>();
+        var siman = 1;
+        foreach (var chapterElement in textElement.EnumerateArray())
+        {
+            var label = siman.ToString();
+            var (chapterTitle, hebrewChapterTitle) = GetTopicTitleFromSchema(topics, label);
+            if (string.IsNullOrWhiteSpace(chapterTitle) && string.IsNullOrWhiteSpace(hebrewChapterTitle))
+            {
+                var localHeading = ExtractSimanHeadingFromChapter(chapterElement);
+                if (!string.IsNullOrWhiteSpace(localHeading))
+                {
+                    hebrewChapterTitle = localHeading;
+                }
+            }
+
+            navigationPages.Add(new ReaderNavigationPage(label, chapterTitle, hebrewChapterTitle));
+            siman++;
         }
 
         return navigationPages;
@@ -161,6 +208,152 @@ public sealed partial class SefariaLibraryService
         return ("", "");
     }
 
+    private static (string ChapterTitle, string HebrewChapterTitle) GetTopicTitleFromSchema(
+        IReadOnlyList<SchemaAltNode> topics,
+        string section)
+    {
+        if (!int.TryParse(section, out var sectionNumber))
+        {
+            return (string.Empty, string.Empty);
+        }
+
+        foreach (var topic in topics)
+        {
+            if (TryParseWholeRefSimanRange(topic.WholeRef, out var start, out var end) &&
+                sectionNumber >= start &&
+                sectionNumber <= end)
+            {
+                return (topic.Title.Trim(), topic.HeTitle.Trim());
+            }
+        }
+
+        return (string.Empty, string.Empty);
+    }
+
+    private static bool TryParseWholeRefSimanRange(string wholeRef, out int simanStart, out int simanEnd)
+    {
+        simanStart = 0;
+        simanEnd = 0;
+        if (string.IsNullOrWhiteSpace(wholeRef))
+        {
+            return false;
+        }
+
+        var address = wholeRef;
+        var lastSpace = address.LastIndexOf(' ');
+        if (lastSpace >= 0)
+        {
+            address = address[(lastSpace + 1)..];
+        }
+
+        if (address.Contains(':', StringComparison.Ordinal))
+        {
+            var simanim = ExtractSimanNumbersFromAddress(address);
+            if (simanim.Count == 0)
+            {
+                return false;
+            }
+
+            simanStart = simanim[0];
+            simanEnd = simanim[^1];
+            return true;
+        }
+
+        var dash = address.IndexOf('-');
+        if (dash >= 0)
+        {
+            if (!int.TryParse(address[..dash], out simanStart) ||
+                !int.TryParse(address[(dash + 1)..], out simanEnd))
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        if (!int.TryParse(address, out simanStart))
+        {
+            return false;
+        }
+
+        simanEnd = simanStart;
+        return true;
+    }
+
+    private static List<int> ExtractSimanNumbersFromAddress(string address)
+    {
+        var simanim = new List<int>();
+        for (var index = 0; index < address.Length; index++)
+        {
+            if (!char.IsDigit(address[index]))
+            {
+                continue;
+            }
+
+            var start = index;
+            while (index < address.Length && char.IsDigit(address[index]))
+            {
+                index++;
+            }
+
+            if (index < address.Length && address[index] == ':')
+            {
+                if (int.TryParse(address[start..index], out var siman))
+                {
+                    simanim.Add(siman);
+                }
+            }
+        }
+
+        return simanim;
+    }
+
+    private static string ExtractSimanHeadingFromChapter(JsonElement chapter)
+    {
+        if (chapter.ValueKind != JsonValueKind.Array)
+        {
+            return string.Empty;
+        }
+
+        foreach (var item in chapter.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.String)
+            {
+                continue;
+            }
+
+            var text = item.GetString();
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                continue;
+            }
+
+            var boldStart = text.IndexOf("<b>", StringComparison.OrdinalIgnoreCase);
+            if (boldStart < 0)
+            {
+                continue;
+            }
+
+            var boldEnd = text.IndexOf("</b>", boldStart, StringComparison.OrdinalIgnoreCase);
+            if (boldEnd < 0)
+            {
+                continue;
+            }
+
+            var heading = RemoveSmallTagsWithContent(text.Substring(boldStart + 3, boldEnd - boldStart - 3));
+            heading = CollapseWhitespace(heading);
+            var periodIndex = heading.IndexOf('.');
+            if (periodIndex > 0)
+            {
+                heading = heading[..periodIndex].Trim();
+            }
+
+            return heading;
+        }
+
+        return string.Empty;
+    }
+
     private static double ToDafNumber(string daf)
     {
         if (string.IsNullOrWhiteSpace(daf)) return 0;
@@ -201,6 +394,12 @@ public sealed partial class SefariaLibraryService
     private static bool IsTalmud(InstalledSefariaBook book)
     {
         return book.Categories.Any(category => string.Equals(category, "Talmud", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool IsShulchanArukh(InstalledSefariaBook book)
+    {
+        return book.Categories.Any(category =>
+            string.Equals(category, "Shulchan Arukh", StringComparison.OrdinalIgnoreCase));
     }
 
     private static void AppendTextElement(JsonElement element, List<string> lines, int chapterNumber)

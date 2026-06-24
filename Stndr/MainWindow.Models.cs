@@ -51,6 +51,9 @@ public partial class MainWindow
         public ReaderDisplayMode DisplayMode { get; set; } = ReaderDisplayMode.PrimaryOnly;
         public HebrewMarksMode HebrewMarksMode { get; set; } = HebrewMarksMode.NikkudAndCantillation;
         public bool IsNavigationExpanded { get; set; } = true;
+        public List<string> ExpandedNavigationTopicKeys { get; set; } = new();
+        public string NavigationJumpQuery { get; set; } = string.Empty;
+        public bool NavigationTopicsAllExpanded { get; set; }
         public bool IsDisplayExpanded { get; set; } = true;
         public bool IsSedrotExpanded { get; set; } = true;
         public bool IsCommentariesExpanded { get; set; } = true;
@@ -84,6 +87,11 @@ public partial class MainWindow
         public List<ReaderDisplayRow> ReaderRows { get; set; } = new();
         public List<ReaderNavigationItem> NavigationItems { get; set; } = new();
         public List<ReaderNavigationChapter> NavigationChapters { get; set; } = new();
+        public Dictionary<string, bool> ExpandedNavigationTopics { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, Expander> NavigationTopicExpanders { get; } = new(StringComparer.Ordinal);
+        public string NavigationJumpQuery { get; set; } = string.Empty;
+        public bool NavigationTopicsAllExpanded { get; set; }
+        public string ActiveNavigationTopicKey { get; set; } = string.Empty;
         public BookSchema? Schema { get; set; }
         public bool IsNavigationExpanded { get; set; } = true;
         public bool IsDisplayExpanded { get; set; } = true;
@@ -195,12 +203,15 @@ public partial class MainWindow
 
     private sealed class ReaderNavigationChapter
     {
-        public ReaderNavigationChapter(string title)
+        public ReaderNavigationChapter(string title, string key)
         {
             Title = title;
+            Key = key;
         }
 
+        public string Key { get; }
         public string Title { get; }
+        public string RangeLabel { get; set; } = string.Empty;
         public List<ReaderNavigationItem> Items { get; } = new();
     }
 

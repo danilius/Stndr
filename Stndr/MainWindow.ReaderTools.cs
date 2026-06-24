@@ -98,7 +98,7 @@ public partial class MainWindow
         });
 
         _rightPanelBody.Children.Add(CreateReaderToolsGroup(
-            "Navigation",
+            CreateNavigationGroupHeader(readerState),
             CreateReaderNavigationTools(readerState),
             readerState.IsNavigationExpanded,
             value =>
@@ -2755,22 +2755,107 @@ public partial class MainWindow
         return FirstNonEmpty(commentary.CollectiveTitleEnglish, commentary.IndexTitle, commentary.Ref);
     }
 
-    private Control CreateReaderNavigationTools(ReaderTabState readerState)
+    private Control CreateNavigationGroupHeader(ReaderTabState readerState)
     {
-        var panel = new StackPanel
+        if (!readerState.HasTalmudNavigation)
         {
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            Spacing = 10
+            return new TextBlock
+            {
+                Text = "Navigation",
+                VerticalAlignment = VerticalAlignment.Center
+            };
+        }
+
+        var layout = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto"),
+            HorizontalAlignment = HorizontalAlignment.Stretch
         };
 
+        var titleBlock = new TextBlock
+        {
+            Text = "Navigation",
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 8, 0)
+        };
+        layout.Children.Add(titleBlock);
+        Grid.SetColumn(titleBlock, 0);
+
+        var jumpBox = new TextBox
+        {
+            Text = readerState.NavigationJumpQuery,
+            PlaceholderText = "Jump\u2026",
+            MinWidth = 88,
+            MaxWidth = 140,
+            Height = 24,
+            Padding = new Thickness(6, 2),
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+        jumpBox.TextChanged += (_, _) =>
+        {
+            readerState.NavigationJumpQuery = jumpBox.Text ?? string.Empty;
+            SaveLayoutState();
+        };
+        jumpBox.KeyDown += (_, e) =>
+        {
+            if (e.Key != Key.Enter)
+            {
+                return;
+            }
+
+            NavigateToNavigationJumpTarget(readerState, readerState.NavigationJumpQuery);
+            e.Handled = true;
+        };
+        layout.Children.Add(jumpBox);
+        Grid.SetColumn(jumpBox, 1);
+
+        var toggleButton = CreateNavigationHeaderIconButton(
+            IsAnyNavigationTopicExpanded(readerState) ? "\u21D1" : "\u21D3",
+            IsAnyNavigationTopicExpanded(readerState) ? "Collapse all topics" : "Expand all topics");
+        toggleButton.Click += (_, e) =>
+        {
+            SetAllNavigationTopicsExpanded(readerState, !IsAnyNavigationTopicExpanded(readerState));
+            e.Handled = true;
+            UpdateReaderTools();
+            SaveLayoutState();
+        };
+        layout.Children.Add(toggleButton);
+        Grid.SetColumn(toggleButton, 2);
+
+        return layout;
+    }
+
+    private static Button CreateNavigationHeaderIconButton(string content, string tooltip)
+    {
+        var button = new Button
+        {
+            Content = content,
+            Background = Brushes.White,
+            BorderBrush = new SolidColorBrush(Color.Parse("#D0D5DD")),
+            BorderThickness = new Thickness(1),
+            MinWidth = 24,
+            MinHeight = 22,
+            Padding = new Thickness(4, 0),
+            Margin = new Thickness(6, 0, 0, 0),
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center
+        };
+        ToolTip.SetTip(button, tooltip);
+        return button;
+    }
+
+    private Control CreateReaderNavigationTools(ReaderTabState readerState)
+    {
         if (readerState.NavigationChapters.Count == 0)
         {
-            panel.Children.Add(new TextBlock
+            return new TextBlock
             {
                 Text = "No navigation markers are available.",
                 TextWrapping = TextWrapping.Wrap
-            });
-            return panel;
+            };
         }
 
         if (!readerState.HasTalmudNavigation)
@@ -2778,42 +2863,284 @@ public partial class MainWindow
             return CreateReaderNavigationButtonGrid(readerState.NavigationItems);
         }
 
+        readerState.NavigationTopicExpanders.Clear();
+        var validTopicKeys = new HashSet<string>(
+            readerState.NavigationChapters.Select(chapter => chapter.Key),
+            StringComparer.Ordinal);
+        foreach (var staleKey in readerState.ExpandedNavigationTopics.Keys
+                     .Where(key => !validTopicKeys.Contains(key))
+                     .ToList())
+        {
+            readerState.ExpandedNavigationTopics.Remove(staleKey);
+        }
+
+        var panel = new StackPanel
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Spacing = 4
+        };
+
         foreach (var chapter in readerState.NavigationChapters)
         {
-            var groupPanel = new StackPanel
-            {
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                Spacing = 6
-            };
+            panel.Children.Add(CreateNavigationTopicExpander(readerState, chapter));
+        }
 
-            if (!string.IsNullOrWhiteSpace(chapter.Title))
-            {
-                groupPanel.Children.Add(new TextBlock
-                {
-                    Text = chapter.Title,
-                    FontWeight = FontWeight.SemiBold,
-                    TextWrapping = TextWrapping.Wrap,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    TextAlignment = TextAlignment.Center,
-                    Margin = new Thickness(0, 4, 0, 0)
-                });
-            }
-
-            var pagesPanel = new WrapPanel
-            {
-                HorizontalAlignment = HorizontalAlignment.Stretch
-            };
-
-            foreach (var item in chapter.Items)
-            {
-                pagesPanel.Children.Add(CreateReaderNavigationButton(readerState, item));
-            }
-
-            groupPanel.Children.Add(pagesPanel);
-            panel.Children.Add(groupPanel);
+        if (!string.IsNullOrWhiteSpace(readerState.CurrentChapterKey))
+        {
+            SyncActiveNavigationTopicExpansion(readerState, readerState.CurrentChapterKey);
         }
 
         return panel;
+    }
+
+    private Expander CreateNavigationTopicExpander(ReaderTabState readerState, ReaderNavigationChapter chapter)
+    {
+        var pagesPanel = new WrapPanel
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+
+        foreach (var item in chapter.Items)
+        {
+            pagesPanel.Children.Add(CreateReaderNavigationButton(readerState, item));
+        }
+
+        var isExpanded = readerState.NavigationTopicsAllExpanded ||
+            (readerState.ExpandedNavigationTopics.TryGetValue(chapter.Key, out var expanded) && expanded);
+
+        var expander = new Expander
+        {
+            Header = CreateNavigationTopicHeader(readerState, chapter),
+            Content = pagesPanel,
+            IsExpanded = isExpanded,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Margin = new Thickness(0, 2, 0, 0)
+        };
+
+        expander.PropertyChanged += (_, e) =>
+        {
+            if (e.Property != Expander.IsExpandedProperty)
+            {
+                return;
+            }
+
+            if (expander.IsExpanded)
+            {
+                if (!readerState.NavigationTopicsAllExpanded)
+                {
+                    CollapseNavigationTopicsExcept(readerState, chapter.Key);
+                }
+
+                readerState.ExpandedNavigationTopics[chapter.Key] = true;
+            }
+            else
+            {
+                readerState.ExpandedNavigationTopics[chapter.Key] = false;
+                readerState.NavigationTopicsAllExpanded = false;
+            }
+
+            SaveLayoutState();
+        };
+
+        readerState.NavigationTopicExpanders[chapter.Key] = expander;
+        return expander;
+    }
+
+    private Control CreateNavigationTopicHeader(ReaderTabState readerState, ReaderNavigationChapter chapter)
+    {
+        var layout = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+
+        var titleButton = new Button
+        {
+            Background = Brushes.Transparent,
+            BorderBrush = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(0),
+            Margin = new Thickness(0),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        var titlePanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 6
+        };
+
+        var titleText = string.IsNullOrWhiteSpace(chapter.Title) ? "Section" : chapter.Title;
+        titlePanel.Children.Add(new TextBlock
+        {
+            Text = titleText,
+            FontWeight = FontWeight.SemiBold,
+            TextWrapping = TextWrapping.Wrap,
+            TextAlignment = TextAlignment.Left
+        });
+
+        titleButton.Content = titlePanel;
+        ToolTip.SetTip(titleButton, "Jump to the start of this section");
+        titleButton.Click += (_, e) =>
+        {
+            if (chapter.Items.Count > 0)
+            {
+                ScrollReaderRowToTop(readerState, chapter.Items[0].Row);
+            }
+
+            e.Handled = true;
+        };
+
+        layout.Children.Add(titleButton);
+        Grid.SetColumn(titleButton, 0);
+
+        if (!string.IsNullOrWhiteSpace(chapter.RangeLabel))
+        {
+            layout.Children.Add(new TextBlock
+            {
+                Text = chapter.RangeLabel,
+                Foreground = new SolidColorBrush(Color.Parse("#667085")),
+                FontSize = 12,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(8, 0, 0, 0)
+            });
+            Grid.SetColumn(layout.Children[^1], 1);
+        }
+
+        return layout;
+    }
+
+    private static bool IsAnyNavigationTopicExpanded(ReaderTabState readerState)
+    {
+        return readerState.NavigationTopicsAllExpanded ||
+            readerState.ExpandedNavigationTopics.Values.Any(isExpanded => isExpanded);
+    }
+
+    private void SetAllNavigationTopicsExpanded(ReaderTabState readerState, bool expandAll)
+    {
+        readerState.NavigationTopicsAllExpanded = expandAll;
+        foreach (var chapter in readerState.NavigationChapters)
+        {
+            readerState.ExpandedNavigationTopics[chapter.Key] = expandAll;
+            if (readerState.NavigationTopicExpanders.TryGetValue(chapter.Key, out var expander))
+            {
+                expander.IsExpanded = expandAll;
+            }
+        }
+    }
+
+    private static void CollapseNavigationTopicsExcept(ReaderTabState readerState, string activeTopicKey)
+    {
+        foreach (var chapter in readerState.NavigationChapters)
+        {
+            if (string.Equals(chapter.Key, activeTopicKey, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            readerState.ExpandedNavigationTopics[chapter.Key] = false;
+            if (readerState.NavigationTopicExpanders.TryGetValue(chapter.Key, out var expander))
+            {
+                expander.IsExpanded = false;
+            }
+        }
+    }
+
+    private void SyncActiveNavigationTopicExpansion(ReaderTabState readerState, string chapterKey)
+    {
+        if (!readerState.HasTalmudNavigation || string.IsNullOrWhiteSpace(chapterKey))
+        {
+            return;
+        }
+
+        var topicKey = readerState.NavigationChapters
+            .FirstOrDefault(chapter => chapter.Items.Any(item =>
+                string.Equals(item.Row.ChapterKey, chapterKey, StringComparison.Ordinal)))
+            ?.Key;
+        if (string.IsNullOrWhiteSpace(topicKey) ||
+            string.Equals(topicKey, readerState.ActiveNavigationTopicKey, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        readerState.ActiveNavigationTopicKey = topicKey;
+        readerState.ExpandedNavigationTopics[topicKey] = true;
+        if (!readerState.NavigationTopicsAllExpanded)
+        {
+            CollapseNavigationTopicsExcept(readerState, topicKey);
+        }
+
+        if (readerState.NavigationTopicExpanders.TryGetValue(topicKey, out var expander))
+        {
+            expander.IsExpanded = true;
+        }
+    }
+
+    private void NavigateToNavigationJumpTarget(ReaderTabState readerState, string query)
+    {
+        query = query.Trim();
+        if (string.IsNullOrWhiteSpace(query) || readerState.NavigationItems.Count == 0)
+        {
+            return;
+        }
+
+        ReaderNavigationItem? target = null;
+        ReaderNavigationChapter? targetChapter = null;
+
+        if (TryResolveNavigationSimanNumber(query, out var simanNumber))
+        {
+            var simanKey = simanNumber.ToString();
+            target = readerState.NavigationItems.FirstOrDefault(item =>
+                string.Equals(item.Row.ChapterKey, simanKey, StringComparison.Ordinal) ||
+                string.Equals(item.Label, simanKey, StringComparison.Ordinal) ||
+                string.Equals(item.Label, FormatNavigationChapterLabel(simanKey), StringComparison.Ordinal));
+        }
+
+        if (target is null)
+        {
+            var normalizedQuery = NormalizeHebrewNumeralInput(query);
+            if (!string.IsNullOrWhiteSpace(normalizedQuery))
+            {
+                target = readerState.NavigationItems.FirstOrDefault(item =>
+                    string.Equals(NormalizeHebrewNumeralInput(item.Label), normalizedQuery, StringComparison.Ordinal));
+            }
+        }
+
+        if (target is null)
+        {
+            targetChapter = readerState.NavigationChapters.FirstOrDefault(chapter =>
+                chapter.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                chapter.Title.Contains(query, StringComparison.Ordinal));
+            target = targetChapter?.Items.FirstOrDefault();
+        }
+
+        if (target is null)
+        {
+            return;
+        }
+
+        var topicKey = readerState.NavigationChapters
+            .FirstOrDefault(chapter => chapter.Items.Contains(target))
+            ?.Key;
+        if (!string.IsNullOrWhiteSpace(topicKey))
+        {
+            readerState.ActiveNavigationTopicKey = topicKey;
+            readerState.ExpandedNavigationTopics[topicKey] = true;
+            if (!readerState.NavigationTopicsAllExpanded)
+            {
+                CollapseNavigationTopicsExcept(readerState, topicKey);
+            }
+
+            if (readerState.NavigationTopicExpanders.TryGetValue(topicKey, out var expander))
+            {
+                expander.IsExpanded = true;
+            }
+        }
+
+        ScrollReaderRowToTop(readerState, target.Row);
+        SaveLayoutState();
     }
 
     private Control CreateReaderNavigationButtonGrid(IEnumerable<ReaderNavigationItem> items)
