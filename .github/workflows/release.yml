@@ -101,18 +101,7 @@ jobs:
 
   build:
     needs: resolve-version
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - rid: win-x64
-            os: windows-latest
-          - rid: linux-x64
-            os: ubuntu-latest
-          - rid: osx-arm64
-            os: macos-latest
-
-    runs-on: ${{ matrix.os }}
+    runs-on: windows-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -131,7 +120,7 @@ jobs:
         run: |
           $draft = '${{ needs.resolve-version.outputs.draft }}' -eq 'true'
           $args = @(
-            '-Runtime', '${{ matrix.rid }}',
+            '-Runtime', 'win-x64',
             '-Version', '${{ needs.resolve-version.outputs.version }}',
             '-Upload'
           )
