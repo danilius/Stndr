@@ -3,9 +3,11 @@
     <StndrVersionFile>$(MSBuildThisFileDirectory)release\VERSION</StndrVersionFile>
     <StndrVersion Condition="Exists('$(StndrVersionFile)')">$([System.IO.File]::ReadAllText('$(StndrVersionFile)').Trim())</StndrVersion>
     <StndrVersion Condition="'$(StndrVersion)' == ''">0.0.0</StndrVersion>
+    <StndrNumericVersion>$([System.Text.RegularExpressions.Regex]::Match('$(StndrVersion)', '(\d+\.\d+\.\d+)').Groups[1].Value)</StndrNumericVersion>
+    <StndrNumericVersion Condition="'$(StndrNumericVersion)' == ''">0.0.0</StndrNumericVersion>
     <Version>$(StndrVersion)</Version>
-    <AssemblyVersion>$(StndrVersion).0</AssemblyVersion>
-    <FileVersion>$(StndrVersion).0</FileVersion>
+    <AssemblyVersion>$(StndrNumericVersion).0</AssemblyVersion>
+    <FileVersion>$(StndrNumericVersion).0</FileVersion>
     <InformationalVersion>$(StndrVersion)</InformationalVersion>
   </PropertyGroup>
 </Project>
