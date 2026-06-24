@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
@@ -86,9 +87,8 @@ public partial class MainWindow
             return;
         }
 
-        readerState.PinnedCommentarySourceKeys = new HashSet<string>(
-            _settings.PinnedCommentarySourceKeys,
-            StringComparer.OrdinalIgnoreCase);
+        ApplyPinnedCommentaryPreferences(readerState);
+        ApplyCommentarySortPreferences(readerState);
 
         _rightPanelBody.Children.Add(new TextBlock
         {
@@ -251,13 +251,20 @@ public partial class MainWindow
     {
         var count = readerState.Commentaries.Count;
         var title = count > 0 ? $"Commentaries ({count})" : "Commentaries";
+        var hasBackButton = readerState.IsCommentaryContentOpen;
         var layout = new Grid
         {
-            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
+            ColumnDefinitions = hasBackButton
+                ? new ColumnDefinitions("Auto,*,Auto,Auto")
+                : new ColumnDefinitions("*,Auto,Auto"),
             HorizontalAlignment = HorizontalAlignment.Stretch
         };
 
-        if (readerState.IsCommentaryContentOpen)
+        var titleColumn = hasBackButton ? 1 : 0;
+        var sortColumn = hasBackButton ? 2 : 1;
+        var languageColumn = hasBackButton ? 3 : 2;
+
+        if (hasBackButton)
         {
             var backButton = new Button
             {
@@ -286,7 +293,34 @@ public partial class MainWindow
             VerticalAlignment = VerticalAlignment.Center
         };
         layout.Children.Add(titleBlock);
-        Grid.SetColumn(titleBlock, 1);
+        Grid.SetColumn(titleBlock, titleColumn);
+
+        var sortFlyout = readerState.CommentarySortFlyout ?? new Flyout
+        {
+            Placement = PlacementMode.BottomEdgeAlignedRight
+        };
+        readerState.CommentarySortFlyout = sortFlyout;
+        RefreshCommentarySortFlyout(readerState);
+        sortFlyout.Opened += (_, _) => RefreshCommentarySortFlyout(readerState);
+
+        var sortButton = new Button
+        {
+            Content = "\u21c5",
+            Background = Brushes.White,
+            BorderBrush = new SolidColorBrush(Color.Parse("#D0D5DD")),
+            BorderThickness = new Thickness(1),
+            MinWidth = 24,
+            MinHeight = 22,
+            Padding = new Thickness(4, 0),
+            Margin = new Thickness(0, 0, 4, 0),
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            Flyout = sortFlyout
+        };
+        layout.Children.Add(sortButton);
+        Grid.SetColumn(sortButton, sortColumn);
 
         var languageButton = new Button
         {
@@ -310,11 +344,16 @@ public partial class MainWindow
                 : CommentaryLanguage.Hebrew;
             e.Handled = true;
             UpdateReaderTools();
+            if (readerState.IsCommentarySplitOpen)
+            {
+                UpdateSplitPaneView(readerState);
+            }
+
             SaveLayoutState();
         };
 
         layout.Children.Add(languageButton);
-        Grid.SetColumn(languageButton, 2);
+        Grid.SetColumn(languageButton, languageColumn);
         return layout;
     }
 
@@ -650,6 +689,20 @@ public partial class MainWindow
             HorizontalAlignment = HorizontalAlignment.Stretch,
             Spacing = 8
         };
+
+        var splitButton = new Button
+        {
+            Content = "Show in split view",
+            HorizontalAlignment = HorizontalAlignment.Left,
+            IsEnabled = readerState.SelectedReaderRow is not null
+        };
+        splitButton.Click += (_, e) =>
+        {
+            ShowCommentarySplitView(readerState);
+            SaveLayoutState();
+            e.Handled = true;
+        };
+        panel.Children.Add(splitButton);
 
         if (readerState.SelectedReaderRow is null || string.IsNullOrWhiteSpace(readerState.SelectedCommentaryRef))
         {
@@ -1210,6 +1263,105 @@ public partial class MainWindow
         return layout;
     }
 
+    private Control CreateCommentarySplitView(ReaderTabState readerState)
+    {
+        var header = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            Margin = new Thickness(16, 12, 16, 8)
+        };
+        header.Children.Add(new TextBlock
+        {
+            Text = string.IsNullOrWhiteSpace(readerState.SelectedCommentaryRef)
+                ? "Commentaries"
+                : readerState.SelectedCommentaryRef,
+            FontFamily = new FontFamily(GetSelectedUiFontFamily()),
+            FontSize = GetSelectedUiFontSize(),
+            FontWeight = FontWeight.SemiBold,
+            TextWrapping = TextWrapping.Wrap,
+            VerticalAlignment = VerticalAlignment.Center
+        });
+
+        var closeButton = new Button
+        {
+            Content = "Close split",
+            HorizontalAlignment = HorizontalAlignment.Right
+        };
+        closeButton.Click += (_, e) =>
+        {
+            CloseCommentarySplitView(readerState);
+            SaveLayoutState();
+            e.Handled = true;
+        };
+        header.Children.Add(closeButton);
+        Grid.SetColumn(closeButton, 1);
+
+        var content = new StackPanel
+        {
+            Spacing = 12,
+            Margin = new Thickness(16, 0, 16, 16)
+        };
+
+        if (readerState.IsCommentaryLoading)
+        {
+            content.Children.Add(new TextBlock
+            {
+                Text = "Loading commentaries...",
+                FontFamily = new FontFamily(GetSelectedUiFontFamily()),
+                FontSize = GetSelectedUiFontSize(),
+                TextWrapping = TextWrapping.Wrap
+            });
+        }
+        else if (!string.IsNullOrWhiteSpace(readerState.CommentaryError))
+        {
+            content.Children.Add(new TextBlock
+            {
+                Text = readerState.CommentaryError,
+                FontFamily = new FontFamily(GetSelectedUiFontFamily()),
+                FontSize = GetSelectedUiFontSize(),
+                Foreground = new SolidColorBrush(Color.Parse("#B42318")),
+                TextWrapping = TextWrapping.Wrap
+            });
+        }
+        else if (readerState.Commentaries.Count == 0)
+        {
+            content.Children.Add(new TextBlock
+            {
+                Text = "No commentaries for this paragraph.",
+                FontFamily = new FontFamily(GetSelectedUiFontFamily()),
+                FontSize = GetSelectedUiFontSize(),
+                TextWrapping = TextWrapping.Wrap
+            });
+        }
+        else
+        {
+            var groups = GetCommentarySourceGroups(readerState.Commentaries);
+            AddAllCommentariesContent(readerState, content, groups);
+        }
+
+        var layout = new Grid
+        {
+            RowDefinitions = new RowDefinitions("Auto,*"),
+            Children =
+            {
+                new Border
+                {
+                    BorderBrush = new SolidColorBrush(Color.Parse("#EAECF0")),
+                    BorderThickness = new Thickness(0, 0, 0, 1),
+                    Child = header
+                },
+                new ScrollViewer
+                {
+                    Content = content,
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
+                }
+            }
+        };
+        Grid.SetRow(layout.Children[1], 1);
+        return layout;
+    }
+
     private Control CreateLinkSourceLoadingView(
         string workTitle,
         string workHebrewTitle,
@@ -1544,23 +1696,12 @@ public partial class MainWindow
             GetAllCommentariesDescription(readerState),
             enabled: true));
 
-        var pinnedGroups = groups
-            .Where(group => readerState.PinnedCommentarySourceKeys.Contains(group.Key))
-            .ToList();
-        var unpinnedGroups = groups
-            .Where(group => !readerState.PinnedCommentarySourceKeys.Contains(group.Key))
-            .ToList();
+        var (pinnedGroups, unpinnedGroups) = GetOrderedCommentaryGroupSections(readerState, groups);
+        var allowReorder = readerState.CommentarySortMode == CommentarySortMode.Custom;
 
-        foreach (var group in pinnedGroups)
+        if (pinnedGroups.Count > 0)
         {
-            panel.Children.Add(CreateCommentarySourceRow(
-                readerState,
-                group.Key,
-                GetCommentaryGroupDisplayTitle(readerState, group),
-                group.Items.Count,
-                GetCommentarySourceDescription(readerState, group),
-                enabled: true,
-                group: group));
+            panel.Children.Add(CreateCommentaryReorderSection(readerState, pinnedGroups, allowReorder));
         }
 
         if (pinnedGroups.Count > 0 && unpinnedGroups.Count > 0)
@@ -1568,16 +1709,9 @@ public partial class MainWindow
             panel.Children.Add(CreatePinnedCommentarySeparator());
         }
 
-        foreach (var group in unpinnedGroups)
+        if (unpinnedGroups.Count > 0)
         {
-            panel.Children.Add(CreateCommentarySourceRow(
-                readerState,
-                group.Key,
-                GetCommentaryGroupDisplayTitle(readerState, group),
-                group.Items.Count,
-                GetCommentarySourceDescription(readerState, group),
-                enabled: true,
-                group: group));
+            panel.Children.Add(CreateCommentaryReorderSection(readerState, unpinnedGroups, allowReorder));
         }
 
         if (!string.Equals(readerState.SelectedCommentarySourceKey, AllCommentariesSelectionKey, StringComparison.Ordinal) &&
@@ -1674,12 +1808,13 @@ public partial class MainWindow
                     readerState.PinnedCommentarySourceKeys.Remove(group.Key);
                 }
 
-                _settings.PinnedCommentarySourceKeys = readerState.PinnedCommentarySourceKeys
-                    .OrderBy(key => key, StringComparer.OrdinalIgnoreCase)
-                    .ToList();
-                _settingsService.Save(_settings);
+                SavePinnedCommentaryPreferences(readerState);
                 e.Handled = true;
                 UpdateReaderTools();
+                if (readerState.IsCommentarySplitOpen)
+                {
+                    UpdateSplitPaneView(readerState);
+                }
             };
             header.Children.Add(pinButton);
             Grid.SetColumn(pinButton, 1);
@@ -1759,27 +1894,7 @@ public partial class MainWindow
 
         if (string.Equals(readerState.SelectedCommentarySourceKey, AllCommentariesSelectionKey, StringComparison.Ordinal))
         {
-            var pinnedGroups = groups
-                .Where(group => readerState.PinnedCommentarySourceKeys.Contains(group.Key))
-                .ToList();
-            var unpinnedGroups = groups
-                .Where(group => !readerState.PinnedCommentarySourceKeys.Contains(group.Key))
-                .ToList();
-
-            foreach (var group in pinnedGroups)
-            {
-                AddCommentarySourceContent(readerState, content, group, includeHeader: true);
-            }
-
-            if (pinnedGroups.Count > 0 && unpinnedGroups.Count > 0)
-            {
-                content.Children.Add(CreatePinnedCommentarySeparator());
-            }
-
-            foreach (var group in unpinnedGroups)
-            {
-                AddCommentarySourceContent(readerState, content, group, includeHeader: true);
-            }
+            AddAllCommentariesContent(readerState, content, groups);
         }
         else
         {
@@ -1820,6 +1935,29 @@ public partial class MainWindow
             Background = new SolidColorBrush(Color.Parse("#98A2B3")),
             Margin = new Thickness(0, 4)
         };
+    }
+
+    private void AddAllCommentariesContent(
+        ReaderTabState readerState,
+        StackPanel content,
+        List<CommentarySourceGroup> groups)
+    {
+        var (pinnedGroups, unpinnedGroups) = GetOrderedCommentaryGroupSections(readerState, groups);
+
+        foreach (var group in pinnedGroups)
+        {
+            AddCommentarySourceContent(readerState, content, group, includeHeader: true);
+        }
+
+        if (pinnedGroups.Count > 0 && unpinnedGroups.Count > 0)
+        {
+            content.Children.Add(CreatePinnedCommentarySeparator());
+        }
+
+        foreach (var group in unpinnedGroups)
+        {
+            AddCommentarySourceContent(readerState, content, group, includeHeader: true);
+        }
     }
 
     private void AddCommentarySourceContent(
@@ -1897,6 +2035,9 @@ public partial class MainWindow
             : GetSelectedEnglishCommentaryFontSize();
     }
 
+    private static readonly StringComparer HebrewCommentaryTitleComparer =
+        StringComparer.Create(CultureInfo.GetCultureInfo("he-IL"), ignoreCase: false);
+
     private static List<CommentarySourceGroup> GetCommentarySourceGroups(List<SefariaCommentaryItem> commentaries)
     {
         return commentaries
@@ -1909,8 +2050,593 @@ public partial class MainWindow
                 var hebrewTitle = FirstNonEmpty(first.HebrewDisplayTitle, englishTitle);
                 return new CommentarySourceGroup(group.Key, englishTitle, hebrewTitle, items);
             })
-            .OrderBy(group => group.EnglishTitle, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    private (List<CommentarySourceGroup> Pinned, List<CommentarySourceGroup> Unpinned) GetOrderedCommentaryGroupSections(
+        ReaderTabState readerState,
+        List<CommentarySourceGroup> groups)
+    {
+        EnsureCommentaryCustomOrder(readerState, groups.Select(group => group.Key));
+        var pinnedGroups = OrderCommentaryGroups(
+            groups.Where(group => readerState.PinnedCommentarySourceKeys.Contains(group.Key)),
+            readerState);
+        var unpinnedGroups = OrderCommentaryGroups(
+            groups.Where(group => !readerState.PinnedCommentarySourceKeys.Contains(group.Key)),
+            readerState);
+        return (pinnedGroups, unpinnedGroups);
+    }
+
+    private static List<CommentarySourceGroup> OrderCommentaryGroups(
+        IEnumerable<CommentarySourceGroup> groups,
+        ReaderTabState readerState)
+    {
+        var groupList = groups.ToList();
+        return readerState.CommentarySortMode switch
+        {
+            CommentarySortMode.Hebrew => groupList
+                .OrderBy(
+                    group => FirstNonEmpty(group.HebrewTitle, group.EnglishTitle),
+                    HebrewCommentaryTitleComparer)
+                .ToList(),
+            CommentarySortMode.Custom => OrderByCustomOrder(groupList, readerState.CommentaryCustomOrder),
+            _ => groupList
+                .OrderBy(group => group.EnglishTitle, StringComparer.OrdinalIgnoreCase)
+                .ToList()
+        };
+    }
+
+    private static List<CommentarySourceGroup> OrderByCustomOrder(
+        List<CommentarySourceGroup> groups,
+        IReadOnlyList<string> customOrder)
+    {
+        var orderIndex = customOrder
+            .Select((key, index) => (Key: key, Index: index))
+            .GroupBy(entry => entry.Key, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First().Index, StringComparer.OrdinalIgnoreCase);
+
+        return groups
+            .OrderBy(group => orderIndex.TryGetValue(group.Key, out var index) ? index : int.MaxValue)
+            .ThenBy(group => group.EnglishTitle, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private void EnsureCommentaryCustomOrder(ReaderTabState readerState, IEnumerable<string> keys)
+    {
+        if (readerState.CommentarySortMode != CommentarySortMode.Custom)
+        {
+            return;
+        }
+
+        var order = readerState.CommentaryCustomOrder.ToList();
+        var changed = false;
+        foreach (var key in keys)
+        {
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                continue;
+            }
+
+            if (order.Any(existing => string.Equals(existing, key, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            order.Add(key);
+            changed = true;
+        }
+
+        if (!changed)
+        {
+            return;
+        }
+
+        readerState.CommentaryCustomOrder = order;
+        SaveCommentarySortPreferences(readerState);
+    }
+
+    private void InitializeCommentaryCustomOrder(ReaderTabState readerState, List<CommentarySourceGroup> groups)
+    {
+        if (readerState.CommentaryCustomOrder.Count > 0)
+        {
+            EnsureCommentaryCustomOrder(readerState, groups.Select(group => group.Key));
+            return;
+        }
+
+        readerState.CommentaryCustomOrder = groups
+            .OrderBy(group => group.EnglishTitle, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.Key)
+            .ToList();
+        SaveCommentarySortPreferences(readerState);
+    }
+
+    private void SetCommentarySortMode(ReaderTabState readerState, CommentarySortMode mode)
+    {
+        if (mode == CommentarySortMode.Custom &&
+            readerState.CommentarySortMode != CommentarySortMode.Custom)
+        {
+            InitializeCommentaryCustomOrder(
+                readerState,
+                GetCommentarySourceGroups(readerState.Commentaries));
+        }
+
+        readerState.CommentarySortMode = mode;
+        SaveCommentarySortPreferences(readerState);
+        readerState.CommentarySortFlyout?.Hide();
+        UpdateReaderTools();
+        if (readerState.IsCommentarySplitOpen)
+        {
+            UpdateSplitPaneView(readerState);
+        }
+    }
+
+    private void MoveCommentaryWithinSection(
+        ReaderTabState readerState,
+        string sourceKey,
+        int sourceIndex,
+        int insertIndex,
+        IReadOnlyList<string> sectionKeys)
+    {
+        if (sourceIndex < 0 || sourceIndex >= sectionKeys.Count)
+        {
+            return;
+        }
+
+        var reorderedSectionKeys = sectionKeys.ToList();
+        var movedKey = reorderedSectionKeys[sourceIndex];
+        reorderedSectionKeys.RemoveAt(sourceIndex);
+
+        var targetIndex = insertIndex;
+        if (insertIndex > sourceIndex)
+        {
+            targetIndex = insertIndex - 1;
+        }
+
+        targetIndex = Math.Clamp(targetIndex, 0, reorderedSectionKeys.Count);
+        if (targetIndex == sourceIndex)
+        {
+            return;
+        }
+
+        reorderedSectionKeys.Insert(targetIndex, movedKey);
+
+        var sectionKeySet = new HashSet<string>(reorderedSectionKeys, StringComparer.OrdinalIgnoreCase);
+        var sectionQueue = new Queue<string>(reorderedSectionKeys);
+        var order = readerState.CommentaryCustomOrder.ToList();
+        readerState.CommentaryCustomOrder = order
+            .Select(key => sectionKeySet.Contains(key) ? sectionQueue.Dequeue() : key)
+            .ToList();
+        SaveCommentarySortPreferences(readerState);
+        UpdateReaderTools();
+        if (readerState.IsCommentarySplitOpen)
+        {
+            UpdateSplitPaneView(readerState);
+        }
+    }
+
+    private Control CreateCommentaryReorderSection(
+        ReaderTabState readerState,
+        List<CommentarySourceGroup> groups,
+        bool allowReorder)
+    {
+        var sectionPanel = new StackPanel
+        {
+            Spacing = 6
+        };
+
+        if (!allowReorder)
+        {
+            foreach (var group in groups)
+            {
+                sectionPanel.Children.Add(CreateCommentarySourceRow(
+                    readerState,
+                    group.Key,
+                    GetCommentaryGroupDisplayTitle(readerState, group),
+                    group.Items.Count,
+                    GetCommentarySourceDescription(readerState, group),
+                    enabled: true,
+                    group: group));
+            }
+
+            return sectionPanel;
+        }
+
+        var sectionChrome = new Border
+        {
+            Background = Brushes.Transparent,
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(2, 0),
+            Child = sectionPanel
+        };
+        var insertionLine = new Border
+        {
+            Height = 2,
+            Background = new SolidColorBrush(Color.Parse("#1570EF")),
+            CornerRadius = new CornerRadius(1),
+            IsVisible = false,
+            IsHitTestVisible = false,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(14, 0, 0, 0)
+        };
+        var sectionHost = new Grid
+        {
+            Children =
+            {
+                sectionChrome,
+                insertionLine
+            }
+        };
+
+        var context = new CommentarySectionReorderContext
+        {
+            ReaderState = readerState,
+            Section = sectionPanel,
+            SectionChrome = sectionChrome,
+            InsertionLine = insertionLine,
+            SectionKeys = groups.Select(group => group.Key).ToList()
+        };
+
+        foreach (var group in groups)
+        {
+            var row = CreateCommentarySourceRow(
+                readerState,
+                group.Key,
+                GetCommentaryGroupDisplayTitle(readerState, group),
+                group.Items.Count,
+                GetCommentarySourceDescription(readerState, group),
+                enabled: true,
+                group: group);
+            sectionPanel.Children.Add(CreateCommentaryReorderRow(context, row, group.Key));
+        }
+
+        return sectionHost;
+    }
+
+    private Control CreateCommentaryReorderRow(
+        CommentarySectionReorderContext context,
+        Control row,
+        string key)
+    {
+        var grip = new Border
+        {
+            Background = Brushes.Transparent,
+            Padding = new Thickness(0, 0, 4, 0),
+            MinWidth = 18,
+            VerticalAlignment = VerticalAlignment.Top,
+            Cursor = new Cursor(StandardCursorType.SizeAll),
+            Child = new TextBlock
+            {
+                Text = "\u283f",
+                FontSize = Math.Max(12, GetSelectedUiFontSize()),
+                Foreground = new SolidColorBrush(Color.Parse("#667085")),
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, 10, 0, 0)
+            }
+        };
+
+        var wrapper = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("Auto,*"),
+            Children =
+            {
+                grip,
+                row
+            }
+        };
+        Grid.SetColumn(row, 1);
+        wrapper.Tag = key;
+
+        grip.PointerPressed += (_, e) => BeginCommentaryReorder(context, key, wrapper, grip, e);
+        grip.PointerMoved += (_, e) => UpdateCommentaryReorder(grip, e);
+        grip.PointerReleased += (_, e) => EndCommentaryReorder(grip, e);
+        grip.PointerCaptureLost += (_, _) => CancelCommentaryReorderIfActive(grip);
+
+        return wrapper;
+    }
+
+    private void BeginCommentaryReorder(
+        CommentarySectionReorderContext context,
+        string sourceKey,
+        Control wrapper,
+        Control grip,
+        PointerPressedEventArgs e)
+    {
+        if (_activeCommentaryReorder is not null ||
+            !e.GetCurrentPoint(grip).Properties.IsLeftButtonPressed)
+        {
+            return;
+        }
+
+        var sourceIndex = context.SectionKeys.FindIndex(key =>
+            string.Equals(key, sourceKey, StringComparison.OrdinalIgnoreCase));
+        if (sourceIndex < 0)
+        {
+            return;
+        }
+
+        var position = e.GetPosition(context.Section);
+        _activeCommentaryReorder = new CommentaryReorderDragState
+        {
+            Context = context,
+            SourceKey = sourceKey,
+            SourceIndex = sourceIndex,
+            DraggedWrapper = wrapper,
+            Grip = grip,
+            StartPointerY = position.Y,
+            InsertIndex = sourceIndex
+        };
+
+        wrapper.Opacity = 0.55;
+        wrapper.ZIndex = 10;
+        context.SectionChrome.Background = new SolidColorBrush(Color.Parse("#F2F4F7"));
+        UpdateCommentaryReorderVisuals(position.Y);
+        e.Pointer.Capture(grip);
+        e.Handled = true;
+    }
+
+    private void UpdateCommentaryReorder(Control grip, PointerEventArgs e)
+    {
+        if (_activeCommentaryReorder?.Grip != grip)
+        {
+            return;
+        }
+
+        var position = e.GetPosition(_activeCommentaryReorder.Context.Section);
+        UpdateCommentaryReorderVisuals(position.Y);
+        e.Handled = true;
+    }
+
+    private void UpdateCommentaryReorderVisuals(double pointerY)
+    {
+        var drag = _activeCommentaryReorder;
+        if (drag is null)
+        {
+            return;
+        }
+
+        var section = drag.Context.Section;
+        drag.InsertIndex = GetCommentaryInsertIndex(section, pointerY);
+        SetCommentaryTranslateY(drag.DraggedWrapper, pointerY - drag.StartPointerY);
+
+        var rowStep = GetCommentaryRowStep(section, drag.SourceIndex);
+        for (var index = 0; index < section.Children.Count; index++)
+        {
+            var child = section.Children[index];
+            if (ReferenceEquals(child, drag.DraggedWrapper))
+            {
+                continue;
+            }
+
+            var shift = 0d;
+            if (drag.SourceIndex < drag.InsertIndex &&
+                index > drag.SourceIndex &&
+                index < drag.InsertIndex)
+            {
+                shift = -rowStep;
+            }
+            else if (drag.SourceIndex > drag.InsertIndex &&
+                     index >= drag.InsertIndex &&
+                     index < drag.SourceIndex)
+            {
+                shift = rowStep;
+            }
+
+            SetCommentaryTranslateY(child, shift);
+        }
+
+        PositionCommentaryInsertionLine(drag.Context, drag.InsertIndex, rowStep);
+    }
+
+    private void EndCommentaryReorder(Control grip, PointerReleasedEventArgs e)
+    {
+        if (_activeCommentaryReorder?.Grip != grip)
+        {
+            return;
+        }
+
+        var drag = _activeCommentaryReorder;
+        var insertIndex = drag.InsertIndex;
+        var sourceIndex = drag.SourceIndex;
+        var readerState = drag.Context.ReaderState;
+        var sourceKey = drag.SourceKey;
+        var sectionKeys = drag.Context.SectionKeys;
+
+        ResetCommentaryReorderVisuals();
+        _activeCommentaryReorder = null;
+        e.Pointer.Capture(null);
+        e.Handled = true;
+
+        MoveCommentaryWithinSection(readerState, sourceKey, sourceIndex, insertIndex, sectionKeys);
+    }
+
+    private void CancelCommentaryReorderIfActive(Control grip)
+    {
+        if (_activeCommentaryReorder?.Grip != grip)
+        {
+            return;
+        }
+
+        ResetCommentaryReorderVisuals();
+        _activeCommentaryReorder = null;
+    }
+
+    private void ResetCommentaryReorderVisuals()
+    {
+        var drag = _activeCommentaryReorder;
+        if (drag is null)
+        {
+            return;
+        }
+
+        foreach (var child in drag.Context.Section.Children)
+        {
+            ClearCommentaryTranslate(child);
+        }
+
+        drag.Context.InsertionLine.IsVisible = false;
+        drag.Context.SectionChrome.Background = Brushes.Transparent;
+    }
+
+    private static int GetCommentaryInsertIndex(StackPanel section, double pointerY)
+    {
+        var cumulative = 0d;
+        for (var index = 0; index < section.Children.Count; index++)
+        {
+            var child = section.Children[index];
+            var height = GetCommentaryRowHeight(child);
+            var midpoint = cumulative + (height / 2d);
+            if (pointerY < midpoint)
+            {
+                return index;
+            }
+
+            cumulative += height + section.Spacing;
+        }
+
+        return section.Children.Count;
+    }
+
+    private static double GetCommentaryRowHeight(Control row)
+    {
+        if (row.Bounds.Height > 0)
+        {
+            return row.Bounds.Height;
+        }
+
+        return Math.Max(row.DesiredSize.Height, row.Bounds.Height);
+    }
+
+    private static double GetCommentaryRowStep(StackPanel section, int referenceIndex)
+    {
+        if (section.Children.Count == 0)
+        {
+            return 0;
+        }
+
+        var referenceChild = section.Children[Math.Clamp(referenceIndex, 0, section.Children.Count - 1)];
+        return GetCommentaryRowHeight(referenceChild) + section.Spacing;
+    }
+
+    private static void PositionCommentaryInsertionLine(
+        CommentarySectionReorderContext context,
+        int insertIndex,
+        double rowStep)
+    {
+        var y = 0d;
+        for (var index = 0; index < insertIndex && index < context.Section.Children.Count; index++)
+        {
+            y += GetCommentaryRowHeight(context.Section.Children[index]) + context.Section.Spacing;
+        }
+
+        context.InsertionLine.Margin = new Thickness(14, Math.Max(0, y - 1), 0, 0);
+        context.InsertionLine.IsVisible = insertIndex >= 0;
+    }
+
+    private static void SetCommentaryTranslateY(Control control, double y)
+    {
+        if (control.RenderTransform is not TranslateTransform transform)
+        {
+            transform = new TranslateTransform();
+            control.RenderTransform = transform;
+        }
+
+        transform.Y = y;
+    }
+
+    private static void ClearCommentaryTranslate(Control control)
+    {
+        control.RenderTransform = null;
+        control.Opacity = 1;
+        control.ZIndex = 0;
+    }
+
+    private void RefreshCommentarySortFlyout(ReaderTabState readerState)
+    {
+        if (readerState.CommentarySortFlyout is not null)
+        {
+            readerState.CommentarySortFlyout.Content = CreateCommentarySortMenu(readerState);
+        }
+    }
+
+    private Control CreateCommentarySortMenu(ReaderTabState readerState)
+    {
+        var panel = new StackPanel
+        {
+            Spacing = 0,
+            Width = 220
+        };
+
+        panel.Children.Add(CreateCommentarySortModeRow(
+            readerState,
+            "English A\u2013Z",
+            CommentarySortMode.English));
+        panel.Children.Add(CreateCommentarySortModeRow(
+            readerState,
+            "Hebrew \u05d0\u2013\u05ea",
+            CommentarySortMode.Hebrew));
+        panel.Children.Add(CreateCommentarySortModeRow(
+            readerState,
+            "Custom",
+            CommentarySortMode.Custom));
+
+        return new Border
+        {
+            Background = Brushes.White,
+            Padding = new Thickness(10),
+            Child = panel
+        };
+    }
+
+    private Control CreateCommentarySortModeRow(
+        ReaderTabState readerState,
+        string label,
+        CommentarySortMode mode)
+    {
+        var isSelected = readerState.CommentarySortMode == mode;
+        var checkmark = new TextBlock
+        {
+            Text = isSelected ? "\u2713" : string.Empty,
+            FontFamily = new FontFamily(GetSelectedUiFontFamily()),
+            Foreground = new SolidColorBrush(Color.Parse("#101828")),
+            FontWeight = FontWeight.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        var contentGrid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = label,
+                    FontFamily = new FontFamily(GetSelectedUiFontFamily()),
+                    Foreground = new SolidColorBrush(Color.Parse("#101828")),
+                    FontWeight = isSelected ? FontWeight.SemiBold : FontWeight.Normal,
+                    VerticalAlignment = VerticalAlignment.Center
+                },
+                checkmark
+            }
+        };
+        Grid.SetColumn(checkmark, 1);
+
+        var row = new Button
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            Background = isSelected ? new SolidColorBrush(Color.Parse("#D8E7FF")) : Brushes.Transparent,
+            BorderBrush = Brushes.Transparent,
+            Padding = new Thickness(8, 6),
+            Content = contentGrid
+        };
+
+        row.Click += (_, e) =>
+        {
+            SetCommentarySortMode(readerState, mode);
+            e.Handled = true;
+        };
+
+        return row;
     }
 
     private static string GetAllCommentariesLabel(ReaderTabState readerState)
@@ -1936,12 +2662,37 @@ public partial class MainWindow
             : FirstNonEmpty(group.EnglishTitle, group.HebrewTitle, "Commentary");
     }
 
-    private static string GetCommentarySourceDescription(
+    private string GetCommentarySourceDescription(
         ReaderTabState readerState,
         CommentarySourceGroup group)
     {
-        var normalizedTitle = group.EnglishTitle.ToLowerInvariant();
         var useHebrew = readerState.CommentaryLanguage == CommentaryLanguage.Hebrew;
+        var indexTitle = group.Items.FirstOrDefault()?.IndexTitle;
+        foreach (var lookupTitle in new[]
+                 {
+                     indexTitle,
+                     group.EnglishTitle,
+                     group.Key
+                 })
+        {
+            if (string.IsNullOrWhiteSpace(lookupTitle))
+            {
+                continue;
+            }
+
+            if (_sefariaLibrary.TryGetWorkShortDescription(lookupTitle, out var english, out var hebrew))
+            {
+                var description = useHebrew
+                    ? FirstNonEmpty(hebrew, english)
+                    : FirstNonEmpty(english, hebrew);
+                if (!string.IsNullOrWhiteSpace(description))
+                {
+                    return description;
+                }
+            }
+        }
+
+        var normalizedTitle = group.EnglishTitle.ToLowerInvariant();
 
         if (normalizedTitle.Contains("rashi", StringComparison.Ordinal))
         {

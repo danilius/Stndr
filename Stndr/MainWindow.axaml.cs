@@ -96,6 +96,7 @@ public partial class MainWindow : Window
     private int _librarySelectionVersion;
     private CancellationTokenSource? _sefariaDownloadCts;
     private CancellationTokenSource? _categoryInstallProgressCts;
+    private CommentaryReorderDragState? _activeCommentaryReorder;
     private MainWindow.CategorySelectionProgress? _cachedCategoryProgress;
     private List<FontOption>? _allFontOptions;
     private List<FontOption>? _hebrewFontOptions;

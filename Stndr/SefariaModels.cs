@@ -290,6 +290,13 @@ public enum CommentaryLanguage
     Hebrew
 }
 
+public enum CommentarySortMode
+{
+    English,
+    Hebrew,
+    Custom
+}
+
 public enum HebrewMarksMode
 {
     TextOnly,
@@ -306,6 +313,8 @@ public sealed class AppSettings
     public Dictionary<string, string> SelectedTranslationsByBook { get; set; } = new();
     public Dictionary<string, ReaderDisplayMode> ReaderDisplayModesByBook { get; set; } = new();
     public Dictionary<string, ReaderLinksPreferences> ReaderLinksPreferencesByBook { get; set; } = new();
+    public Dictionary<string, List<string>> PinnedCommentarySourceKeysByBook { get; set; } = new();
+    public Dictionary<string, ReaderCommentarySortPreferences> CommentarySortPreferencesByBook { get; set; } = new();
     public List<string> PinnedCommentarySourceKeys { get; set; } = new();
     public string HebrewReaderFontFamily { get; set; } = string.Empty;
     public string EnglishReaderFontFamily { get; set; } = string.Empty;
@@ -325,6 +334,12 @@ public sealed class ReaderLinksPreferences
 {
     public bool IsExpanded { get; set; }
     public List<string> SelectedCategories { get; set; } = new();
+}
+
+public sealed class ReaderCommentarySortPreferences
+{
+    public CommentarySortMode SortMode { get; set; } = CommentarySortMode.English;
+    public List<string> CustomOrder { get; set; } = new();
 }
 
 public sealed record ReaderTextUnit(

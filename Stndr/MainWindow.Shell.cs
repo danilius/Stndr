@@ -565,6 +565,7 @@ public partial class MainWindow
                 SelectedCommentarySourceTitleEnglish = readerState.SelectedCommentarySourceTitleEnglish,
                 SelectedCommentarySourceTitleHebrew = readerState.SelectedCommentarySourceTitleHebrew,
                 CommentaryLanguage = readerState.CommentaryLanguage,
+                IsCommentarySplitOpen = readerState.IsCommentarySplitOpen,
                 ScrollOffset = readerState.ReaderWebView is not null
                     ? readerState.ReaderWebScrollOffset
                     : readerState.ReaderList?.Scroll?.Offset.Y ?? readerState.ReaderWebScrollOffset

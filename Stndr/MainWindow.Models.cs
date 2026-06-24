@@ -66,6 +66,7 @@ public partial class MainWindow
         public string SelectedCommentarySourceTitleEnglish { get; set; } = string.Empty;
         public string SelectedCommentarySourceTitleHebrew { get; set; } = string.Empty;
         public CommentaryLanguage CommentaryLanguage { get; set; } = CommentaryLanguage.English;
+        public bool IsCommentarySplitOpen { get; set; }
         public double ScrollOffset { get; set; }
     }
 
@@ -103,6 +104,9 @@ public partial class MainWindow
         public string SelectedCommentarySourceTitleEnglish { get; set; } = string.Empty;
         public string SelectedCommentarySourceTitleHebrew { get; set; } = string.Empty;
         public HashSet<string> PinnedCommentarySourceKeys { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+        public CommentarySortMode CommentarySortMode { get; set; } = CommentarySortMode.English;
+        public List<string> CommentaryCustomOrder { get; set; } = new();
+        public Flyout? CommentarySortFlyout { get; set; }
         public HashSet<string> SelectedLinkCategories { get; set; } = new(StringComparer.OrdinalIgnoreCase);
         public HashSet<string> ExpandedLinkCategories { get; set; } = new(StringComparer.OrdinalIgnoreCase);
         public bool HasInitializedLinkCategorySelection { get; set; }
@@ -117,6 +121,7 @@ public partial class MainWindow
         public bool IsLinkWorkDownloadLoading { get; set; }
         public bool IsLinkSourceTabLoading { get; set; }
         public bool IsLinkSplitOpen { get; set; }
+        public bool IsCommentarySplitOpen { get; set; }
         public string CommentaryError { get; set; } = string.Empty;
         public string LinksError { get; set; } = string.Empty;
         public string LinkPreviewError { get; set; } = string.Empty;
@@ -205,5 +210,25 @@ public partial class MainWindow
         {
             return FamilyName;
         }
+    }
+
+    private sealed class CommentarySectionReorderContext
+    {
+        public ReaderTabState ReaderState { get; init; } = null!;
+        public StackPanel Section { get; init; } = null!;
+        public Border SectionChrome { get; init; } = null!;
+        public Border InsertionLine { get; init; } = null!;
+        public List<string> SectionKeys { get; init; } = new();
+    }
+
+    private sealed class CommentaryReorderDragState
+    {
+        public CommentarySectionReorderContext Context { get; init; } = null!;
+        public string SourceKey { get; init; } = string.Empty;
+        public int SourceIndex { get; init; }
+        public Control DraggedWrapper { get; init; } = null!;
+        public Control Grip { get; init; } = null!;
+        public double StartPointerY { get; init; }
+        public int InsertIndex { get; set; }
     }
 }

@@ -192,7 +192,7 @@ public partial class MainWindow
             HebrewTexts = hebrewTexts,
             Translations = translations,
             SelectedTranslation = selectedTranslation,
-            PinnedCommentarySourceKeys = new HashSet<string>(_settings.PinnedCommentarySourceKeys, StringComparer.OrdinalIgnoreCase),
+            PinnedCommentarySourceKeys = GetPinnedCommentarySourceKeysForBook(book.Title),
             DisplayMode = GetSavedDisplayMode(book.Title, selectedTranslation is not null)
         };
 
@@ -262,6 +262,7 @@ public partial class MainWindow
         state.SelectedCommentarySourceTitleEnglish = savedState.SelectedCommentarySourceTitleEnglish;
         state.SelectedCommentarySourceTitleHebrew = savedState.SelectedCommentarySourceTitleHebrew;
         state.CommentaryLanguage = savedState.CommentaryLanguage;
+        state.IsCommentarySplitOpen = savedState.IsCommentarySplitOpen;
     }
 
     private InstalledSefariaBook? GetSavedTranslation(string workTitle, List<InstalledSefariaBook> translations)
@@ -587,6 +588,10 @@ public partial class MainWindow
         RenderReaderWebView(state);
         UpdateReaderChapterHeader(state, state.NavigationItems.FirstOrDefault()?.Row);
         RestoreSavedCommentarySelection(state);
+        if (state.IsCommentarySplitOpen)
+        {
+            UpdateSplitPaneView(state);
+        }
     }
 
     private static List<(ReaderTextUnit? Primary, ReaderTextUnit? Translation)> PairReaderUnitsByReference(
@@ -706,12 +711,21 @@ public partial class MainWindow
         if (string.IsNullOrWhiteSpace(state.SelectedCommentaryRef))
         {
             UpdateReaderTools();
+            if (state.IsCommentarySplitOpen)
+            {
+                UpdateSplitPaneView(state);
+            }
+
             return;
         }
 
         state.IsCommentaryLoading = true;
         EnsureLinksLoadedForCurrentSelection(state);
         UpdateReaderTools();
+        if (state.IsCommentarySplitOpen)
+        {
+            UpdateSplitPaneView(state);
+        }
 
         var cts = new CancellationTokenSource();
         state.CommentaryLoadCts = cts;
@@ -759,7 +773,67 @@ public partial class MainWindow
         state.IsLinkPreviewLoading = false;
         state.IsLinkWorkDownloadLoading = false;
         state.LinkPreviewError = string.Empty;
-        CloseLinkSplitView(state);
+        CloseLinkSplitViewOnly(state);
+        UpdateSplitPaneView(state);
+    }
+
+    private HashSet<string> GetPinnedCommentarySourceKeysForBook(string workTitle)
+    {
+        if (_settings.PinnedCommentarySourceKeysByBook.TryGetValue(workTitle, out var pinnedKeys) &&
+            pinnedKeys.Count > 0)
+        {
+            return new HashSet<string>(pinnedKeys, StringComparer.OrdinalIgnoreCase);
+        }
+
+        if (_settings.PinnedCommentarySourceKeys.Count > 0)
+        {
+            return new HashSet<string>(_settings.PinnedCommentarySourceKeys, StringComparer.OrdinalIgnoreCase);
+        }
+
+        return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private void ApplyPinnedCommentaryPreferences(ReaderTabState state)
+    {
+        state.PinnedCommentarySourceKeys = GetPinnedCommentarySourceKeysForBook(state.WorkTitle);
+    }
+
+    private void SavePinnedCommentaryPreferences(ReaderTabState state)
+    {
+        _settings.PinnedCommentarySourceKeysByBook[state.WorkTitle] = state.PinnedCommentarySourceKeys
+            .OrderBy(key => key, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        _settingsService.Save(_settings);
+    }
+
+    private void ApplyCommentarySortPreferences(ReaderTabState state)
+    {
+        if (_settings.CommentarySortPreferencesByBook.TryGetValue(state.WorkTitle, out var preferences) &&
+            preferences is not null)
+        {
+            state.CommentarySortMode = preferences.SortMode;
+            state.CommentaryCustomOrder = preferences.CustomOrder
+                .Where(key => !string.IsNullOrWhiteSpace(key))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            return;
+        }
+
+        state.CommentarySortMode = CommentarySortMode.English;
+        state.CommentaryCustomOrder = new List<string>();
+    }
+
+    private void SaveCommentarySortPreferences(ReaderTabState state)
+    {
+        _settings.CommentarySortPreferencesByBook[state.WorkTitle] = new ReaderCommentarySortPreferences
+        {
+            SortMode = state.CommentarySortMode,
+            CustomOrder = state.CommentaryCustomOrder
+                .Where(key => !string.IsNullOrWhiteSpace(key))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList()
+        };
+        _settingsService.Save(_settings);
     }
 
     private void ApplySavedLinksPreferences(ReaderTabState state)
@@ -976,20 +1050,43 @@ public partial class MainWindow
             return;
         }
 
+        state.IsCommentarySplitOpen = false;
         state.IsLinkSplitOpen = true;
-        ApplyLinkSplitVisibility(state, isVisible: true);
-        UpdateLinkSplitView(state);
+        UpdateSplitPaneView(state);
+    }
+
+    private void ShowCommentarySplitView(ReaderTabState state)
+    {
+        if (state.SelectedReaderRow is null)
+        {
+            return;
+        }
+
+        ClearActiveLinkPreview(state);
+        state.IsCommentarySplitOpen = true;
+        UpdateSplitPaneView(state);
     }
 
     private void CloseLinkSplitView(ReaderTabState state)
     {
-        state.IsLinkSplitOpen = false;
-        if (state.LinkSplitContentHost is not null)
-        {
-            state.LinkSplitContentHost.Content = null;
-        }
+        CloseLinkSplitViewOnly(state);
+        UpdateSplitPaneView(state);
+    }
 
-        ApplyLinkSplitVisibility(state, isVisible: false);
+    private void CloseCommentarySplitView(ReaderTabState state)
+    {
+        state.IsCommentarySplitOpen = false;
+        UpdateSplitPaneView(state);
+    }
+
+    private void CloseLinkSplitViewOnly(ReaderTabState state)
+    {
+        state.IsLinkSplitOpen = false;
+    }
+
+    private static bool IsSplitPaneOpen(ReaderTabState state)
+    {
+        return state.IsLinkSplitOpen || state.IsCommentarySplitOpen;
     }
 
     private void ApplyLinkSplitVisibility(ReaderTabState state, bool isVisible)
@@ -1010,25 +1107,43 @@ public partial class MainWindow
 
     private void UpdateLinkSplitView(ReaderTabState state)
     {
-        if (!state.IsLinkSplitOpen || state.LinkSplitContentHost is null)
+        UpdateSplitPaneView(state);
+    }
+
+    private void UpdateSplitPaneView(ReaderTabState state)
+    {
+        if (!IsSplitPaneOpen(state))
+        {
+            if (state.LinkSplitContentHost is not null)
+            {
+                state.LinkSplitContentHost.Content = null;
+            }
+
+            ApplyLinkSplitVisibility(state, isVisible: false);
+            return;
+        }
+
+        if (state.LinkSplitContentHost is null)
         {
             return;
         }
 
         ApplyLinkSplitVisibility(state, isVisible: true);
-        state.LinkSplitContentHost.Content = CreateLinkSplitView(state);
+        state.LinkSplitContentHost.Content = state.IsCommentarySplitOpen
+            ? CreateCommentarySplitView(state)
+            : CreateLinkSplitView(state);
     }
 
     private void RefreshOpenLinkSplitViews()
     {
         foreach (var state in _openReaderTabs.Values)
         {
-            if (!state.IsLinkSplitOpen)
+            if (!IsSplitPaneOpen(state))
             {
                 continue;
             }
 
-            UpdateLinkSplitView(state);
+            UpdateSplitPaneView(state);
         }
     }
 
@@ -1309,6 +1424,10 @@ public partial class MainWindow
                 state.IsCommentaryLoading = false;
                 state.CommentaryLoadCts = null;
                 UpdateReaderTools();
+                if (state.IsCommentarySplitOpen)
+                {
+                    UpdateSplitPaneView(state);
+                }
             }
 
             cts.Dispose();

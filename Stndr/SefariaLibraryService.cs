@@ -85,6 +85,7 @@ public sealed partial class SefariaLibraryService
     public void SetStorageRootFolder(string? storageRootFolder)
     {
         _booksManifestCache = null;
+        _workShortDescriptionsCache = null;
         lock (_installedBooksCacheGate)
         {
             _installedBooksCache = null;
@@ -127,6 +128,7 @@ public sealed partial class SefariaLibraryService
     public async Task<SefariaCategoryNode> LoadLibraryAsync(CancellationToken cancellationToken)
     {
         var indexText = await EnsureIndexAvailableAsync(cancellationToken);
+        WarmWorkShortDescriptionsCache(indexText);
         var indexNodes = JsonSerializer.Deserialize<List<SefariaIndexJsonNode>>(indexText) ?? new List<SefariaIndexJsonNode>();
         var root = new SefariaCategoryNode
         {
