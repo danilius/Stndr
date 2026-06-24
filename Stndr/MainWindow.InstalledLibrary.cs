@@ -24,18 +24,43 @@ namespace Stndr;
 
 public partial class MainWindow
 {
+    private int _installedBooksTreeRefreshGeneration;
+
     private void RefreshInstalledBooksTree()
+    {
+        _ = RefreshInstalledBooksTreeAsync();
+    }
+
+    private async Task RefreshInstalledBooksTreeAsync()
     {
         if (_leftPanelBody is null)
         {
             return;
         }
 
-        var roots = _sefariaLibrary.BuildInstalledTree();
-        _leftPanelBody.ItemsSource = roots
-            .Cast<object>()
-            .Select(CreateInstalledBookTreeItem)
-            .ToList();
+        var generation = Interlocked.Increment(ref _installedBooksTreeRefreshGeneration);
+        ObservableCollection<object> roots;
+        try
+        {
+            roots = await Task.Run(() => _sefariaLibrary.BuildInstalledTree());
+        }
+        catch
+        {
+            return;
+        }
+
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (_leftPanelBody is null || generation != _installedBooksTreeRefreshGeneration)
+            {
+                return;
+            }
+
+            _leftPanelBody.ItemsSource = roots
+                .Cast<object>()
+                .Select(CreateInstalledBookTreeItem)
+                .ToList();
+        });
     }
 
     private TreeViewItem CreateInstalledBookTreeItem(object node)

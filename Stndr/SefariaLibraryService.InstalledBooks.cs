@@ -358,6 +358,20 @@ public sealed partial class SefariaLibraryService
     {
         try
         {
+            if (!File.Exists(IndexFilePath))
+            {
+                return new Dictionary<string, InstalledIndexOrder>(StringComparer.OrdinalIgnoreCase);
+            }
+
+            var lastWrite = File.GetLastWriteTimeUtc(IndexFilePath);
+            lock (_installedBooksCacheGate)
+            {
+                if (_indexOrderLookupCache is not null && _indexFileLastWriteUtc == lastWrite)
+                {
+                    return _indexOrderLookupCache;
+                }
+            }
+
             var indexText = ReadJsonTextFile(IndexFilePath);
             var indexNodes = JsonSerializer.Deserialize<List<SefariaIndexJsonNode>>(indexText) ?? new List<SefariaIndexJsonNode>();
             var lookup = new Dictionary<string, InstalledIndexOrder>(StringComparer.OrdinalIgnoreCase);
@@ -365,6 +379,12 @@ public sealed partial class SefariaLibraryService
             foreach (var node in indexNodes)
             {
                 AddIndexOrder(node, new List<string>(), new List<string?>(), new List<float>(), lookup);
+            }
+
+            lock (_installedBooksCacheGate)
+            {
+                _indexOrderLookupCache = lookup;
+                _indexFileLastWriteUtc = lastWrite;
             }
 
             return lookup;
@@ -422,9 +442,9 @@ public sealed partial class SefariaLibraryService
             return book;
         }
 
-        book.Categories = order.Categories;
-        book.HebrewCategories = order.HebrewCategories;
-        book.CategoryOrders = order.CategoryOrders;
+        book.Categories = new List<string>(order.Categories);
+        book.HebrewCategories = new List<string?>(order.HebrewCategories);
+        book.CategoryOrders = new List<float>(order.CategoryOrders);
         book.Order = order.Order;
         return book;
     }
@@ -833,6 +853,8 @@ public sealed partial class SefariaLibraryService
             _installedBooksManifestLastWriteUtc = default;
             _cachedSourcesBookFileCount = 0;
             _cachedSourcesMaxLastWriteUtc = default;
+            _indexOrderLookupCache = null;
+            _indexFileLastWriteUtc = default;
             _bookJsonCache.Clear();
         }
     }

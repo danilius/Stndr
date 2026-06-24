@@ -151,7 +151,6 @@ public partial class MainWindow : Window
         ApplyLeftPanelState(false, DefaultExpandedPanelWidth);
         ApplyRightPanelState(false, DefaultExpandedPanelWidth);
         EnsureDefaultTabs();
-        RefreshInstalledBooksTree();
         UpdateTabHeaderStates();
 
         this.Opened += async (_, _) => await CompleteStartupAsync();
@@ -163,12 +162,14 @@ public partial class MainWindow : Window
     {
         try
         {
+            var refreshInstalledBooksTreeTask = RefreshInstalledBooksTreeAsync();
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 LoadLayoutState();
                 UpdateTabHeaderStates();
             }, DispatcherPriority.Background);
 
+            await refreshInstalledBooksTreeTask;
             await WaitForSelectedTabContentReadyAsync();
         }
         finally

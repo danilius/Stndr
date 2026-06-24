@@ -36,6 +36,8 @@ public sealed partial class SefariaLibraryService
     private DateTime _installedBooksManifestLastWriteUtc;
     private int _cachedSourcesBookFileCount;
     private DateTime _cachedSourcesMaxLastWriteUtc;
+    private Dictionary<string, InstalledIndexOrder>? _indexOrderLookupCache;
+    private DateTime _indexFileLastWriteUtc;
     private readonly Dictionary<string, BookJsonCacheEntry> _bookJsonCache = new(StringComparer.OrdinalIgnoreCase);
     private Dictionary<string, List<SefariaVersionOption>>? _booksManifestCache;
 
