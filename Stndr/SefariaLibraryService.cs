@@ -32,7 +32,19 @@ public sealed partial class SefariaLibraryService
     private readonly object _installedBooksCacheGate = new();
     private readonly SemaphoreSlim _booksManifestGate = new(1, 1);
     private List<InstalledSefariaBook>? _installedBooksCache;
+    private List<InstalledSefariaBook>? _getInstalledBooksResultCache;
+    private DateTime _installedBooksManifestLastWriteUtc;
+    private int _cachedSourcesBookFileCount;
+    private DateTime _cachedSourcesMaxLastWriteUtc;
+    private readonly Dictionary<string, BookJsonCacheEntry> _bookJsonCache = new(StringComparer.OrdinalIgnoreCase);
     private Dictionary<string, List<SefariaVersionOption>>? _booksManifestCache;
+
+    private sealed class BookJsonCacheEntry
+    {
+        public required DateTime LastWriteTimeUtc { get; init; }
+        public required string Json { get; init; }
+        public InstalledSefariaBook? Book { get; init; }
+    }
 
     public SefariaLibraryService()
         : this(null)
@@ -86,10 +98,7 @@ public sealed partial class SefariaLibraryService
     {
         _booksManifestCache = null;
         _workShortDescriptionsCache = null;
-        lock (_installedBooksCacheGate)
-        {
-            _installedBooksCache = null;
-        }
+        InvalidateInstalledBooksCaches();
 
         if (string.IsNullOrWhiteSpace(storageRootFolder))
         {

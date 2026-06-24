@@ -38,6 +38,7 @@ public sealed partial class SefariaLibraryService
         if (File.Exists(filePath))
         {
             File.Delete(filePath);
+            RemoveBookJsonCacheEntry(filePath);
         }
 
         RemoveInstalledBook(book.Title, book.SelectedVersion);
@@ -51,15 +52,21 @@ public sealed partial class SefariaLibraryService
             return new List<InstalledSefariaBook>();
         }
 
-        var installed = LoadInstalledBooks(true);
+        lock (_installedBooksCacheGate)
+        {
+            if (IsGetInstalledBooksResultCacheValid())
+            {
+                return CloneInstalledBooks(_getInstalledBooksResultCache!);
+            }
+        }
+
+        var installed = LoadInstalledBooks();
         var changed = false;
 
         foreach (var filePath in Directory.EnumerateFiles(SourcesFolder, "*.json"))
         {
             var fileName = Path.GetFileName(filePath);
-            if (string.Equals(fileName, IndexFileName, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(fileName, BooksManifestFileName, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(fileName, InstalledBooksFileName, StringComparison.OrdinalIgnoreCase))
+            if (IsReservedSourcesJsonFile(fileName))
             {
                 continue;
             }
@@ -114,11 +121,19 @@ public sealed partial class SefariaLibraryService
             SaveInstalledBooks(installed);
         }
 
-        return installed
+        var result = installed
             .OrderBy(book => string.Join("/", book.Categories), StringComparer.OrdinalIgnoreCase)
             .ThenBy(book => book.Title, StringComparer.OrdinalIgnoreCase)
             .ThenBy(book => book.VersionTitle, StringComparer.OrdinalIgnoreCase)
             .ToList();
+
+        lock (_installedBooksCacheGate)
+        {
+            _getInstalledBooksResultCache = CloneInstalledBooks(result);
+            UpdateCachedSourcesFolderFingerprint();
+        }
+
+        return result;
     }
 
     public ObservableCollection<object> BuildInstalledTree()
@@ -184,7 +199,7 @@ public sealed partial class SefariaLibraryService
 
     public void SaveReadingPosition(InstalledSefariaBook book, double verticalOffset)
     {
-        var installed = LoadInstalledBooks(true);
+        var installed = LoadInstalledBooks();
         var existing = installed.FirstOrDefault(item => string.Equals(item.Key, book.Key, StringComparison.Ordinal)) ??
             installed.FirstOrDefault(item => string.Equals(item.FilePath, book.FilePath, StringComparison.OrdinalIgnoreCase));
         if (existing is null)
@@ -225,7 +240,7 @@ public sealed partial class SefariaLibraryService
             .ToList();
     }
 
-    private static IEnumerable<InstalledSefariaBook> ExpandTalmudBilingualVersions(InstalledSefariaBook book)
+    private IEnumerable<InstalledSefariaBook> ExpandTalmudBilingualVersions(InstalledSefariaBook book)
     {
         if (!IsTalmud(book))
         {
@@ -233,7 +248,14 @@ public sealed partial class SefariaLibraryService
             yield break;
         }
 
-        using var document = JsonDocument.Parse(ReadJsonTextFile(book.FilePath));
+        var json = GetCachedBookJsonText(book.FilePath);
+        if (json is null)
+        {
+            yield return book;
+            yield break;
+        }
+
+        using var document = JsonDocument.Parse(json);
         var root = document.RootElement;
         if (!root.TryGetProperty("pages", out var pages) ||
             pages.ValueKind != JsonValueKind.Array)
@@ -468,7 +490,13 @@ public sealed partial class SefariaLibraryService
     {
         lock (_installedBooksCacheGate)
         {
-            if (!forceRefresh && _installedBooksCache is not null)
+            var manifestLastWrite = File.Exists(InstalledBooksFilePath)
+                ? File.GetLastWriteTimeUtc(InstalledBooksFilePath)
+                : DateTime.MinValue;
+
+            if (!forceRefresh &&
+                _installedBooksCache is not null &&
+                _installedBooksManifestLastWriteUtc == manifestLastWrite)
             {
                 return CloneInstalledBooks(_installedBooksCache);
             }
@@ -491,6 +519,7 @@ public sealed partial class SefariaLibraryService
                 }
             }
 
+            _installedBooksManifestLastWriteUtc = manifestLastWrite;
             _installedBooksCache = CloneInstalledBooks(installed);
             return CloneInstalledBooks(_installedBooksCache);
         }
@@ -502,13 +531,15 @@ public sealed partial class SefariaLibraryService
         File.WriteAllText(InstalledBooksFilePath, json, Encoding.UTF8);
         lock (_installedBooksCacheGate)
         {
+            _installedBooksManifestLastWriteUtc = File.GetLastWriteTimeUtc(InstalledBooksFilePath);
             _installedBooksCache = CloneInstalledBooks(installed);
+            _getInstalledBooksResultCache = null;
         }
     }
 
     private void UpsertInstalledBook(InstalledSefariaBook book)
     {
-        var installed = LoadInstalledBooks(true);
+        var installed = LoadInstalledBooks();
         var existing = installed.FindIndex(item => string.Equals(item.Key, book.Key, StringComparison.Ordinal));
         if (existing >= 0)
         {
@@ -547,7 +578,9 @@ public sealed partial class SefariaLibraryService
             FilePath = filePath
         };
 
-        ApplyJsonMetadata(record, json);
+        using var document = JsonDocument.Parse(json);
+        ApplyJsonMetadata(record, document.RootElement);
+        SeedBookJsonCache(filePath, json, record);
         return record;
     }
 
@@ -555,7 +588,26 @@ public sealed partial class SefariaLibraryService
     {
         try
         {
-            return TryCreateInstalledBookFromJson(ReadJsonTextFile(filePath), filePath);
+            if (!File.Exists(filePath))
+            {
+                RemoveBookJsonCacheEntry(filePath);
+                return null;
+            }
+
+            var lastWrite = File.GetLastWriteTimeUtc(filePath);
+            lock (_installedBooksCacheGate)
+            {
+                if (_bookJsonCache.TryGetValue(filePath, out var cached) &&
+                    cached.LastWriteTimeUtc == lastWrite)
+                {
+                    return cached.Book is null ? null : CloneInstalledBook(cached.Book);
+                }
+            }
+
+            var json = ReadJsonTextFile(filePath);
+            var book = TryCreateInstalledBookFromJson(json, filePath);
+            CacheBookJsonEntry(filePath, lastWrite, json, book);
+            return book;
         }
         catch
         {
@@ -565,25 +617,34 @@ public sealed partial class SefariaLibraryService
 
     private static InstalledSefariaBook? TryCreateInstalledBookFromJson(string json, string filePath)
     {
-        if (!IsDownloadedBookJson(json))
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+            if (!IsDownloadedBookRoot(root))
+            {
+                return null;
+            }
+
+            var record = new InstalledSefariaBook
+            {
+                FilePath = filePath
+            };
+            ApplyFileNameMetadata(record, filePath);
+            ApplyJsonMetadata(record, root);
+            return string.IsNullOrWhiteSpace(record.Title) ? null : record;
+        }
+        catch (JsonException)
         {
             return null;
         }
-
-        var record = new InstalledSefariaBook
-        {
-            FilePath = filePath
-        };
-        ApplyFileNameMetadata(record, filePath);
-        ApplyJsonMetadata(record, json);
-        return string.IsNullOrWhiteSpace(record.Title) ? null : record;
     }
 
-    private static bool IsInstalledBookFile(string filePath)
+    private bool IsInstalledBookFile(string filePath)
     {
         try
         {
-            return TryCreateInstalledBookFromJson(ReadJsonTextFile(filePath), filePath) is not null;
+            return TryCreateInstalledBookFromFile(filePath) is not null;
         }
         catch
         {
@@ -610,23 +671,27 @@ public sealed partial class SefariaLibraryService
         try
         {
             using var document = JsonDocument.Parse(json);
-            var root = document.RootElement;
-            var hasText = root.TryGetProperty("text", out var text) &&
-                (text.ValueKind == JsonValueKind.Array ||
-                 HasArrayTextChild(text));
-            var hasPages = root.TryGetProperty("pages", out var pages) &&
-                pages.ValueKind == JsonValueKind.Array &&
-                pages.GetArrayLength() > 0;
-
-            return root.ValueKind == JsonValueKind.Object &&
-                root.TryGetProperty("title", out var title) &&
-                !string.IsNullOrWhiteSpace(title.GetString()) &&
-                (hasText || hasPages);
+            return IsDownloadedBookRoot(document.RootElement);
         }
         catch (JsonException)
         {
             return false;
         }
+    }
+
+    private static bool IsDownloadedBookRoot(JsonElement root)
+    {
+        var hasText = root.TryGetProperty("text", out var text) &&
+            (text.ValueKind == JsonValueKind.Array ||
+             HasArrayTextChild(text));
+        var hasPages = root.TryGetProperty("pages", out var pages) &&
+            pages.ValueKind == JsonValueKind.Array &&
+            pages.GetArrayLength() > 0;
+
+        return root.ValueKind == JsonValueKind.Object &&
+            root.TryGetProperty("title", out var title) &&
+            !string.IsNullOrWhiteSpace(title.GetString()) &&
+            (hasText || hasPages);
     }
 
     private static bool HasArrayTextChild(JsonElement text)
@@ -651,10 +716,8 @@ public sealed partial class SefariaLibraryService
         return text.EnumerateObject().Any(property => property.Value.ValueKind == JsonValueKind.Array);
     }
 
-    private static void ApplyJsonMetadata(InstalledSefariaBook record, string json)
+    private static void ApplyJsonMetadata(InstalledSefariaBook record, JsonElement root)
     {
-        using var document = JsonDocument.Parse(json);
-        var root = document.RootElement;
         var metadataRoot = GetMetadataRoot(root);
 
         if (metadataRoot.TryGetProperty("indexTitle", out var indexTitle))
@@ -761,9 +824,142 @@ public sealed partial class SefariaLibraryService
         record.VersionTitle = versionSegment[(languageSeparator + 1)..].Trim();
     }
 
-    private static List<InstalledSefariaBook> CloneInstalledBooks(IEnumerable<InstalledSefariaBook> installed)
+    private void InvalidateInstalledBooksCaches()
     {
-        return installed.Select(book => new InstalledSefariaBook
+        lock (_installedBooksCacheGate)
+        {
+            _installedBooksCache = null;
+            _getInstalledBooksResultCache = null;
+            _installedBooksManifestLastWriteUtc = default;
+            _cachedSourcesBookFileCount = 0;
+            _cachedSourcesMaxLastWriteUtc = default;
+            _bookJsonCache.Clear();
+        }
+    }
+
+    private bool IsGetInstalledBooksResultCacheValid()
+    {
+        if (_getInstalledBooksResultCache is null)
+        {
+            return false;
+        }
+
+        GetSourcesFolderFingerprint(out var count, out var maxLastWriteUtc);
+        return count == _cachedSourcesBookFileCount &&
+            maxLastWriteUtc == _cachedSourcesMaxLastWriteUtc;
+    }
+
+    private void UpdateCachedSourcesFolderFingerprint()
+    {
+        GetSourcesFolderFingerprint(out _cachedSourcesBookFileCount, out _cachedSourcesMaxLastWriteUtc);
+    }
+
+    private void GetSourcesFolderFingerprint(out int count, out DateTime maxLastWriteUtc)
+    {
+        count = 0;
+        maxLastWriteUtc = DateTime.MinValue;
+        if (!Directory.Exists(SourcesFolder))
+        {
+            return;
+        }
+
+        foreach (var filePath in Directory.EnumerateFiles(SourcesFolder, "*.json"))
+        {
+            if (IsReservedSourcesJsonFile(Path.GetFileName(filePath)))
+            {
+                continue;
+            }
+
+            count++;
+            var lastWrite = File.GetLastWriteTimeUtc(filePath);
+            if (lastWrite > maxLastWriteUtc)
+            {
+                maxLastWriteUtc = lastWrite;
+            }
+        }
+    }
+
+    private static bool IsReservedSourcesJsonFile(string fileName)
+    {
+        return string.Equals(fileName, IndexFileName, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(fileName, BooksManifestFileName, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(fileName, InstalledBooksFileName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void RemoveBookJsonCacheEntry(string filePath)
+    {
+        lock (_installedBooksCacheGate)
+        {
+            _bookJsonCache.Remove(filePath);
+            _getInstalledBooksResultCache = null;
+        }
+    }
+
+    private void SeedBookJsonCache(string filePath, string json, InstalledSefariaBook book)
+    {
+        var lastWrite = File.Exists(filePath)
+            ? File.GetLastWriteTimeUtc(filePath)
+            : DateTime.UtcNow;
+        CacheBookJsonEntry(filePath, lastWrite, json, book);
+        lock (_installedBooksCacheGate)
+        {
+            _getInstalledBooksResultCache = null;
+        }
+    }
+
+    private void CacheBookJsonEntry(string filePath, DateTime lastWrite, string json, InstalledSefariaBook? book)
+    {
+        lock (_installedBooksCacheGate)
+        {
+            _bookJsonCache[filePath] = new BookJsonCacheEntry
+            {
+                LastWriteTimeUtc = lastWrite,
+                Json = json,
+                Book = book is null ? null : CloneInstalledBook(book)
+            };
+        }
+    }
+
+    private string? GetCachedBookJsonText(string filePath)
+    {
+        try
+        {
+            if (!File.Exists(filePath))
+            {
+                return null;
+            }
+
+            var lastWrite = File.GetLastWriteTimeUtc(filePath);
+            lock (_installedBooksCacheGate)
+            {
+                if (_bookJsonCache.TryGetValue(filePath, out var cached) &&
+                    cached.LastWriteTimeUtc == lastWrite)
+                {
+                    return cached.Json;
+                }
+            }
+
+            _ = TryCreateInstalledBookFromFile(filePath);
+            lock (_installedBooksCacheGate)
+            {
+                if (_bookJsonCache.TryGetValue(filePath, out var cached) &&
+                    cached.LastWriteTimeUtc == lastWrite)
+                {
+                    return cached.Json;
+                }
+            }
+
+            return ReadJsonTextFile(filePath);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static InstalledSefariaBook CloneInstalledBook(InstalledSefariaBook book)
+    {
+        return new InstalledSefariaBook
         {
             Title = book.Title,
             HebrewTitle = book.HebrewTitle,
@@ -775,6 +971,11 @@ public sealed partial class SefariaLibraryService
             VersionTitle = book.VersionTitle,
             FilePath = book.FilePath,
             LastScrollOffset = book.LastScrollOffset
-        }).ToList();
+        };
+    }
+
+    private static List<InstalledSefariaBook> CloneInstalledBooks(IEnumerable<InstalledSefariaBook> installed)
+    {
+        return installed.Select(CloneInstalledBook).ToList();
     }
 }
