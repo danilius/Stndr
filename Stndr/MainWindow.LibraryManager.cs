@@ -26,6 +26,7 @@ namespace Stndr;
 public partial class MainWindow
 {
     private const double LibraryVersionDropdownWidth = 400;
+    private const int GeneralBulkDownloadBookThreshold = 5;
 
     private sealed record CategoryBulkTarget(
         string ActionTitle,
@@ -789,15 +790,16 @@ public partial class MainWindow
 
         var topLevel = NormalizeCategoryKey(path[0]);
         var selected = NormalizeCategoryKey(category.DisplayTitle);
+        var allBooks = EnumerateBooks(category).ToList();
 
         bool isBavliOrYerushalmi = topLevel == "talmud" && (selected == "bavli" || selected == "yerushalmi");
         bool isMishneTorahOrShulchan = (topLevel == "halakhah" || topLevel == "halacha") &&
             (selected.Contains("mishne torah") || selected.Contains("mishneh torah") ||
              selected.Contains("shulchan aruch") || selected.Contains("shulchan arukh"));
 
-        if (topLevel == "tanakh" && IsTanakhMajorCategory(selected) && EnumerateBooks(category).Any())
+        if (topLevel == "tanakh" && IsTanakhMajorCategory(selected) && allBooks.Count > 0)
         {
-            target = CreateBulkTarget(category);
+            target = CreateBulkTarget(category, allBooks);
             return target.Books.Count > 0;
         }
 
@@ -812,24 +814,25 @@ public partial class MainWindow
             return true;
         }
 
-        if ((topLevel == "mishnah" || topLevel == "talmud") && path.Count >= 2 && EnumerateBooks(category).Any())
+        if ((topLevel == "mishnah" || topLevel == "talmud") && path.Count >= 2 && allBooks.Count > 0)
         {
-            target = CreateBulkTarget(category);
+            target = CreateBulkTarget(category, allBooks);
             return target.Books.Count > 0;
         }
 
         if ((topLevel == "halakhah" || topLevel == "halacha") && IsMajorHalachicWork(selected))
         {
-            target = CreateBulkTarget(category);
+            target = CreateBulkTarget(category, allBooks);
             return target.Books.Count > 0;
         }
 
-        return false;
-    }
+        if (path.Count > 1 && allBooks.Count > GeneralBulkDownloadBookThreshold)
+        {
+            target = CreateBulkTarget(category, allBooks);
+            return true;
+        }
 
-    private static bool HasDirectBookChildren(SefariaCategoryNode category)
-    {
-        return category.Contents.Any(node => node is SefariaBookNode);
+        return false;
     }
 
     private static bool IsTanakhMajorCategory(string key)
