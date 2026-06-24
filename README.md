@@ -22,6 +22,33 @@ Build a debug version:
 dotnet build .\Stndr.sln
 ```
 
+## Releases
+
+Version lives in `release/VERSION`. Velopack packages are built with `scripts/Release.ps1`.
+
+**Local Windows release (build only):**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\Release.ps1
+```
+
+**Bump, build, and upload to GitHub Releases:**
+
+```powershell
+# Authenticate once: gh auth login  (or set GITHUB_TOKEN)
+powershell -ExecutionPolicy Bypass -File .\scripts\Release.ps1 -Bump patch -Upload -Tag
+```
+
+**Explicit version:**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\Release.ps1 -Version 1.2.0 -Upload -Tag -PushTag
+```
+
+**CI / GitHub Actions:** push a tag such as `v1.2.0`, or run the **Release** workflow manually from the Actions tab. The workflow builds Windows, Linux, and macOS packages and merges them into one GitHub release.
+
+Installed apps check `https://github.com/danilius/Stndr` for updates via the in-app banner.
+
 ## Project Layout
 
 - `Stndr/` - Avalonia application source.

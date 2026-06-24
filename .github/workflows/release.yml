@@ -1,0 +1,139 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Semver version (leave empty to use release/VERSION)'
+        required: false
+        type: string
+      bump:
+        description: 'Bump release/VERSION before building'
+        required: false
+        type: choice
+        options:
+          - none
+          - patch
+          - minor
+          - major
+      draft:
+        description: 'Create a draft GitHub release'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  resolve-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      draft: ${{ steps.version.outputs.draft }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve release version
+        id: version
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          function Read-VersionFile {
+            return (Get-Content 'release/VERSION' -Raw).Trim()
+          }
+
+          function Bump-Version([string]$Current, [string]$Part) {
+            if ($Current -match '^(\d+)\.(\d+)\.(\d+)') {
+              $major = [int]$Matches[1]
+              $minor = [int]$Matches[2]
+              $patch = [int]$Matches[3]
+              $suffix = ''
+              if ($Current -match '^(\d+\.\d+\.\d+)(.*)$') { $suffix = $Matches[2] }
+              switch ($Part) {
+                'major' { $major++; $minor = 0; $patch = 0 }
+                'minor' { $minor++; $patch = 0 }
+                'patch' { $patch++ }
+              }
+              return "$major.$minor.$patch$suffix"
+            }
+            throw "Cannot bump version: $Current"
+          }
+
+          $version = ''
+          if ('${{ github.event_name }}' -eq 'push') {
+            $tag = '${{ github.ref_name }}'
+            if ($tag -notmatch '^v(.+)$') {
+              throw "Tag must look like v1.2.3. Got: $tag"
+            }
+            $version = $Matches[1]
+          }
+          elseif ('${{ inputs.version }}') {
+            $version = '${{ inputs.version }}'.Trim()
+          }
+          else {
+            $version = Read-VersionFile
+          }
+
+          $bump = '${{ inputs.bump }}'
+          if ($bump -and $bump -ne 'none') {
+            $version = Bump-Version -Current $version -Part $bump
+            Set-Content -Path 'release/VERSION' -Value $version -NoNewline -Encoding utf8
+          }
+
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          $draft = if ('${{ inputs.draft }}' -eq 'true') { 'true' } else { 'false' }
+          "draft=$draft" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "Release version: $version"
+
+      - name: Commit bumped version
+        if: inputs.bump != '' && inputs.bump != 'none' && github.event_name == 'workflow_dispatch'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add release/VERSION
+          git diff --cached --quiet || git commit -m "chore(release): bump version to ${{ steps.version.outputs.version }}"
+          git push
+
+  build:
+    needs: resolve-version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: win-x64
+            os: windows-latest
+          - rid: linux-x64
+            os: ubuntu-latest
+          - rid: osx-arm64
+            os: macos-latest
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install Velopack CLI
+        run: dotnet tool restore
+
+      - name: Build and upload release
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $draft = '${{ needs.resolve-version.outputs.draft }}' -eq 'true'
+          $args = @(
+            '-Runtime', '${{ matrix.rid }}',
+            '-Version', '${{ needs.resolve-version.outputs.version }}',
+            '-Upload'
+          )
+          if ($draft) { $args += '-Draft' }
+          & ./scripts/Release.ps1 @args

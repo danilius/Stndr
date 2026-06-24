@@ -148,6 +148,7 @@ public partial class MainWindow : Window
         }
         ApplyUiFontSetting();
         InitializeNavigationItems();
+        InitializeUpdateBanner();
         ApplyLeftPanelState(false, DefaultExpandedPanelWidth);
         ApplyRightPanelState(false, DefaultExpandedPanelWidth);
         EnsureDefaultTabs();
@@ -175,6 +176,7 @@ public partial class MainWindow : Window
         finally
         {
             _hasLoadedLayoutState = true;
+            StartUpdateChecks();
             StartupCompleted?.Invoke(this, EventArgs.Empty);
         }
 

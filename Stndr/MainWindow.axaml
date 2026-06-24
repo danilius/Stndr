@@ -139,7 +139,7 @@
     </Window.Styles>
 
     <Grid x:Name="LayoutRoot"
-          RowDefinitions="Auto,*"
+          RowDefinitions="Auto,Auto,*"
           ColumnDefinitions="280,5,*,5,280">
 
         <Border Grid.Row="0"
@@ -154,7 +154,34 @@
             </StackPanel>
         </Border>
 
-        <Border Grid.Row="1"
+        <Border x:Name="UpdateBanner"
+                Grid.Row="1"
+                Grid.ColumnSpan="5"
+                IsVisible="False"
+                Background="#E8F0FC"
+                BorderThickness="0,0,0,1"
+                BorderBrush="#22000000"
+                Padding="8,6">
+            <DockPanel LastChildFill="True">
+                <StackPanel Orientation="Horizontal"
+                            DockPanel.Dock="Right"
+                            Spacing="8">
+                    <Button x:Name="UpdateBannerActionButton"
+                            MinWidth="96"
+                            Click="UpdateBannerActionClicked" />
+                    <Button x:Name="UpdateBannerDismissButton"
+                            Content="Later"
+                            MinWidth="64"
+                            Click="UpdateBannerDismissClicked" />
+                </StackPanel>
+                <TextBlock x:Name="UpdateBannerMessage"
+                           Text="An update is available."
+                           VerticalAlignment="Center"
+                           TextWrapping="Wrap" />
+            </DockPanel>
+        </Border>
+
+        <Border Grid.Row="2"
                 Grid.Column="0"
                 BorderThickness="0,0,1,0"
                 BorderBrush="#22000000">
@@ -179,14 +206,14 @@
         </Border>
 
         <GridSplitter x:Name="LeftSplitter"
-                      Grid.Row="1"
+                      Grid.Row="2"
                       Grid.Column="1"
                       Background="Transparent"
                       Width="5"
                       ResizeDirection="Columns"
                       ResizeBehavior="PreviousAndNext" />
 
-        <Grid Grid.Row="1"
+        <Grid Grid.Row="2"
               Grid.Column="2"
               Margin="8"
               RowDefinitions="Auto,*">
@@ -198,14 +225,14 @@
         </Grid>
 
         <GridSplitter x:Name="RightSplitter"
-                      Grid.Row="1"
+                      Grid.Row="2"
                       Grid.Column="3"
                       Background="Transparent"
                       Width="5"
                       ResizeDirection="Columns"
                       ResizeBehavior="PreviousAndNext" />
 
-        <Border Grid.Row="1"
+        <Border Grid.Row="2"
                 Grid.Column="4"
                 BorderThickness="1,0,0,0"
                 BorderBrush="#22000000">

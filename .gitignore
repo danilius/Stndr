@@ -3,6 +3,7 @@ bin/
 obj/
 TestResults/
 artifacts/
+Releases/
 
 # Visual Studio / IDE state
 .vs/

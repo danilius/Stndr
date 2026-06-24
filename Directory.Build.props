@@ -1,0 +1,11 @@
+<Project>
+  <PropertyGroup>
+    <StndrVersionFile>$(MSBuildThisFileDirectory)release\VERSION</StndrVersionFile>
+    <StndrVersion Condition="Exists('$(StndrVersionFile)')">$([System.IO.File]::ReadAllText('$(StndrVersionFile)').Trim())</StndrVersion>
+    <StndrVersion Condition="'$(StndrVersion)' == ''">0.0.0</StndrVersion>
+    <Version>$(StndrVersion)</Version>
+    <AssemblyVersion>$(StndrVersion).0</AssemblyVersion>
+    <FileVersion>$(StndrVersion).0</FileVersion>
+    <InformationalVersion>$(StndrVersion)</InformationalVersion>
+  </PropertyGroup>
+</Project>

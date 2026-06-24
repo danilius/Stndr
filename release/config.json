@@ -1,0 +1,23 @@
+{
+  "packId": "Stndr",
+  "packTitle": "Stndr",
+  "repoUrl": "https://github.com/danilius/Stndr",
+  "icon": "Stndr/Assets/AppIcon.ico",
+  "runtimes": [
+    {
+      "rid": "win-x64",
+      "mainExe": "Stndr.exe",
+      "channel": "win"
+    },
+    {
+      "rid": "linux-x64",
+      "mainExe": "Stndr",
+      "channel": "linux"
+    },
+    {
+      "rid": "osx-arm64",
+      "mainExe": "Stndr",
+      "channel": "osx"
+    }
+  ]
+}
