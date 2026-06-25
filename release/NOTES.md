@@ -1,29 +1,24 @@
-## Stndr 0.0.2-alpha
+## Stndr 0.0.3-alpha
 
-Pre-release build. Install via the Windows setup package or update from 0.0.1-alpha through the in-app update banner.
+Pre-release build. Install via the Windows setup package or update from 0.0.2-alpha through the in-app update banner.
 
-### Auto-update
+### Search
 
-- Velopack integration with a non-blocking update banner (check, download, restart when ready)
-- Release packaging and GitHub upload pipeline
+- Advanced search workspace with saved query state, result grouping, and reader integration
+- Local search index support for installed texts
+- Search help notes for current scope and behavior
 
 ### Reader
 
-- Commentary split view with per-book pinning and sorting
-- Sefaria subtitle lookup for commentary sources
-- Persistent WebView reader tools and refined display/layout controls
-- Topic-based Shulchan Aruch navigation with jump and accordion UI
-- Sefaria schema–aware chapter/perek navigation for Talmud (Bavli) and Tanach
-- Torah sedrot aliyot with improved reference handling and color refresh
+- Split reader pane now uses the WebView renderer for consistency with main reader display
+- Reader tools panel refinements for WebView-based reading
 
 ### Library
 
-- Restructured local data storage and configurable data folder
-- Library Manager UX refinements and stabilized metadata loading
-- Bulk category downloads tuned for Bavli, Yerushalmi, Mishne Torah, and Shulchan Aruch
-- Cached links UI with preview/source flow improvements
+- Extended bulk download handling for supported library categories
 
-### Performance
+### Release
 
-- Deferred installed-books tree build on startup
-- Cached installed-book JSON parsing and index order lookup
+- Windows-only release packaging for now
+- Release output cleanup before packing to avoid stale Velopack artifacts
+- Benchmark suite removed from the application solution
