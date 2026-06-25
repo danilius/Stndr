@@ -50,6 +50,8 @@ public partial class MainWindow : Window
     private GridSplitter? _rightSplitter;
     private TreeView? _leftPanelBody;
     private TextBlock? _leftPanelTitle;
+    private Button? _leftPanelSearchButton;
+    private TextBox? _leftPanelSearchBox;
     private TextBlock? _rightPanelTitle;
     private StackPanel? _rightPanelBody;
     private TabControl? _centerTabs;
@@ -74,6 +76,7 @@ public partial class MainWindow : Window
     private Button? _libraryCategoryHebrewActionButton;
     private Button? _libraryCategoryTranslationActionButton;
     private Button? _libraryCancelButton;
+    private TextBox? _libraryManagerSearchBox;
 
     private ObservableCollection<TabItem>? _tabs;
     private readonly AppSettingsService _settingsService = new();
@@ -117,6 +120,8 @@ public partial class MainWindow : Window
         _rightSplitter = this.FindControl<GridSplitter>("RightSplitter");
         _leftPanelBody = this.FindControl<TreeView>("LeftPanelBody");
         _leftPanelTitle = this.FindControl<TextBlock>("LeftPanelTitle");
+        _leftPanelSearchButton = this.FindControl<Button>("LeftPanelSearchButton");
+        _leftPanelSearchBox = this.FindControl<TextBox>("LeftPanelSearchBox");
         _rightPanelTitle = this.FindControl<TextBlock>("RightPanelTitle");
         _rightPanelBody = this.FindControl<StackPanel>("RightPanelBody");
         var centerTabs = this.FindControl<TabControl>("CenterTabs")

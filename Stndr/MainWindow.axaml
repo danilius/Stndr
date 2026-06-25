@@ -186,17 +186,31 @@
                 BorderThickness="0,0,1,0"
                 BorderBrush="#22000000">
             <Grid RowDefinitions="Auto,*">
-                <DockPanel Margin="6">
-                    <Button
-                            Content="☰"
-                            Click="ToggleLeftPanel"
-                            Width="28"
-                            HorizontalAlignment="Left" />
+                <StackPanel Spacing="4"
+                            Margin="6">
+                    <StackPanel Orientation="Horizontal"
+                                Spacing="6">
+                        <Button
+                                Content="☰"
+                                Click="ToggleLeftPanel"
+                                Width="28"
+                                HorizontalAlignment="Left" />
+                        <Button x:Name="LeftPanelSearchButton"
+                                Content="🔍"
+                                Click="ToggleInstalledBooksSearchClicked"
+                                Width="28"
+                                HorizontalAlignment="Left" />
+                        <TextBox x:Name="LeftPanelSearchBox"
+                                 Width="180"
+                                 IsVisible="False"
+                                 PlaceholderText="Search installed books..."
+                                 VerticalAlignment="Center" />
+                    </StackPanel>
                     <TextBlock x:Name="LeftPanelTitle"
                                Text="Installed Books"
                                VerticalAlignment="Center"
                                Margin="8,0,0,0" />
-                </DockPanel>
+                </StackPanel>
 
                 <TreeView x:Name="LeftPanelBody"
                           Grid.Row="1"

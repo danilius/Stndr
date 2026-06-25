@@ -105,18 +105,41 @@ public partial class MainWindow
             }
         };
         _libraryTree.SelectionChanged += OnLibraryTreeSelectionChanged;
+        _libraryManagerSearchBox = new TextBox
+        {
+            Width = 180,
+            IsVisible = false,
+            PlaceholderText = "Search library..."
+        };
+
+        var libraryManagerSearchButton = new Button
+        {
+            Content = "🔍",
+            Width = 28
+        };
+        libraryManagerSearchButton.Click += ToggleLibraryManagerSearchClicked;
 
         var leftPane = new Grid
         {
             RowDefinitions = new RowDefinitions("Auto,*"),
             Children =
             {
-                new TextBlock
+                new StackPanel
                 {
-                    Text = "Sefaria Library",
-                    FontWeight = FontWeight.SemiBold,
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 8,
                     Margin = new Thickness(8),
-                    VerticalAlignment = VerticalAlignment.Center
+                    Children =
+                    {
+                        new TextBlock
+                        {
+                            Text = "Sefaria Library",
+                            FontWeight = FontWeight.SemiBold,
+                            VerticalAlignment = VerticalAlignment.Center
+                        },
+                        libraryManagerSearchButton,
+                        _libraryManagerSearchBox
+                    }
                 },
                 _libraryTree
             }
