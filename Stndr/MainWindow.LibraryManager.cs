@@ -2044,6 +2044,7 @@ public partial class MainWindow
 
         UpdateSelectedBookDownloadedState();
         UpdateLibraryDetails();
+        HighlightLibraryBookInTree(book);
 
         if (_librarySearchSuggestionsContainer is not null)
             _librarySearchSuggestionsContainer.IsVisible = false;
@@ -2058,5 +2059,33 @@ public partial class MainWindow
         await Task.Delay(150);
         if (_librarySearchSuggestionsContainer is not null)
             _librarySearchSuggestionsContainer.IsVisible = false;
+    }
+
+    private void HighlightLibraryBookInTree(SefariaBookNode targetBook)
+    {
+        if (_libraryTree?.ItemsSource is not IEnumerable<TreeViewItem> roots)
+            return;
+        FindAndSelectLibraryBookItem(roots, targetBook);
+    }
+
+    private bool FindAndSelectLibraryBookItem(
+        IEnumerable<TreeViewItem> items, SefariaBookNode targetBook)
+    {
+        foreach (var item in items)
+        {
+            if (ReferenceEquals(item.DataContext, targetBook))
+            {
+                SelectLibraryTreeItem(item);
+                return true;
+            }
+
+            if (item.ItemsSource is IEnumerable<TreeViewItem> children &&
+                FindAndSelectLibraryBookItem(children, targetBook))
+            {
+                item.IsExpanded = true;
+                return true;
+            }
+        }
+        return false;
     }
 }

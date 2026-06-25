@@ -170,6 +170,7 @@ public partial class MainWindow
             return;
 
         OpenInstalledBook(book);
+        HighlightInstalledBookInTree(book);
 
         if (_leftPanelSearchSuggestionsContainer is not null)
             _leftPanelSearchSuggestionsContainer.IsVisible = false;
@@ -185,5 +186,34 @@ public partial class MainWindow
         await Task.Delay(150);
         if (_leftPanelSearchSuggestionsContainer is not null)
             _leftPanelSearchSuggestionsContainer.IsVisible = false;
+    }
+
+    private void HighlightInstalledBookInTree(InstalledSefariaBook targetBook)
+    {
+        if (_leftPanelBody?.ItemsSource is not IEnumerable<TreeViewItem> roots)
+            return;
+        FindAndSelectInstalledBookItem(roots, targetBook);
+    }
+
+    private static bool FindAndSelectInstalledBookItem(
+        IEnumerable<TreeViewItem> items, InstalledSefariaBook targetBook)
+    {
+        foreach (var item in items)
+        {
+            if (item.DataContext is InstalledSefariaBook book &&
+                string.Equals(book.Key, targetBook.Key, StringComparison.Ordinal))
+            {
+                item.IsSelected = true;
+                return true;
+            }
+
+            if (item.ItemsSource is IEnumerable<TreeViewItem> children &&
+                FindAndSelectInstalledBookItem(children, targetBook))
+            {
+                item.IsExpanded = true;
+                return true;
+            }
+        }
+        return false;
     }
 }
