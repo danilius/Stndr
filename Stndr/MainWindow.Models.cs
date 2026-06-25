@@ -32,6 +32,11 @@ public partial class MainWindow
         public double RightExpandedWidth { get; set; } = DefaultExpandedPanelWidth;
         public List<SavedTabState> Tabs { get; set; } = new();
         public List<string> OpenTabs { get; set; } = new();
+        public List<SavedAdvancedSearch> SavedAdvancedSearches { get; set; } = new();
+        public bool SavedSearchTitlesHebrew { get; set; }
+        public bool AdvancedSearchAutosave { get; set; }
+        public InstalledBookTitleDisplay AdvancedSearchScopeTitleDisplay { get; set; } = InstalledBookTitleDisplay.Both;
+        public List<string> AdvancedSearchExpandedScopeKeys { get; set; } = new();
         public int SelectedTabIndex { get; set; }
     }
 
@@ -144,6 +149,8 @@ public partial class MainWindow
         public bool HasAppliedInitialWebScroll { get; set; }
         public bool IsApplyingWebScrollRestore { get; set; }
         public string PendingExactReferenceWithinWork { get; set; } = string.Empty;
+        public string SearchHighlightReferenceWithinWork { get; set; } = string.Empty;
+        public List<string> SearchHighlightTerms { get; set; } = new();
         public Flyout? DisplayFlyout { get; set; }
         public bool IsReaderScrollTrackingAttached { get; set; }
         public TextBlock? TitleBlock { get; set; }
@@ -220,6 +227,35 @@ public partial class MainWindow
         public override string ToString()
         {
             return FamilyName;
+        }
+    }
+
+    private sealed class AdvancedSearchResult
+    {
+        public string Reference { get; set; } = string.Empty;
+        public string WorkTitle { get; set; } = string.Empty;
+        public string VersionTitle { get; set; } = string.Empty;
+        public string Source { get; set; } = "Installed";
+        public string Snippet { get; set; } = string.Empty;
+        public string BookKey { get; set; } = string.Empty;
+        public string ReferenceWithinWork { get; set; } = string.Empty;
+        public string RemoteUrl { get; set; } = string.Empty;
+        public bool IsRemote { get; set; }
+        public List<string> MatchedTerms { get; set; } = new();
+    }
+
+    private sealed class SavedAdvancedSearch
+    {
+        public string Name { get; set; } = string.Empty;
+        public string QuerySummary { get; set; } = string.Empty;
+        public AdvancedSearchQuery? Query { get; set; }
+        public bool IsPinned { get; set; }
+        public DateTime CompletedAtUtc { get; set; }
+        public List<AdvancedSearchResult> Results { get; set; } = new();
+
+        public override string ToString()
+        {
+            return string.IsNullOrWhiteSpace(Name) ? QuerySummary : Name;
         }
     }
 

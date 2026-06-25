@@ -33,7 +33,7 @@ public partial class MainWindow
 
     private async Task RefreshInstalledBooksTreeAsync()
     {
-        if (_leftPanelBody is null)
+        if (_installedBooksTree is null)
         {
             return;
         }
@@ -51,12 +51,12 @@ public partial class MainWindow
 
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (_leftPanelBody is null || generation != _installedBooksTreeRefreshGeneration)
+            if (_installedBooksTree is null || generation != _installedBooksTreeRefreshGeneration)
             {
                 return;
             }
 
-            _leftPanelBody.ItemsSource = roots
+            _installedBooksTree.ItemsSource = roots
                 .Cast<object>()
                 .Select(CreateInstalledBookTreeItem)
                 .ToList();
