@@ -1140,9 +1140,7 @@ public partial class MainWindow
         }
 
         ApplyLinkSplitVisibility(state, isVisible: true);
-        state.LinkSplitContentHost.Content = state.IsCommentarySplitOpen
-            ? CreateCommentarySplitView(state)
-            : CreateLinkSplitView(state);
+        state.LinkSplitContentHost.Content = CreateReaderSplitWebView(state);
     }
 
     private void RefreshOpenLinkSplitViews()
