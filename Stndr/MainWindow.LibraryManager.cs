@@ -119,7 +119,13 @@ public partial class MainWindow
             SelectionMode = SelectionMode.Single,
             MaxHeight = 200,
             Background = Brushes.Transparent,
-            BorderThickness = new Thickness(0)
+            BorderThickness = new Thickness(0),
+            ItemTemplate = new FuncDataTemplate<SefariaBookNode>((book, _) =>
+                new TextBlock
+                {
+                    Text = book is null ? string.Empty : FormatTitle(book.DisplayTitle, book.HebrewTitle),
+                    Padding = new Thickness(6, 4)
+                })
         };
         _librarySearchSuggestions.SelectionChanged += OnLibraryManagerSearchSuggestionSelected;
 
@@ -2015,12 +2021,6 @@ public partial class MainWindow
             .Take(10)
             .ToList();
 
-        _librarySearchSuggestions.ItemTemplate = new FuncDataTemplate<SefariaBookNode>((book, _) =>
-            new TextBlock
-            {
-                Text = FormatTitle(book.DisplayTitle, book.HebrewTitle),
-                Padding = new Thickness(6, 4)
-            });
         _librarySearchSuggestions.ItemsSource = matches;
         _librarySearchSuggestionsContainer.IsVisible = matches.Count > 0;
     }
