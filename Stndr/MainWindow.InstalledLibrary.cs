@@ -147,30 +147,45 @@ public partial class MainWindow
             return;
         }
 
-        var matches = _sefariaLibrary.GetInstalledBooks()
+        var categories = EnumerateInstalledCategoriesFromTree()
+            .Where(c =>
+                c.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                (c.HebrewTitle?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false))
+            .Cast<object>();
+
+        var books = _sefariaLibrary.GetInstalledBooks()
             .Where(b =>
                 b.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
                 (b.HebrewTitle?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false))
-            .Take(10)
-            .ToList();
+            .Cast<object>();
 
-        _leftPanelSearchSuggestions.ItemTemplate = new FuncDataTemplate<InstalledSefariaBook>((book, _) =>
-            new TextBlock
-            {
-                Text = FormatTitle(book.Title, book.HebrewTitle),
-                Padding = new Thickness(6, 4)
-            });
+        var matches = categories.Concat(books).Take(10).ToList();
         _leftPanelSearchSuggestions.ItemsSource = matches;
         _leftPanelSearchSuggestionsContainer.IsVisible = matches.Count > 0;
     }
 
     private void OnInstalledBooksSearchSuggestionSelected(object? sender, SelectionChangedEventArgs e)
     {
-        if (e.AddedItems.Count == 0 || e.AddedItems[0] is not InstalledSefariaBook book)
-            return;
+        if (e.AddedItems.Count == 0) return;
 
-        OpenInstalledBook(book);
-        HighlightInstalledBookInTree(book);
+        switch (e.AddedItems[0])
+        {
+            case InstalledSefariaBook book:
+                OpenInstalledBook(book);
+                HighlightInstalledNodeInTree(book);
+                break;
+            case InstalledSefariaCategory { IsBookTitle: true } bookTitle:
+                var firstVersion = _sefariaLibrary.GetInstalledVersionsForTitle(bookTitle.Title).FirstOrDefault();
+                if (firstVersion is not null)
+                    OpenInstalledBook(firstVersion);
+                HighlightInstalledNodeInTree(bookTitle);
+                break;
+            case InstalledSefariaCategory category:
+                HighlightInstalledNodeInTree(category);
+                break;
+            default:
+                return;
+        }
 
         if (_leftPanelSearchSuggestionsContainer is not null)
             _leftPanelSearchSuggestionsContainer.IsVisible = false;
@@ -188,27 +203,56 @@ public partial class MainWindow
             _leftPanelSearchSuggestionsContainer.IsVisible = false;
     }
 
-    private void HighlightInstalledBookInTree(InstalledSefariaBook targetBook)
+    private IEnumerable<InstalledSefariaCategory> EnumerateInstalledCategoriesFromTree()
     {
         if (_leftPanelBody?.ItemsSource is not IEnumerable<TreeViewItem> roots)
-            return;
-        FindAndSelectInstalledBookItem(roots, targetBook);
+            yield break;
+        foreach (var cat in EnumerateCategoriesFromTreeItems(roots))
+            yield return cat;
     }
 
-    private static bool FindAndSelectInstalledBookItem(
-        IEnumerable<TreeViewItem> items, InstalledSefariaBook targetBook)
+    private static IEnumerable<InstalledSefariaCategory> EnumerateCategoriesFromTreeItems(
+        IEnumerable<TreeViewItem> items)
     {
         foreach (var item in items)
         {
-            if (item.DataContext is InstalledSefariaBook book &&
-                string.Equals(book.Key, targetBook.Key, StringComparison.Ordinal))
+            if (item.DataContext is InstalledSefariaCategory category)
+            {
+                yield return category;
+                if (item.ItemsSource is IEnumerable<TreeViewItem> children)
+                    foreach (var child in EnumerateCategoriesFromTreeItems(children))
+                        yield return child;
+            }
+        }
+    }
+
+    private void HighlightInstalledNodeInTree(object targetNode)
+    {
+        if (_leftPanelBody?.ItemsSource is not IEnumerable<TreeViewItem> roots)
+            return;
+        FindAndSelectInstalledNodeItem(roots, targetNode);
+    }
+
+    private static bool FindAndSelectInstalledNodeItem(
+        IEnumerable<TreeViewItem> items, object targetNode)
+    {
+        foreach (var item in items)
+        {
+            var matches = targetNode switch
+            {
+                InstalledSefariaBook book => item.DataContext is InstalledSefariaBook b &&
+                                             string.Equals(b.Key, book.Key, StringComparison.Ordinal),
+                _ => ReferenceEquals(item.DataContext, targetNode)
+            };
+
+            if (matches)
             {
                 item.IsSelected = true;
                 return true;
             }
 
             if (item.ItemsSource is IEnumerable<TreeViewItem> children &&
-                FindAndSelectInstalledBookItem(children, targetBook))
+                FindAndSelectInstalledNodeItem(children, targetNode))
             {
                 item.IsExpanded = true;
                 return true;

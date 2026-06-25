@@ -130,10 +130,15 @@ public partial class MainWindow : Window
         _leftPanelSearchSuggestions = this.FindControl<ListBox>("LeftPanelSearchSuggestions");
         if (_leftPanelSearchSuggestions is not null)
         {
-            _leftPanelSearchSuggestions.ItemTemplate = new FuncDataTemplate<InstalledSefariaBook>((book, _) =>
+            _leftPanelSearchSuggestions.ItemTemplate = new FuncDataTemplate<object>((item, _) =>
                 new TextBlock
                 {
-                    Text = book is null ? string.Empty : FormatTitle(book.Title, book.HebrewTitle),
+                    Text = item switch
+                    {
+                        InstalledSefariaBook b => b is null ? string.Empty : FormatTitle(b.Title, b.HebrewTitle),
+                        InstalledSefariaCategory c => c is null ? string.Empty : FormatTitle(c.Title, c.HebrewTitle),
+                        _ => item?.ToString() ?? string.Empty
+                    },
                     Padding = new Thickness(6, 4)
                 });
         }

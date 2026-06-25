@@ -120,10 +120,15 @@ public partial class MainWindow
             MaxHeight = 200,
             Background = Brushes.Transparent,
             BorderThickness = new Thickness(0),
-            ItemTemplate = new FuncDataTemplate<SefariaBookNode>((book, _) =>
+            ItemTemplate = new FuncDataTemplate<object>((item, _) =>
                 new TextBlock
                 {
-                    Text = book is null ? string.Empty : FormatTitle(book.DisplayTitle, book.HebrewTitle),
+                    Text = item switch
+                    {
+                        SefariaBookNode book => book is null ? string.Empty : FormatTitle(book.DisplayTitle, book.HebrewTitle),
+                        SefariaCategoryNode cat => cat is null ? string.Empty : FormatTitle(cat.DisplayTitle, cat.HebrewCategory),
+                        _ => item?.ToString() ?? string.Empty
+                    },
                     Padding = new Thickness(6, 4)
                 })
         };
@@ -2014,10 +2019,15 @@ public partial class MainWindow
             return;
         }
 
-        var matches = EnumerateBooks(_sefariaRoot)
-            .Where(b =>
-                b.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                (b.HebrewTitle?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false))
+        var matches = EnumerateAllLibraryNodes(_sefariaRoot)
+            .Where(node => node switch
+            {
+                SefariaBookNode book => book.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                                        (book.HebrewTitle?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false),
+                SefariaCategoryNode cat => cat.Category?.Contains(query, StringComparison.OrdinalIgnoreCase) == true ||
+                                           (cat.HebrewCategory?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false),
+                _ => false
+            })
             .Take(10)
             .ToList();
 
@@ -2027,24 +2037,48 @@ public partial class MainWindow
 
     private async void OnLibraryManagerSearchSuggestionSelected(object? sender, SelectionChangedEventArgs e)
     {
-        if (e.AddedItems.Count == 0 || e.AddedItems[0] is not SefariaBookNode book)
+        if (e.AddedItems.Count == 0) return;
+        var selected = e.AddedItems[0];
+
+        if (selected is SefariaBookNode book)
+        {
+            _selectedSefariaBook = book;
+            _selectedSefariaCategory = null;
+            _selectedLibraryTreeItem = null;
+            UpdateLibraryDetails();
+
+            var selectionVersion = Interlocked.Increment(ref _librarySelectionVersion);
+            _cachedCategoryProgress = null;
+            CancelCategoryInstallProgressRefresh();
+            await EnsureVersionsLoadedAsync(book);
+            if (selectionVersion != Volatile.Read(ref _librarySelectionVersion) || !ReferenceEquals(_selectedSefariaBook, book))
+                return;
+
+            UpdateSelectedBookDownloadedState();
+            UpdateLibraryDetails();
+            HighlightLibraryNodeInTree(book);
+        }
+        else if (selected is SefariaCategoryNode category)
+        {
+            _selectedSefariaBook = null;
+            _selectedSefariaCategory = category;
+            UpdateLibraryDetails();
+            var treeItem = HighlightLibraryNodeInTree(category);
+
+            if (treeItem is not null)
+            {
+                var selectionVersion = Interlocked.Increment(ref _librarySelectionVersion);
+                _cachedCategoryProgress = null;
+                CancelCategoryInstallProgressRefresh();
+                await EnsureCategoryVersionChoicesLoadedAsync(category, treeItem);
+                if (selectionVersion == Volatile.Read(ref _librarySelectionVersion))
+                    UpdateLibraryDetails();
+            }
+        }
+        else
+        {
             return;
-
-        _selectedSefariaBook = book;
-        _selectedSefariaCategory = null;
-        _selectedLibraryTreeItem = null;
-        UpdateLibraryDetails();
-
-        var selectionVersion = Interlocked.Increment(ref _librarySelectionVersion);
-        _cachedCategoryProgress = null;
-        CancelCategoryInstallProgressRefresh();
-        await EnsureVersionsLoadedAsync(book);
-        if (selectionVersion != Volatile.Read(ref _librarySelectionVersion) || !ReferenceEquals(_selectedSefariaBook, book))
-            return;
-
-        UpdateSelectedBookDownloadedState();
-        UpdateLibraryDetails();
-        HighlightLibraryBookInTree(book);
+        }
 
         if (_librarySearchSuggestionsContainer is not null)
             _librarySearchSuggestionsContainer.IsVisible = false;
@@ -2061,31 +2095,51 @@ public partial class MainWindow
             _librarySearchSuggestionsContainer.IsVisible = false;
     }
 
-    private void HighlightLibraryBookInTree(SefariaBookNode targetBook)
+    private static IEnumerable<SefariaNode> EnumerateAllLibraryNodes(SefariaCategoryNode root)
     {
-        if (_libraryTree?.ItemsSource is not IEnumerable<TreeViewItem> roots)
-            return;
-        FindAndSelectLibraryBookItem(roots, targetBook);
+        foreach (var node in root.Contents)
+        {
+            if (node is SefariaCategoryNode childCategory)
+            {
+                yield return childCategory;
+                foreach (var descendant in EnumerateAllLibraryNodes(childCategory))
+                    yield return descendant;
+            }
+            else if (node is SefariaBookNode book)
+            {
+                yield return book;
+            }
+        }
     }
 
-    private bool FindAndSelectLibraryBookItem(
-        IEnumerable<TreeViewItem> items, SefariaBookNode targetBook)
+    private TreeViewItem? HighlightLibraryNodeInTree(object targetNode)
+    {
+        if (_libraryTree?.ItemsSource is not IEnumerable<TreeViewItem> roots)
+            return null;
+        return FindAndSelectLibraryNodeItem(roots, targetNode);
+    }
+
+    private TreeViewItem? FindAndSelectLibraryNodeItem(
+        IEnumerable<TreeViewItem> items, object targetNode)
     {
         foreach (var item in items)
         {
-            if (ReferenceEquals(item.DataContext, targetBook))
+            if (ReferenceEquals(item.DataContext, targetNode))
             {
                 SelectLibraryTreeItem(item);
-                return true;
+                return item;
             }
 
-            if (item.ItemsSource is IEnumerable<TreeViewItem> children &&
-                FindAndSelectLibraryBookItem(children, targetBook))
+            if (item.ItemsSource is IEnumerable<TreeViewItem> children)
             {
-                item.IsExpanded = true;
-                return true;
+                var found = FindAndSelectLibraryNodeItem(children, targetNode);
+                if (found is not null)
+                {
+                    item.IsExpanded = true;
+                    return found;
+                }
             }
         }
-        return false;
+        return null;
     }
 }
