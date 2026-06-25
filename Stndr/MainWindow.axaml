@@ -216,6 +216,25 @@
                           Grid.Row="1"
                           Margin="6"
                           SelectionChanged="OnInstalledBookSelectionChanged" />
+
+                <!-- Floating suggestions overlay -->
+                <Border x:Name="LeftPanelSearchSuggestionsContainer"
+                        Grid.Row="1"
+                        IsVisible="False"
+                        VerticalAlignment="Top"
+                        ZIndex="100"
+                        Background="White"
+                        BorderBrush="#D0D5DD"
+                        BorderThickness="1"
+                        CornerRadius="4"
+                        Margin="6,2,6,0"
+                        BoxShadow="0 4 12 0 #22000000">
+                    <ListBox x:Name="LeftPanelSearchSuggestions"
+                             SelectionMode="Single"
+                             MaxHeight="200"
+                             Background="Transparent"
+                             BorderThickness="0" />
+                </Border>
             </Grid>
         </Border>
 

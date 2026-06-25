@@ -111,6 +111,30 @@ public partial class MainWindow
             IsVisible = false,
             PlaceholderText = "Search library..."
         };
+        _libraryManagerSearchBox.TextChanged += OnLibraryManagerSearchTextChanged;
+        _libraryManagerSearchBox.LostFocus += OnLibraryManagerSearchLostFocus;
+
+        _librarySearchSuggestions = new ListBox
+        {
+            SelectionMode = SelectionMode.Single,
+            MaxHeight = 200,
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0)
+        };
+        _librarySearchSuggestions.SelectionChanged += OnLibraryManagerSearchSuggestionSelected;
+
+        _librarySearchSuggestionsContainer = new Border
+        {
+            IsVisible = false,
+            VerticalAlignment = VerticalAlignment.Top,
+            ZIndex = 100,
+            Background = Brushes.White,
+            BorderBrush = new SolidColorBrush(Color.Parse("#D0D5DD")),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(4),
+            Margin = new Thickness(0, 2, 0, 0),
+            Child = _librarySearchSuggestions
+        };
 
         var libraryManagerSearchButton = new Button
         {
@@ -141,10 +165,12 @@ public partial class MainWindow
                         _libraryManagerSearchBox
                     }
                 },
-                _libraryTree
+                _libraryTree,
+                _librarySearchSuggestionsContainer!
             }
         };
         Grid.SetRow(_libraryTree, 1);
+        Grid.SetRow(_librarySearchSuggestionsContainer!, 1);
 
         _libraryTitle = new TextBlock
         {
@@ -1968,5 +1994,69 @@ public partial class MainWindow
         }
 
         return "No description is available for this book.";
+    }
+
+    private void OnLibraryManagerSearchTextChanged(object? sender, TextChangedEventArgs e)
+    {
+        if (_librarySearchSuggestionsContainer is null || _librarySearchSuggestions is null || _sefariaRoot is null)
+            return;
+
+        var query = _libraryManagerSearchBox?.Text ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            _librarySearchSuggestionsContainer.IsVisible = false;
+            return;
+        }
+
+        var matches = EnumerateBooks(_sefariaRoot)
+            .Where(b =>
+                b.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                (b.HebrewTitle?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false))
+            .Take(10)
+            .ToList();
+
+        _librarySearchSuggestions.ItemTemplate = new FuncDataTemplate<SefariaBookNode>((book, _) =>
+            new TextBlock
+            {
+                Text = FormatTitle(book.DisplayTitle, book.HebrewTitle),
+                Padding = new Thickness(6, 4)
+            });
+        _librarySearchSuggestions.ItemsSource = matches;
+        _librarySearchSuggestionsContainer.IsVisible = matches.Count > 0;
+    }
+
+    private async void OnLibraryManagerSearchSuggestionSelected(object? sender, SelectionChangedEventArgs e)
+    {
+        if (e.AddedItems.Count == 0 || e.AddedItems[0] is not SefariaBookNode book)
+            return;
+
+        _selectedSefariaBook = book;
+        _selectedSefariaCategory = null;
+        _selectedLibraryTreeItem = null;
+        UpdateLibraryDetails();
+
+        var selectionVersion = Interlocked.Increment(ref _librarySelectionVersion);
+        _cachedCategoryProgress = null;
+        CancelCategoryInstallProgressRefresh();
+        await EnsureVersionsLoadedAsync(book);
+        if (selectionVersion != Volatile.Read(ref _librarySelectionVersion) || !ReferenceEquals(_selectedSefariaBook, book))
+            return;
+
+        UpdateSelectedBookDownloadedState();
+        UpdateLibraryDetails();
+
+        if (_librarySearchSuggestionsContainer is not null)
+            _librarySearchSuggestionsContainer.IsVisible = false;
+        if (_libraryManagerSearchBox is not null)
+            _libraryManagerSearchBox.Text = string.Empty;
+        if (_librarySearchSuggestions is not null)
+            _librarySearchSuggestions.SelectedItem = null;
+    }
+
+    private async void OnLibraryManagerSearchLostFocus(object? sender, RoutedEventArgs e)
+    {
+        await Task.Delay(150);
+        if (_librarySearchSuggestionsContainer is not null)
+            _librarySearchSuggestionsContainer.IsVisible = false;
     }
 }

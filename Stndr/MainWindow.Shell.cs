@@ -336,11 +336,15 @@ public partial class MainWindow
     private void ToggleInstalledBooksSearchClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         ToggleSearchBox(_leftPanelSearchBox);
+        if (_leftPanelSearchBox?.IsVisible == false && _leftPanelSearchSuggestionsContainer is not null)
+            _leftPanelSearchSuggestionsContainer.IsVisible = false;
     }
 
     private void ToggleLibraryManagerSearchClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         ToggleSearchBox(_libraryManagerSearchBox);
+        if (_libraryManagerSearchBox?.IsVisible == false && _librarySearchSuggestionsContainer is not null)
+            _librarySearchSuggestionsContainer.IsVisible = false;
     }
 
     private static void ToggleSearchBox(TextBox? searchBox)

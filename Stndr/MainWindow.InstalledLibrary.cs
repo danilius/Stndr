@@ -134,4 +134,56 @@ public partial class MainWindow
                 : $"{hebrewTitle} / {english}"
         };
     }
+
+    private void OnInstalledBooksSearchTextChanged(object? sender, TextChangedEventArgs e)
+    {
+        if (_leftPanelSearchSuggestionsContainer is null || _leftPanelSearchSuggestions is null)
+            return;
+
+        var query = _leftPanelSearchBox?.Text ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            _leftPanelSearchSuggestionsContainer.IsVisible = false;
+            return;
+        }
+
+        var matches = _sefariaLibrary.GetInstalledBooks()
+            .Where(b =>
+                b.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                (b.HebrewTitle?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false))
+            .Take(10)
+            .ToList();
+
+        _leftPanelSearchSuggestions.ItemTemplate = new FuncDataTemplate<InstalledSefariaBook>((book, _) =>
+            new TextBlock
+            {
+                Text = FormatTitle(book.Title, book.HebrewTitle),
+                Padding = new Thickness(6, 4)
+            });
+        _leftPanelSearchSuggestions.ItemsSource = matches;
+        _leftPanelSearchSuggestionsContainer.IsVisible = matches.Count > 0;
+    }
+
+    private void OnInstalledBooksSearchSuggestionSelected(object? sender, SelectionChangedEventArgs e)
+    {
+        if (e.AddedItems.Count == 0 || e.AddedItems[0] is not InstalledSefariaBook book)
+            return;
+
+        OpenInstalledBook(book);
+
+        if (_leftPanelSearchSuggestionsContainer is not null)
+            _leftPanelSearchSuggestionsContainer.IsVisible = false;
+        if (_leftPanelSearchBox is not null)
+            _leftPanelSearchBox.Text = string.Empty;
+        if (_leftPanelSearchSuggestions is not null)
+            _leftPanelSearchSuggestions.SelectedItem = null;
+    }
+
+    private async void OnInstalledBooksSearchLostFocus(object? sender, RoutedEventArgs e)
+    {
+        // Small delay so a click on a suggestion registers before we hide
+        await Task.Delay(150);
+        if (_leftPanelSearchSuggestionsContainer is not null)
+            _leftPanelSearchSuggestionsContainer.IsVisible = false;
+    }
 }

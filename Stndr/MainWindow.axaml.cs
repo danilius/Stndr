@@ -52,6 +52,8 @@ public partial class MainWindow : Window
     private TextBlock? _leftPanelTitle;
     private Button? _leftPanelSearchButton;
     private TextBox? _leftPanelSearchBox;
+    private Border? _leftPanelSearchSuggestionsContainer;
+    private ListBox? _leftPanelSearchSuggestions;
     private TextBlock? _rightPanelTitle;
     private StackPanel? _rightPanelBody;
     private TabControl? _centerTabs;
@@ -77,6 +79,8 @@ public partial class MainWindow : Window
     private Button? _libraryCategoryTranslationActionButton;
     private Button? _libraryCancelButton;
     private TextBox? _libraryManagerSearchBox;
+    private Border? _librarySearchSuggestionsContainer;
+    private ListBox? _librarySearchSuggestions;
 
     private ObservableCollection<TabItem>? _tabs;
     private readonly AppSettingsService _settingsService = new();
@@ -122,6 +126,15 @@ public partial class MainWindow : Window
         _leftPanelTitle = this.FindControl<TextBlock>("LeftPanelTitle");
         _leftPanelSearchButton = this.FindControl<Button>("LeftPanelSearchButton");
         _leftPanelSearchBox = this.FindControl<TextBox>("LeftPanelSearchBox");
+        _leftPanelSearchSuggestionsContainer = this.FindControl<Border>("LeftPanelSearchSuggestionsContainer");
+        _leftPanelSearchSuggestions = this.FindControl<ListBox>("LeftPanelSearchSuggestions");
+        if (_leftPanelSearchBox is not null)
+        {
+            _leftPanelSearchBox.TextChanged += OnInstalledBooksSearchTextChanged;
+            _leftPanelSearchBox.LostFocus += OnInstalledBooksSearchLostFocus;
+        }
+        if (_leftPanelSearchSuggestions is not null)
+            _leftPanelSearchSuggestions.SelectionChanged += OnInstalledBooksSearchSuggestionSelected;
         _rightPanelTitle = this.FindControl<TextBlock>("RightPanelTitle");
         _rightPanelBody = this.FindControl<StackPanel>("RightPanelBody");
         var centerTabs = this.FindControl<TabControl>("CenterTabs")
