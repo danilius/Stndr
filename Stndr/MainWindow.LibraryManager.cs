@@ -149,8 +149,17 @@ public partial class MainWindow
 
         var libraryManagerSearchButton = new Button
         {
-            Content = "🔍",
-            Width = 28
+            Content = new TextBlock
+            {
+                Text = "\uE721",
+                FontFamily = new FontFamily("Segoe MDL2 Assets"),
+                FontSize = 14
+            },
+            Width = 36,
+            Height = 30,
+            Padding = new Thickness(0),
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center
         };
         libraryManagerSearchButton.Click += ToggleLibraryManagerSearchClicked;
 

@@ -196,10 +196,17 @@
                                 Width="28"
                                 HorizontalAlignment="Left" />
                         <Button x:Name="LeftPanelSearchButton"
-                                Content="🔍"
                                 Click="ToggleInstalledBooksSearchClicked"
-                                Width="28"
-                                HorizontalAlignment="Left" />
+                                Width="36"
+                                Height="30"
+                                Padding="0"
+                                HorizontalAlignment="Left"
+                                HorizontalContentAlignment="Center"
+                                VerticalContentAlignment="Center">
+                            <TextBlock Text="&#xE721;"
+                                       FontFamily="Segoe MDL2 Assets"
+                                       FontSize="14" />
+                        </Button>
                         <TextBox x:Name="LeftPanelSearchBox"
                                  Width="180"
                                  IsVisible="False"
