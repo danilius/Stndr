@@ -40,6 +40,7 @@ public partial class MainWindow : Window
     private const double ReaderSegmentLabelWidth = 28;
     private const string LibraryManagerTabTitle = "Library Manager";
     private const string SettingsTabTitle = "Settings";
+    private const string AdvancedSearchTabTitle = "Advanced Search";
     private const string AllCommentariesSelectionKey = "__all_commentaries__";
     private static readonly TimeSpan StartupContentLoadedTimeout = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan StartupLayoutUpdatedTimeout = TimeSpan.FromMilliseconds(250);
@@ -48,7 +49,9 @@ public partial class MainWindow : Window
     private ColumnDefinition? _rightColumn;
     private GridSplitter? _leftSplitter;
     private GridSplitter? _rightSplitter;
-    private TreeView? _leftPanelBody;
+    private ScrollViewer? _leftPanelBody;
+    private TreeView? _installedBooksTree;
+    private ListBox? _savedSearchesList;
     private TextBlock? _leftPanelTitle;
     private Button? _leftPanelSearchButton;
     private TextBox? _leftPanelSearchBox;
@@ -107,6 +110,11 @@ public partial class MainWindow : Window
     private MainWindow.CategorySelectionProgress? _cachedCategoryProgress;
     private List<FontOption>? _allFontOptions;
     private List<FontOption>? _hebrewFontOptions;
+    private readonly ObservableCollection<SavedAdvancedSearch> _savedAdvancedSearches = new();
+    private bool _savedSearchTitlesHebrew;
+    private bool _advancedSearchAutosave;
+    private InstalledBookTitleDisplay _advancedSearchScopeTitleDisplay = InstalledBookTitleDisplay.Both;
+    private readonly HashSet<string> _advancedSearchExpandedScopeKeys = new(StringComparer.OrdinalIgnoreCase);
 
     public event EventHandler? StartupCompleted;
 
@@ -122,7 +130,9 @@ public partial class MainWindow : Window
         }
         _leftSplitter = this.FindControl<GridSplitter>("LeftSplitter");
         _rightSplitter = this.FindControl<GridSplitter>("RightSplitter");
-        _leftPanelBody = this.FindControl<TreeView>("LeftPanelBody");
+        _leftPanelBody = this.FindControl<ScrollViewer>("LeftPanelBody");
+        _installedBooksTree = this.FindControl<TreeView>("InstalledBooksTree");
+        _savedSearchesList = this.FindControl<ListBox>("SavedSearchesList");
         _leftPanelTitle = this.FindControl<TextBlock>("LeftPanelTitle");
         _leftPanelSearchButton = this.FindControl<Button>("LeftPanelSearchButton");
         _leftPanelSearchBox = this.FindControl<TextBox>("LeftPanelSearchBox");
@@ -159,6 +169,10 @@ public partial class MainWindow : Window
 
         _tabs = new ObservableCollection<TabItem>();
         centerTabs.ItemsSource = _tabs;
+        if (_savedSearchesList is not null)
+        {
+            _savedSearchesList.ItemsSource = _savedAdvancedSearches;
+        }
         centerTabs.SelectionChanged += (_, _) =>
         {
             UpdateSelectedTabContentVisibility();

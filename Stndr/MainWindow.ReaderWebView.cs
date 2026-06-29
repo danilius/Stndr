@@ -246,6 +246,19 @@ public partial class MainWindow
                 background: var(--selected-row);
             }
 
+            .reader-row.search-hit {
+                background: #FFF4B8;
+                border-radius: 4px;
+            }
+
+            .reader-row.search-hit mark {
+                background: #FFE066;
+                border-radius: 3px;
+                box-decoration-break: clone;
+                -webkit-box-decoration-break: clone;
+                padding: 0 2px;
+            }
+
             .reader-row.aliyah {
                 background: var(--aliyah-bg);
                 margin-bottom: 0;
@@ -392,6 +405,16 @@ public partial class MainWindow
             className.Append(" aliyah");
         }
 
+        var highlightReference = NormalizeReaderUnitReference(state.SearchHighlightReferenceWithinWork);
+        var isSearchHit = !string.IsNullOrWhiteSpace(highlightReference) &&
+            (string.Equals(NormalizeReaderUnitReference(row.Primary?.Reference ?? string.Empty), highlightReference, StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(NormalizeReaderUnitReference(row.Translation?.Reference ?? string.Empty), highlightReference, StringComparison.OrdinalIgnoreCase));
+        var searchTerms = isSearchHit ? state.SearchHighlightTerms : new List<string>();
+        if (isSearchHit)
+        {
+            className.Append(" search-hit");
+        }
+
         if (isAliyahStart)
         {
             className.Append(" aliyah-start");
@@ -436,13 +459,14 @@ public partial class MainWindow
                 state.HebrewMarksMode,
                 leftLabel: string.Empty,
                 rightLabel: FormatSegmentLabel(row.Primary, primaryIsHebrew),
-                lineClass: "single-line");
+                lineClass: "single-line",
+                highlightTerms: searchTerms);
         }
         else if (state.DisplayMode is ReaderDisplayMode.SideBySide or ReaderDisplayMode.TranslationSideBySide)
         {
             builder.AppendLine("<div class=\"side-layout\">");
             builder.Append("<div class=\"primary-side\">");
-            AppendReaderWebTextBlock(builder, row.Primary?.Text ?? string.Empty, primaryIsHebrew, state.HebrewMarksMode);
+            AppendReaderWebTextBlock(builder, row.Primary?.Text ?? string.Empty, primaryIsHebrew, state.HebrewMarksMode, searchTerms);
             builder.AppendLine("</div>");
             builder.Append("<div class=\"segment-label center-label\">");
             builder.Append(WebUtility.HtmlEncode(FirstNonEmpty(
@@ -450,7 +474,7 @@ public partial class MainWindow
                 FormatSegmentLabel(row.Translation, false))));
             builder.AppendLine("</div>");
             builder.Append("<div class=\"translation-side\">");
-            AppendReaderWebTextBlock(builder, row.Translation?.Text ?? string.Empty, false, state.HebrewMarksMode);
+            AppendReaderWebTextBlock(builder, row.Translation?.Text ?? string.Empty, false, state.HebrewMarksMode, searchTerms);
             builder.AppendLine("</div>");
             builder.AppendLine("</div>");
         }
@@ -463,7 +487,8 @@ public partial class MainWindow
                 state.HebrewMarksMode,
                 leftLabel: FormatSegmentLabel(row.Primary, primaryIsHebrew),
                 rightLabel: string.Empty,
-                lineClass: "stacked-line");
+                lineClass: "stacked-line",
+                highlightTerms: searchTerms);
             AppendReaderWebLabeledLine(
                 builder,
                 row.Translation?.Text ?? string.Empty,
@@ -471,7 +496,8 @@ public partial class MainWindow
                 state.HebrewMarksMode,
                 leftLabel: string.Empty,
                 rightLabel: FormatSegmentLabel(row.Translation, false),
-                lineClass: "stacked-line");
+                lineClass: "stacked-line",
+                highlightTerms: searchTerms);
         }
 
         builder.AppendLine("</section>");
@@ -484,7 +510,8 @@ public partial class MainWindow
         HebrewMarksMode hebrewMarksMode,
         string leftLabel,
         string rightLabel,
-        string lineClass)
+        string lineClass,
+        IReadOnlyList<string>? highlightTerms = null)
     {
         builder.Append("<div class=\"");
         builder.Append(lineClass);
@@ -492,7 +519,7 @@ public partial class MainWindow
         builder.Append("<div class=\"segment-label\">");
         builder.Append(WebUtility.HtmlEncode(leftLabel));
         builder.AppendLine("</div>");
-        AppendReaderWebTextBlock(builder, text, isHebrew, hebrewMarksMode);
+        AppendReaderWebTextBlock(builder, text, isHebrew, hebrewMarksMode, highlightTerms);
         builder.Append("<div class=\"segment-label\">");
         builder.Append(WebUtility.HtmlEncode(rightLabel));
         builder.AppendLine("</div>");
@@ -503,12 +530,13 @@ public partial class MainWindow
         StringBuilder builder,
         string text,
         bool isHebrew,
-        HebrewMarksMode hebrewMarksMode)
+        HebrewMarksMode hebrewMarksMode,
+        IReadOnlyList<string>? highlightTerms = null)
     {
         builder.Append("<div class=\"text-block ");
         builder.Append(isHebrew ? "hebrew" : "english");
         builder.Append("\">");
-        builder.Append(SanitizeReaderHtmlForWeb(text, isHebrew, hebrewMarksMode));
+        builder.Append(SanitizeReaderHtmlForWeb(text, isHebrew, hebrewMarksMode, highlightTerms));
         builder.AppendLine("</div>");
     }
 
@@ -728,9 +756,12 @@ public partial class MainWindow
 
     private void RestoreReaderWebScroll(ReaderTabState state, int delayMilliseconds)
     {
-        if (!string.IsNullOrWhiteSpace(state.PendingExactReferenceWithinWork))
+        var targetReference = !string.IsNullOrWhiteSpace(state.PendingExactReferenceWithinWork)
+            ? state.PendingExactReferenceWithinWork
+            : state.SearchHighlightReferenceWithinWork;
+        if (!string.IsNullOrWhiteSpace(targetReference))
         {
-            ScrollReaderToExactReference(state, state.PendingExactReferenceWithinWork);
+            ScrollReaderToExactReference(state, targetReference);
             if (delayMilliseconds >= 1400)
             {
                 state.PendingExactReferenceWithinWork = string.Empty;
@@ -754,6 +785,8 @@ public partial class MainWindow
             return;
         }
 
+        state.SearchHighlightReferenceWithinWork = string.Empty;
+        state.SearchHighlightTerms.Clear();
         ScheduleReadingPositionSave(state, offset);
         state.ReaderWebScrollOffset = offset;
     }
@@ -804,7 +837,11 @@ public partial class MainWindow
         return JsonSerializer.Serialize(value);
     }
 
-    private static string SanitizeReaderHtmlForWeb(string? text, bool isHebrew, HebrewMarksMode hebrewMarksMode)
+    private static string SanitizeReaderHtmlForWeb(
+        string? text,
+        bool isHebrew,
+        HebrewMarksMode hebrewMarksMode,
+        IReadOnlyList<string>? highlightTerms = null)
     {
         if (string.IsNullOrEmpty(text))
         {
@@ -839,13 +876,155 @@ public partial class MainWindow
                     segment = ApplyHebrewMarksModeForWeb(segment, hebrewMarksMode);
                 }
 
-                builder.Append(WebUtility.HtmlEncode(segment).Replace("\n", "<br>"));
+                builder.Append(EncodeReaderWebSegment(segment, highlightTerms));
             }
 
             position += length;
         }
 
         return builder.ToString();
+    }
+
+    private static string EncodeReaderWebSegment(string segment, IReadOnlyList<string>? highlightTerms)
+    {
+        if (string.IsNullOrEmpty(segment) || highlightTerms is null || highlightTerms.Count == 0)
+        {
+            return WebUtility.HtmlEncode(segment).Replace("\n", "<br>");
+        }
+
+        var spans = FindReaderHighlightSpans(segment, highlightTerms);
+        if (spans.Count == 0)
+        {
+            return WebUtility.HtmlEncode(segment).Replace("\n", "<br>");
+        }
+
+        var builder = new StringBuilder(segment.Length + spans.Count * 16);
+        var position = 0;
+        foreach (var span in spans)
+        {
+            if (span.Start > position)
+            {
+                builder.Append(WebUtility.HtmlEncode(segment[position..span.Start]).Replace("\n", "<br>"));
+            }
+
+            builder.Append("<mark>");
+            builder.Append(WebUtility.HtmlEncode(segment.Substring(span.Start, span.Length)).Replace("\n", "<br>"));
+            builder.Append("</mark>");
+            position = span.Start + span.Length;
+        }
+
+        if (position < segment.Length)
+        {
+            builder.Append(WebUtility.HtmlEncode(segment[position..]).Replace("\n", "<br>"));
+        }
+
+        return builder.ToString();
+    }
+
+    private static List<(int Start, int Length)> FindReaderHighlightSpans(
+        string segment,
+        IReadOnlyList<string> highlightTerms)
+    {
+        var normalizedBuilder = new StringBuilder(segment.Length);
+        var originalIndexes = new List<int>(segment.Length);
+        var previousWasSpace = false;
+        for (var i = 0; i < segment.Length; i++)
+        {
+            var character = segment[i];
+            if (ShouldSuppressHebrewMarkForWeb(character, HebrewMarksMode.TextOnly))
+            {
+                continue;
+            }
+
+            if (char.IsLetterOrDigit(character))
+            {
+                normalizedBuilder.Append(NormalizeFinalHebrewLetterForSearch(character));
+                originalIndexes.Add(i);
+                previousWasSpace = false;
+                continue;
+            }
+
+            if (char.IsWhiteSpace(character) && !previousWasSpace)
+            {
+                normalizedBuilder.Append(' ');
+                originalIndexes.Add(i);
+                previousWasSpace = true;
+            }
+        }
+
+        var normalized = normalizedBuilder.ToString().Trim();
+        var spans = new List<(int Start, int Length)>();
+        foreach (var term in highlightTerms
+            .Select(term => NormalizeReaderHighlightTerm(term))
+            .Where(term => !string.IsNullOrWhiteSpace(term))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(term => term.Length))
+        {
+            var searchStart = 0;
+            while (searchStart < normalized.Length)
+            {
+                var index = normalized.IndexOf(term, searchStart, StringComparison.OrdinalIgnoreCase);
+                if (index < 0)
+                {
+                    break;
+                }
+
+                if (index < originalIndexes.Count && index + term.Length - 1 < originalIndexes.Count)
+                {
+                    var originalStart = originalIndexes[index];
+                    var originalEnd = originalIndexes[index + term.Length - 1] + 1;
+                    if (!spans.Any(span => originalStart < span.Start + span.Length && originalEnd > span.Start))
+                    {
+                        spans.Add((originalStart, originalEnd - originalStart));
+                    }
+                }
+
+                searchStart = index + Math.Max(1, term.Length);
+            }
+        }
+
+        return spans
+            .OrderBy(span => span.Start)
+            .ToList();
+    }
+
+    private static string NormalizeReaderHighlightTerm(string term)
+    {
+        var builder = new StringBuilder(term.Length);
+        var previousWasSpace = false;
+        foreach (var character in term)
+        {
+            if (ShouldSuppressHebrewMarkForWeb(character, HebrewMarksMode.TextOnly))
+            {
+                continue;
+            }
+
+            if (char.IsLetterOrDigit(character))
+            {
+                builder.Append(NormalizeFinalHebrewLetterForSearch(character));
+                previousWasSpace = false;
+            }
+            else if (char.IsWhiteSpace(character) && !previousWasSpace)
+            {
+                builder.Append(' ');
+                previousWasSpace = true;
+            }
+        }
+
+        return builder.ToString().Trim();
+    }
+
+    private static char NormalizeFinalHebrewLetterForSearch(char character)
+    {
+        return character switch
+        {
+            '\u05da' => '\u05db',
+            '\u05dd' => '\u05de',
+            '\u05df' => '\u05e0',
+            '\u05e3' => '\u05e4',
+            '\u05e5' => '\u05e6',
+            _ => character
+        };
     }
 
     private static void AppendSafeReaderTag(StringBuilder builder, string tag, Stack<string> suppressedTags)

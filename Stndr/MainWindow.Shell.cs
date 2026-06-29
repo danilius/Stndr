@@ -26,12 +26,12 @@ public partial class MainWindow
 {
     private void InitializeNavigationItems()
     {
-        if (_leftPanelBody is null)
+        if (_installedBooksTree is null)
         {
             return;
         }
 
-        _leftPanelBody.ItemsSource = null;
+        _installedBooksTree.ItemsSource = null;
     }
 
     private void LoadLayoutState()
@@ -41,10 +41,26 @@ public partial class MainWindow
         if (state is null)
         {
             EnsureDefaultTabs();
+            RefreshSavedSearchesList();
             ApplyLeftPanelState(false, DefaultExpandedPanelWidth);
             ApplyRightPanelState(false, DefaultExpandedPanelWidth);
             return;
         }
+
+        _savedAdvancedSearches.Clear();
+        foreach (var savedSearch in state.SavedAdvancedSearches)
+        {
+            _savedAdvancedSearches.Add(savedSearch);
+        }
+        _savedSearchTitlesHebrew = state.SavedSearchTitlesHebrew;
+        _advancedSearchAutosave = state.AdvancedSearchAutosave;
+        _advancedSearchScopeTitleDisplay = state.AdvancedSearchScopeTitleDisplay;
+        _advancedSearchExpandedScopeKeys.Clear();
+        foreach (var key in state.AdvancedSearchExpandedScopeKeys.Where(key => !string.IsNullOrWhiteSpace(key)))
+        {
+            _advancedSearchExpandedScopeKeys.Add(key);
+        }
+        RefreshSavedSearchesList();
 
         _leftExpandedWidth = Math.Max(CollapsedPanelWidth, state.LeftExpandedWidth);
         _rightExpandedWidth = Math.Max(CollapsedPanelWidth, state.RightExpandedWidth);
@@ -320,6 +336,11 @@ public partial class MainWindow
             return CreateSettingsView();
         }
 
+        if (string.Equals(title, AdvancedSearchTabTitle, StringComparison.Ordinal))
+        {
+            return CreateAdvancedSearchView();
+        }
+
         throw new InvalidOperationException($"Unknown utility tab: {title}");
     }
 
@@ -363,6 +384,11 @@ public partial class MainWindow
         }
 
         searchBox.Text = string.Empty;
+    }
+
+    private void OpenAdvancedSearchClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        OpenOrSelectTab(AdvancedSearchTabTitle);
     }
 
     private void OpenOrSelectTab(string title)
@@ -532,7 +558,12 @@ public partial class MainWindow
                 .Select(CreateSavedTabState)
                 .Where(savedTab => savedTab is not null)
                 .Select(savedTab => savedTab!)
-                .ToList(),
+            .ToList(),
+            SavedAdvancedSearches = _savedAdvancedSearches.ToList(),
+            SavedSearchTitlesHebrew = _savedSearchTitlesHebrew,
+            AdvancedSearchAutosave = _advancedSearchAutosave,
+            AdvancedSearchScopeTitleDisplay = _advancedSearchScopeTitleDisplay,
+            AdvancedSearchExpandedScopeKeys = _advancedSearchExpandedScopeKeys.OrderBy(key => key, StringComparer.OrdinalIgnoreCase).ToList(),
             SelectedTabIndex = _tabs.Count == 0 ? -1 : Math.Clamp(_centerTabs.SelectedIndex, 0, _tabs.Count - 1)
         };
         state.OpenTabs = state.Tabs
@@ -638,6 +669,7 @@ public partial class MainWindow
     private static bool IsKnownUtilityTabTitle(string? title)
     {
         return string.Equals(title, LibraryManagerTabTitle, StringComparison.Ordinal) ||
+            string.Equals(title, AdvancedSearchTabTitle, StringComparison.Ordinal) ||
             string.Equals(title, SettingsTabTitle, StringComparison.Ordinal);
     }
 }

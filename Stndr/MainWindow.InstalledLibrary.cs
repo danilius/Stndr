@@ -33,7 +33,7 @@ public partial class MainWindow
 
     private async Task RefreshInstalledBooksTreeAsync()
     {
-        if (_leftPanelBody is null)
+        if (_installedBooksTree is null)
         {
             return;
         }
@@ -51,12 +51,12 @@ public partial class MainWindow
 
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (_leftPanelBody is null || generation != _installedBooksTreeRefreshGeneration)
+            if (_installedBooksTree is null || generation != _installedBooksTreeRefreshGeneration)
             {
                 return;
             }
 
-            _leftPanelBody.ItemsSource = roots
+            _installedBooksTree.ItemsSource = roots
                 .Cast<object>()
                 .Select(CreateInstalledBookTreeItem)
                 .ToList();
@@ -199,7 +199,7 @@ public partial class MainWindow
 
     private IEnumerable<InstalledSefariaCategory> EnumerateInstalledCategoriesFromTree()
     {
-        if (_leftPanelBody?.ItemsSource is not IEnumerable<TreeViewItem> roots)
+        if (_installedBooksTree?.ItemsSource is not IEnumerable<TreeViewItem> roots)
             yield break;
         foreach (var cat in EnumerateCategoriesFromTreeItems(roots))
             yield return cat;
@@ -222,7 +222,7 @@ public partial class MainWindow
 
     private void HighlightInstalledNodeInTree(object targetNode)
     {
-        if (_leftPanelBody?.ItemsSource is not IEnumerable<TreeViewItem> roots)
+        if (_installedBooksTree?.ItemsSource is not IEnumerable<TreeViewItem> roots)
             return;
         FindAndSelectInstalledNodeItem(roots, targetNode);
     }
