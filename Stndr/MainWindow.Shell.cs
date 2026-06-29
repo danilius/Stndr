@@ -354,6 +354,38 @@ public partial class MainWindow
         OpenOrSelectTab(SettingsTabTitle);
     }
 
+    private void ToggleInstalledBooksSearchClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        ToggleSearchBox(_leftPanelSearchBox);
+        if (_leftPanelSearchBox?.IsVisible == false && _leftPanelSearchSuggestionsContainer is not null)
+            _leftPanelSearchSuggestionsContainer.IsVisible = false;
+    }
+
+    private void ToggleLibraryManagerSearchClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        ToggleSearchBox(_libraryManagerSearchBox);
+        if (_libraryManagerSearchBox?.IsVisible == false && _librarySearchSuggestionsContainer is not null)
+            _librarySearchSuggestionsContainer.IsVisible = false;
+    }
+
+    private static void ToggleSearchBox(TextBox? searchBox)
+    {
+        if (searchBox is null)
+        {
+            return;
+        }
+
+        searchBox.IsVisible = !searchBox.IsVisible;
+        if (searchBox.IsVisible)
+        {
+            searchBox.Focus();
+            searchBox.SelectAll();
+            return;
+        }
+
+        searchBox.Text = string.Empty;
+    }
+
     private void OpenAdvancedSearchClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         OpenOrSelectTab(AdvancedSearchTabTitle);
@@ -414,7 +446,12 @@ public partial class MainWindow
 
     private void ApplyLeftPanelState(bool collapsed, double expandedWidth)
     {
-        if (_leftColumn is null || _leftSplitter is null || _leftPanelBody is null || _leftPanelTitle is null)
+        if (_leftColumn is null ||
+            _leftSplitter is null ||
+            _leftPanelBody is null ||
+            _leftPanelTitle is null ||
+            _leftPanelSearchButton is null ||
+            _leftPanelSearchBox is null)
         {
             return;
         }
@@ -427,6 +464,12 @@ public partial class MainWindow
         _leftSplitter.IsVisible = !_leftCollapsed;
 
         _leftPanelTitle.IsVisible = !_leftCollapsed;
+        _leftPanelSearchButton.IsVisible = !_leftCollapsed;
+        if (_leftCollapsed)
+        {
+            _leftPanelSearchBox.IsVisible = false;
+            _leftPanelSearchBox.Text = string.Empty;
+        }
         _leftPanelBody.IsVisible = !_leftCollapsed;
     }
 

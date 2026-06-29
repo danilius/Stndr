@@ -187,17 +187,38 @@
                 BorderThickness="0,0,1,0"
                 BorderBrush="#22000000">
             <Grid RowDefinitions="Auto,*">
-                <DockPanel Margin="6">
-                    <Button
-                            Content="☰"
-                            Click="ToggleLeftPanel"
-                            Width="28"
-                            HorizontalAlignment="Left" />
+                <StackPanel Spacing="4"
+                            Margin="6">
+                    <StackPanel Orientation="Horizontal"
+                                Spacing="6">
+                        <Button
+                                Content="☰"
+                                Click="ToggleLeftPanel"
+                                Width="28"
+                                HorizontalAlignment="Left" />
+                        <Button x:Name="LeftPanelSearchButton"
+                                Click="ToggleInstalledBooksSearchClicked"
+                                Width="36"
+                                Height="30"
+                                Padding="0"
+                                HorizontalAlignment="Left"
+                                HorizontalContentAlignment="Center"
+                                VerticalContentAlignment="Center">
+                            <TextBlock Text="&#xE721;"
+                                       FontFamily="Segoe MDL2 Assets"
+                                       FontSize="14" />
+                        </Button>
+                        <TextBox x:Name="LeftPanelSearchBox"
+                                 Width="180"
+                                 IsVisible="False"
+                                 PlaceholderText="Search installed books..."
+                                 VerticalAlignment="Center" />
+                    </StackPanel>
                     <TextBlock x:Name="LeftPanelTitle"
                                Text="Library"
                                VerticalAlignment="Center"
                                Margin="8,0,0,0" />
-                </DockPanel>
+                </StackPanel>
 
                 <ScrollViewer x:Name="LeftPanelBody"
                               Grid.Row="1"
@@ -224,6 +245,25 @@
                         </Expander>
                     </StackPanel>
                 </ScrollViewer>
+
+                <!-- Floating suggestions overlay -->
+                <Border x:Name="LeftPanelSearchSuggestionsContainer"
+                        Grid.Row="1"
+                        IsVisible="False"
+                        VerticalAlignment="Top"
+                        ZIndex="100"
+                        Background="White"
+                        BorderBrush="#D0D5DD"
+                        BorderThickness="1"
+                        CornerRadius="4"
+                        Margin="6,2,6,0"
+                        BoxShadow="0 4 12 0 #22000000">
+                    <ListBox x:Name="LeftPanelSearchSuggestions"
+                             SelectionMode="Single"
+                             MaxHeight="200"
+                             Background="Transparent"
+                             BorderThickness="0" />
+                </Border>
             </Grid>
         </Border>
 

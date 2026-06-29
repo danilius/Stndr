@@ -105,23 +105,92 @@ public partial class MainWindow
             }
         };
         _libraryTree.SelectionChanged += OnLibraryTreeSelectionChanged;
+        _libraryManagerSearchBox = new TextBox
+        {
+            Width = 180,
+            IsVisible = false,
+            PlaceholderText = "Search library..."
+        };
+        _libraryManagerSearchBox.TextChanged += OnLibraryManagerSearchTextChanged;
+        _libraryManagerSearchBox.LostFocus += OnLibraryManagerSearchLostFocus;
+
+        _librarySearchSuggestions = new ListBox
+        {
+            SelectionMode = SelectionMode.Single,
+            MaxHeight = 200,
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            ItemTemplate = new FuncDataTemplate<object>((item, _) =>
+                new TextBlock
+                {
+                    Text = item switch
+                    {
+                        SefariaBookNode book => book is null ? string.Empty : FormatTitle(book.DisplayTitle, book.HebrewTitle),
+                        SefariaCategoryNode cat => cat is null ? string.Empty : FormatTitle(cat.DisplayTitle, cat.HebrewCategory),
+                        _ => item?.ToString() ?? string.Empty
+                    },
+                    Padding = new Thickness(6, 4)
+                })
+        };
+        _librarySearchSuggestions.SelectionChanged += OnLibraryManagerSearchSuggestionSelected;
+
+        _librarySearchSuggestionsContainer = new Border
+        {
+            IsVisible = false,
+            VerticalAlignment = VerticalAlignment.Top,
+            ZIndex = 100,
+            Background = Brushes.White,
+            BorderBrush = new SolidColorBrush(Color.Parse("#D0D5DD")),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(4),
+            Margin = new Thickness(0, 2, 0, 0),
+            Child = _librarySearchSuggestions
+        };
+
+        var libraryManagerSearchButton = new Button
+        {
+            Content = new TextBlock
+            {
+                Text = "\uE721",
+                FontFamily = new FontFamily("Segoe MDL2 Assets"),
+                FontSize = 14
+            },
+            Width = 36,
+            Height = 30,
+            Padding = new Thickness(0),
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center
+        };
+        libraryManagerSearchButton.Click += ToggleLibraryManagerSearchClicked;
 
         var leftPane = new Grid
         {
             RowDefinitions = new RowDefinitions("Auto,*"),
             Children =
             {
-                new TextBlock
+                new StackPanel
                 {
-                    Text = "Sefaria Library",
-                    FontWeight = FontWeight.SemiBold,
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 8,
                     Margin = new Thickness(8),
-                    VerticalAlignment = VerticalAlignment.Center
+                    Children =
+                    {
+                        new TextBlock
+                        {
+                            Text = "Sefaria Library",
+                            FontWeight = FontWeight.SemiBold,
+                            VerticalAlignment = VerticalAlignment.Center
+                        },
+                        libraryManagerSearchButton,
+                        _libraryManagerSearchBox
+                    }
                 },
-                _libraryTree
+                _libraryTree,
+                _librarySearchSuggestionsContainer!
             }
         };
         Grid.SetRow(_libraryTree, 1);
+        Grid.SetRow(_librarySearchSuggestionsContainer!, 1);
 
         _libraryTitle = new TextBlock
         {
@@ -1945,5 +2014,141 @@ public partial class MainWindow
         }
 
         return "No description is available for this book.";
+    }
+
+    private void OnLibraryManagerSearchTextChanged(object? sender, TextChangedEventArgs e)
+    {
+        if (_librarySearchSuggestionsContainer is null || _librarySearchSuggestions is null || _sefariaRoot is null)
+            return;
+
+        var query = _libraryManagerSearchBox?.Text ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            _librarySearchSuggestionsContainer.IsVisible = false;
+            return;
+        }
+
+        var matches = EnumerateAllLibraryNodes(_sefariaRoot)
+            .Where(node => node switch
+            {
+                SefariaBookNode book => book.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                                        (book.HebrewTitle?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false),
+                SefariaCategoryNode cat => cat.Category?.Contains(query, StringComparison.OrdinalIgnoreCase) == true ||
+                                           (cat.HebrewCategory?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false),
+                _ => false
+            })
+            .Take(10)
+            .ToList();
+
+        _librarySearchSuggestions.ItemsSource = matches;
+        _librarySearchSuggestionsContainer.IsVisible = matches.Count > 0;
+    }
+
+    private async void OnLibraryManagerSearchSuggestionSelected(object? sender, SelectionChangedEventArgs e)
+    {
+        if (e.AddedItems.Count == 0) return;
+        var selected = e.AddedItems[0];
+
+        if (selected is SefariaBookNode book)
+        {
+            _selectedSefariaBook = book;
+            _selectedSefariaCategory = null;
+            _selectedLibraryTreeItem = null;
+            UpdateLibraryDetails();
+
+            var selectionVersion = Interlocked.Increment(ref _librarySelectionVersion);
+            _cachedCategoryProgress = null;
+            CancelCategoryInstallProgressRefresh();
+            await EnsureVersionsLoadedAsync(book);
+            if (selectionVersion != Volatile.Read(ref _librarySelectionVersion) || !ReferenceEquals(_selectedSefariaBook, book))
+                return;
+
+            UpdateSelectedBookDownloadedState();
+            UpdateLibraryDetails();
+            HighlightLibraryNodeInTree(book);
+        }
+        else if (selected is SefariaCategoryNode category)
+        {
+            _selectedSefariaBook = null;
+            _selectedSefariaCategory = category;
+            UpdateLibraryDetails();
+            var treeItem = HighlightLibraryNodeInTree(category);
+
+            if (treeItem is not null)
+            {
+                var selectionVersion = Interlocked.Increment(ref _librarySelectionVersion);
+                _cachedCategoryProgress = null;
+                CancelCategoryInstallProgressRefresh();
+                await EnsureCategoryVersionChoicesLoadedAsync(category, treeItem);
+                if (selectionVersion == Volatile.Read(ref _librarySelectionVersion))
+                    UpdateLibraryDetails();
+            }
+        }
+        else
+        {
+            return;
+        }
+
+        if (_librarySearchSuggestionsContainer is not null)
+            _librarySearchSuggestionsContainer.IsVisible = false;
+        if (_libraryManagerSearchBox is not null)
+            _libraryManagerSearchBox.Text = string.Empty;
+        if (_librarySearchSuggestions is not null)
+            _librarySearchSuggestions.SelectedItem = null;
+    }
+
+    private async void OnLibraryManagerSearchLostFocus(object? sender, RoutedEventArgs e)
+    {
+        await Task.Delay(150);
+        if (_librarySearchSuggestionsContainer is not null)
+            _librarySearchSuggestionsContainer.IsVisible = false;
+    }
+
+    private static IEnumerable<SefariaNode> EnumerateAllLibraryNodes(SefariaCategoryNode root)
+    {
+        foreach (var node in root.Contents)
+        {
+            if (node is SefariaCategoryNode childCategory)
+            {
+                yield return childCategory;
+                foreach (var descendant in EnumerateAllLibraryNodes(childCategory))
+                    yield return descendant;
+            }
+            else if (node is SefariaBookNode book)
+            {
+                yield return book;
+            }
+        }
+    }
+
+    private TreeViewItem? HighlightLibraryNodeInTree(object targetNode)
+    {
+        if (_libraryTree?.ItemsSource is not IEnumerable<TreeViewItem> roots)
+            return null;
+        return FindAndSelectLibraryNodeItem(roots, targetNode);
+    }
+
+    private TreeViewItem? FindAndSelectLibraryNodeItem(
+        IEnumerable<TreeViewItem> items, object targetNode)
+    {
+        foreach (var item in items)
+        {
+            if (ReferenceEquals(item.DataContext, targetNode))
+            {
+                SelectLibraryTreeItem(item);
+                return item;
+            }
+
+            if (item.ItemsSource is IEnumerable<TreeViewItem> children)
+            {
+                var found = FindAndSelectLibraryNodeItem(children, targetNode);
+                if (found is not null)
+                {
+                    item.IsExpanded = true;
+                    return found;
+                }
+            }
+        }
+        return null;
     }
 }
