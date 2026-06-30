@@ -237,6 +237,8 @@ internal static class SearchTextMatcher
             "תלמוד" => new[] { "talmud", "gemara" },
             "בבלי" => new[] { "bavli", "babli" },
             "ירושלמי" => new[] { "yerushalmi" },
+            "הלכה" => new[] { "halacha", "halachah", "halakha", "halakhah" },
+            "הלכות" => new[] { "halachot", "halakhot", "halachos" },
             "מישנהתורה" => new[] { "mishneh torah", "mishne torah", "yad hachazakah", "yad ha-chazakah", "rambam" },
             "שולחןערוך" => new[] { "shulchan aruch", "shulchan arukh", "shulkhan arukh", "shulchan oruch" },
             "שירהשירים" => new[] { "shir hashirim", "song of songs", "song of solomon" },
