@@ -147,13 +147,15 @@ public partial class MainWindow
             return;
         }
 
-        var matches = EnumerateInstalledCategoriesFromTree()
-            .Where(c =>
-                c.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                (c.HebrewTitle?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false))
-            .Cast<object>()
-            .Take(10)
-            .ToList();
+        var categories = EnumerateInstalledCategoriesFromTree()
+            .Where(c => SearchTextMatcher.Matches(query, c.Title, c.HebrewTitle))
+            .Cast<object>();
+
+        var books = _sefariaLibrary.GetInstalledBooks()
+            .Where(b => SearchTextMatcher.Matches(query, b.Title, b.HebrewTitle))
+            .Cast<object>();
+
+        var matches = categories.Concat(books).Take(10).ToList();
         _leftPanelSearchSuggestions.ItemsSource = matches;
         _leftPanelSearchSuggestionsContainer.IsVisible = matches.Count > 0;
     }
