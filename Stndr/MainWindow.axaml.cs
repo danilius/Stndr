@@ -134,8 +134,6 @@ public partial class MainWindow : Window
     private string _dictionaryCurrentReference = string.Empty;
     private double _dictionaryPopupLeft = 360;
     private double _dictionaryPopupTop = 140;
-    private Point? _dictionaryPopupDragPointerOrigin;
-    private Point? _dictionaryPopupDragPopupOrigin;
 
     public event EventHandler? StartupCompleted;
 

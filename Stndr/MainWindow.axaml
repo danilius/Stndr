@@ -238,53 +238,56 @@
                         <Expander Header="Saved Searches"
                                   IsExpanded="True"
                                   HorizontalAlignment="Stretch">
-                           <StackPanel Spacing="8">
-                               <ListBox x:Name="SavedSearchesList"
-                                        MinHeight="80"
-                                        HorizontalAlignment="Stretch"
-                                        SelectionChanged="OnSavedSearchSelectionChanged" />
-                               <Border x:Name="DictionarySidebarCard"
-                                       IsVisible="False"
-                                       Background="#F8FAFC"
-                                       BorderBrush="#D0D5DD"
-                                       BorderThickness="1"
-                                       CornerRadius="8"
-                                       Padding="10">
-                                   <StackPanel Spacing="8">
-                                       <Grid ColumnDefinitions="*,Auto,Auto"
-                                             ColumnSpacing="6">
-                                           <TextBlock Text="Dictionary"
-                                                      FontWeight="SemiBold"
-                                                      VerticalAlignment="Center" />
-                                           <Button x:Name="DictionarySidebarPopoutButton"
-                                                   Grid.Column="1"
-                                                   Content="Pop out"
-                                                   Padding="8,2"
-                                                   MinHeight="26" />
-                                           <Button x:Name="DictionarySidebarCloseButton"
-                                                   Grid.Column="2"
-                                                   Content="x"
-                                                   Width="24"
-                                                   Height="24"
-                                                   Padding="0"
-                                                   MinWidth="0"
-                                                   MinHeight="0" />
-                                       </Grid>
-                                       <TextBlock x:Name="DictionarySidebarWord"
-                                                  FontSize="16"
+                           <ListBox x:Name="SavedSearchesList"
+                                    MinHeight="80"
+                                    HorizontalAlignment="Stretch"
+                                    SelectionChanged="OnSavedSearchSelectionChanged" />
+                        </Expander>
+
+                        <Expander Header="Dictionary"
+                                 IsExpanded="True"
+                                 HorizontalAlignment="Stretch">
+                           <Border x:Name="DictionarySidebarCard"
+                                   IsVisible="False"
+                                   Background="#F8FAFC"
+                                   BorderBrush="#D0D5DD"
+                                   BorderThickness="1"
+                                   CornerRadius="8"
+                                   Padding="10">
+                               <StackPanel Spacing="8">
+                                   <Grid ColumnDefinitions="*,Auto,Auto"
+                                         ColumnSpacing="6">
+                                       <TextBlock Text="Dictionary"
                                                   FontWeight="SemiBold"
-                                                  TextWrapping="Wrap" />
-                                       <TextBlock x:Name="DictionarySidebarReference"
-                                                  FontSize="11"
-                                                  Foreground="#667085"
-                                                  TextWrapping="Wrap" />
-                                       <TextBlock x:Name="DictionarySidebarStatus"
-                                                  Foreground="#475467"
-                                                  TextWrapping="Wrap"
-                                                  Text="Dictionary lookup is not connected yet." />
-                                   </StackPanel>
-                               </Border>
-                           </StackPanel>
+                                                  VerticalAlignment="Center" />
+                                       <Button x:Name="DictionarySidebarPopoutButton"
+                                               Grid.Column="1"
+                                               Content="Pop out"
+                                               Padding="8,2"
+                                               MinHeight="26" />
+                                       <Button x:Name="DictionarySidebarCloseButton"
+                                               Grid.Column="2"
+                                               Content="x"
+                                               Width="24"
+                                               Height="24"
+                                               Padding="0"
+                                               MinWidth="0"
+                                               MinHeight="0" />
+                                   </Grid>
+                                   <TextBlock x:Name="DictionarySidebarWord"
+                                              FontSize="16"
+                                              FontWeight="SemiBold"
+                                              TextWrapping="Wrap" />
+                                   <TextBlock x:Name="DictionarySidebarReference"
+                                              FontSize="11"
+                                              Foreground="#667085"
+                                              TextWrapping="Wrap" />
+                                   <TextBlock x:Name="DictionarySidebarStatus"
+                                              Foreground="#475467"
+                                              TextWrapping="Wrap"
+                                              Text="Dictionary lookup is not connected yet." />
+                               </StackPanel>
+                           </Border>
                         </Expander>
                     </StackPanel>
                 </ScrollViewer>
@@ -375,18 +378,18 @@
                     IsVisible="False"
                     Width="280"
                     MinHeight="150"
-                    Background="White"
+                    Background="#F8FAFC"
                     BorderBrush="#D0D5DD"
                     BorderThickness="1"
-                    CornerRadius="10"
+                    CornerRadius="8"
                     Canvas.Left="360"
                     Canvas.Top="140"
-                    BoxShadow="0 10 30 0 #22000000">
-                <StackPanel Spacing="10">
+                    BoxShadow="0 4 12 0 #22000000">
+                <StackPanel Spacing="8"
+                            Margin="10">
                     <Border x:Name="DictionaryPopupDragHandle"
-                            Background="#F8FAFC"
-                            Padding="10"
-                            CornerRadius="10,10,0,0">
+                            Background="Transparent"
+                            Padding="0">
                         <Grid ColumnDefinitions="*,Auto,Auto"
                               ColumnSpacing="6">
                             <TextBlock Text="Dictionary"
@@ -408,7 +411,7 @@
                         </Grid>
                     </Border>
                     <StackPanel Spacing="8"
-                                Margin="12,0,12,12">
+                                Margin="0">
                         <TextBlock x:Name="DictionaryPopupWord"
                                    FontSize="16"
                                    FontWeight="SemiBold"

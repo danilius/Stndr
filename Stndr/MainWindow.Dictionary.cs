@@ -1,41 +1,18 @@
 using System;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Input;
-using Avalonia.Media;
 
 namespace Stndr;
 
 public partial class MainWindow
 {
-    private const double DefaultDictionaryPopupWidth = 280;
-    private const double DefaultDictionaryPopupHeight = 170;
-    private const double DictionaryPopupMargin = 12;
+    private DictionaryPopupWindow? _dictionaryPopupWindow;
 
     private void InitializeDictionaryUi()
     {
         if (_dictionaryPopup is not null)
         {
-            Canvas.SetLeft(_dictionaryPopup, _dictionaryPopupLeft);
-            Canvas.SetTop(_dictionaryPopup, _dictionaryPopupTop);
-        }
-
-        if (_dictionaryPopupDockButton is not null)
-        {
-            _dictionaryPopupDockButton.Click += (_, e) =>
-            {
-                DockDictionaryToSidebar();
-                e.Handled = true;
-            };
-        }
-
-        if (_dictionaryPopupCloseButton is not null)
-        {
-            _dictionaryPopupCloseButton.Click += (_, e) =>
-            {
-                CloseDictionarySurface();
-                e.Handled = true;
-            };
+            _dictionaryPopup.IsVisible = false;
         }
 
         if (_dictionarySidebarPopoutButton is not null)
@@ -54,14 +31,6 @@ public partial class MainWindow
                 CloseDictionarySurface();
                 e.Handled = true;
             };
-        }
-
-        if (_dictionaryPopupDragHandle is not null)
-        {
-            _dictionaryPopupDragHandle.PointerPressed += OnDictionaryPopupDragPointerPressed;
-            _dictionaryPopupDragHandle.PointerMoved += OnDictionaryPopupDragPointerMoved;
-            _dictionaryPopupDragHandle.PointerReleased += OnDictionaryPopupDragPointerReleased;
-            _dictionaryPopupDragHandle.PointerCaptureLost += (_, _) => ResetDictionaryPopupDrag();
         }
 
         RefreshDictionarySurface();
@@ -85,30 +54,15 @@ public partial class MainWindow
             return;
         }
 
-        if (_dictionaryPopupLeft <= 0 || _dictionaryPopupTop <= 0)
-        {
-            _dictionaryPopupLeft = 360;
-            _dictionaryPopupTop = 140;
-        }
-
-        if (_dictionaryPopup is not null)
-        {
-            _dictionaryPopup.IsVisible = true;
-        }
-
-        ConstrainDictionaryPopupPosition();
         RefreshDictionarySurface();
+        ShowDictionaryPopupWindow();
         SaveLayoutState();
     }
 
     private void DockDictionaryToSidebar()
     {
         _isDictionaryDocked = true;
-        if (_dictionaryPopup is not null)
-        {
-            _dictionaryPopup.IsVisible = false;
-        }
-
+        CloseDictionaryPopupWindow();
         RefreshDictionarySurface();
         SaveLayoutState();
     }
@@ -116,13 +70,8 @@ public partial class MainWindow
     private void PopOutDictionaryFromSidebar()
     {
         _isDictionaryDocked = false;
-        if (_dictionaryPopup is not null)
-        {
-            _dictionaryPopup.IsVisible = true;
-        }
-
-        ConstrainDictionaryPopupPosition();
         RefreshDictionarySurface();
+        ShowDictionaryPopupWindow();
         SaveLayoutState();
     }
 
@@ -131,11 +80,7 @@ public partial class MainWindow
         _isDictionaryDocked = false;
         _dictionaryCurrentWord = string.Empty;
         _dictionaryCurrentReference = string.Empty;
-        if (_dictionaryPopup is not null)
-        {
-            _dictionaryPopup.IsVisible = false;
-        }
-
+        CloseDictionaryPopupWindow();
         RefreshDictionarySurface();
         SaveLayoutState();
     }
@@ -151,21 +96,7 @@ public partial class MainWindow
             ? "Dictionary lookup is not connected yet."
             : "Right-click a word in the reader and choose Dictionary.";
 
-        if (_dictionaryPopupWord is not null)
-        {
-            _dictionaryPopupWord.Text = displayWord;
-        }
-
-        if (_dictionaryPopupReference is not null)
-        {
-            _dictionaryPopupReference.Text = _dictionaryCurrentReference;
-            _dictionaryPopupReference.IsVisible = !string.IsNullOrWhiteSpace(_dictionaryCurrentReference);
-        }
-
-        if (_dictionaryPopupStatus is not null)
-        {
-            _dictionaryPopupStatus.Text = status;
-        }
+        _dictionaryPopupWindow?.UpdateEntry(displayWord, _dictionaryCurrentReference, status);
 
         if (_dictionarySidebarWord is not null)
         {
@@ -187,94 +118,87 @@ public partial class MainWindow
         {
             _dictionarySidebarCard.IsVisible = _isDictionaryDocked && hasContent;
         }
+    }
 
-        if (_dictionaryPopup is not null && !_isDictionaryDocked)
+    private void ShowDictionaryPopupWindow()
+    {
+        if (_isDictionaryDocked ||
+            (string.IsNullOrWhiteSpace(_dictionaryCurrentWord) &&
+             string.IsNullOrWhiteSpace(_dictionaryCurrentReference)))
         {
-            _dictionaryPopup.IsVisible = hasContent && _dictionaryPopup.IsVisible;
+            return;
         }
+
+        var popup = EnsureDictionaryPopupWindow();
+        popup.UpdateEntry(
+            string.IsNullOrWhiteSpace(_dictionaryCurrentWord) ? "Dictionary selection" : _dictionaryCurrentWord,
+            _dictionaryCurrentReference,
+            "Dictionary lookup is not connected yet.");
+        popup.Position = GetDictionaryPopupScreenPosition();
+        if (!popup.IsVisible)
+        {
+            popup.Show(this);
+        }
+        else
+        {
+            popup.Activate();
+        }
+    }
+
+    private void CloseDictionaryPopupWindow()
+    {
+        if (_dictionaryPopupWindow is null)
+        {
+            return;
+        }
+
+        var popup = _dictionaryPopupWindow;
+        _dictionaryPopupWindow = null;
+        popup.Close();
+    }
+
+    private DictionaryPopupWindow EnsureDictionaryPopupWindow()
+    {
+        if (_dictionaryPopupWindow is not null)
+        {
+            return _dictionaryPopupWindow;
+        }
+
+        var popup = new DictionaryPopupWindow();
+        popup.DockRequested += (_, _) => DockDictionaryToSidebar();
+        popup.DismissRequested += (_, _) => CloseDictionarySurface();
+        popup.PositionCommitted += (_, position) =>
+        {
+            _dictionaryPopupLeft = position.X - Position.X;
+            _dictionaryPopupTop = position.Y - Position.Y;
+            SaveLayoutState();
+        };
+        popup.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(_dictionaryPopupWindow, popup))
+            {
+                _dictionaryPopupWindow = null;
+            }
+        };
+        _dictionaryPopupWindow = popup;
+        return popup;
+    }
+
+    private PixelPoint GetDictionaryPopupScreenPosition()
+    {
+        return new PixelPoint(
+            Position.X + (int)Math.Round(_dictionaryPopupLeft),
+            Position.Y + (int)Math.Round(_dictionaryPopupTop));
     }
 
     private void ConstrainDictionaryPopupPosition()
     {
-        if (_dictionaryPopup is null)
+        if (_dictionaryPopupWindow is null || !_dictionaryPopupWindow.IsVisible)
         {
             return;
         }
 
-        if (Bounds.Width <= 0 || Bounds.Height <= 0)
-        {
-            Canvas.SetLeft(_dictionaryPopup, _dictionaryPopupLeft);
-            Canvas.SetTop(_dictionaryPopup, _dictionaryPopupTop);
-            return;
-        }
-
-        var popupWidth = _dictionaryPopup.Bounds.Width > 0 ? _dictionaryPopup.Bounds.Width : DefaultDictionaryPopupWidth;
-        var popupHeight = _dictionaryPopup.Bounds.Height > 0 ? _dictionaryPopup.Bounds.Height : DefaultDictionaryPopupHeight;
-        var maxLeft = Math.Max(DictionaryPopupMargin, Bounds.Width - popupWidth - DictionaryPopupMargin);
-        var maxTop = Math.Max(DictionaryPopupMargin, Bounds.Height - popupHeight - DictionaryPopupMargin);
-        _dictionaryPopupLeft = Math.Clamp(_dictionaryPopupLeft, DictionaryPopupMargin, maxLeft);
-        _dictionaryPopupTop = Math.Clamp(_dictionaryPopupTop, DictionaryPopupMargin, maxTop);
-        Canvas.SetLeft(_dictionaryPopup, _dictionaryPopupLeft);
-        Canvas.SetTop(_dictionaryPopup, _dictionaryPopupTop);
-    }
-
-    private void OnDictionaryPopupDragPointerPressed(object? sender, PointerPressedEventArgs e)
-    {
-        if (_dictionaryPopup is null || _dictionaryPopupDragHandle is null)
-        {
-            return;
-        }
-
-        var properties = e.GetCurrentPoint(_dictionaryPopupDragHandle).Properties;
-        if (!properties.IsLeftButtonPressed)
-        {
-            return;
-        }
-
-        _dictionaryPopupDragPointerOrigin = e.GetPosition(this);
-        _dictionaryPopupDragPopupOrigin = new Point(_dictionaryPopupLeft, _dictionaryPopupTop);
-        e.Pointer.Capture(_dictionaryPopupDragHandle);
-        e.Handled = true;
-    }
-
-    private void OnDictionaryPopupDragPointerMoved(object? sender, PointerEventArgs e)
-    {
-        if (_dictionaryPopup is null ||
-            _dictionaryPopupDragPointerOrigin is null ||
-            _dictionaryPopupDragPopupOrigin is null)
-        {
-            return;
-        }
-
-        var pointerPosition = e.GetPosition(this);
-        var origin = _dictionaryPopupDragPointerOrigin.Value;
-        var popupOrigin = _dictionaryPopupDragPopupOrigin.Value;
-        _dictionaryPopupLeft = popupOrigin.X + (pointerPosition.X - origin.X);
-        _dictionaryPopupTop = popupOrigin.Y + (pointerPosition.Y - origin.Y);
-        ConstrainDictionaryPopupPosition();
-        e.Handled = true;
-    }
-
-    private void OnDictionaryPopupDragPointerReleased(object? sender, PointerReleasedEventArgs e)
-    {
-        if (_dictionaryPopupDragHandle is not null)
-        {
-            e.Pointer.Capture(null);
-        }
-
-        if (_dictionaryPopupDragPointerOrigin is not null)
-        {
-            SaveLayoutState();
-        }
-
-        ResetDictionaryPopupDrag();
-        e.Handled = true;
-    }
-
-    private void ResetDictionaryPopupDrag()
-    {
-        _dictionaryPopupDragPointerOrigin = null;
-        _dictionaryPopupDragPopupOrigin = null;
+        _dictionaryPopupWindow.Position = GetDictionaryPopupScreenPosition();
     }
 
     private static string NormalizeDictionaryWord(string? word, string? reference)
