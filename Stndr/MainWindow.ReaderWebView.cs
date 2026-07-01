@@ -102,6 +102,17 @@ public partial class MainWindow
                         UpdateReaderChapterHeaderFromWeb(state, chapterElement.GetString());
                     }
                     break;
+
+                case "dictionaryClicked":
+                    var dictionaryReference = root.TryGetProperty("ref", out var dictionaryRefElement)
+                        ? dictionaryRefElement.GetString()
+                        : string.Empty;
+                    var dictionaryWord = root.TryGetProperty("word", out var dictionaryWordElement)
+                        ? dictionaryWordElement.GetString()
+                        : string.Empty;
+                    SelectReaderRowFromWebReference(state, dictionaryReference);
+                    ShowDictionaryEntry(dictionaryWord, dictionaryReference);
+                    break;
             }
         }
         catch (JsonException)
@@ -371,6 +382,50 @@ public partial class MainWindow
             i, em {
                 font-style: italic;
             }
+
+            .stndr-context-menu {
+                position: fixed;
+                display: none;
+                min-width: 180px;
+                padding: 6px;
+                background: #fff;
+                border: 1px solid #D0D5DD;
+                border-radius: 8px;
+                box-shadow: 0 8px 24px rgba(16, 24, 40, 0.2);
+                z-index: 2147483647;
+                font-family: var(--english-font);
+                font-size: 13px;
+            }
+
+            .stndr-context-menu.open {
+                display: block;
+            }
+
+            .stndr-context-menu button {
+                display: block;
+                width: 100%;
+                border: 0;
+                background: transparent;
+                padding: 8px 10px;
+                text-align: left;
+                border-radius: 6px;
+                color: #101828;
+                cursor: pointer;
+            }
+
+            .stndr-context-menu button:hover {
+                background: #F2F4F7;
+            }
+
+            .stndr-context-menu button:disabled {
+                color: #98A2B3;
+                cursor: default;
+            }
+
+            .stndr-context-menu .separator {
+                margin: 4px 0;
+                border-top: 1px solid #EAECF0;
+            }
             """;
     }
 
@@ -557,6 +612,151 @@ public partial class MainWindow
                         row.classList.add('selected');
                     }
                 };
+
+                const collapseWhitespace = (text) => (text || '').replace(/\s+/g, ' ').trim();
+                const extractWordFromText = (text) => {
+                    const normalized = collapseWhitespace(text);
+                    if (!normalized) {
+                        return '';
+                    }
+
+                    const tokens = normalized.split(/\s+/).filter(Boolean);
+                    return tokens.length > 0 ? tokens[0] : normalized;
+                };
+
+                const getWordAtPoint = (clientX, clientY) => {
+                    let node = null;
+                    let offset = 0;
+                    if (document.caretPositionFromPoint) {
+                        const position = document.caretPositionFromPoint(clientX, clientY);
+                        if (position) {
+                            node = position.offsetNode;
+                            offset = position.offset;
+                        }
+                    } else if (document.caretRangeFromPoint) {
+                        const range = document.caretRangeFromPoint(clientX, clientY);
+                        if (range) {
+                            node = range.startContainer;
+                            offset = range.startOffset;
+                        }
+                    }
+
+                    if (!node || node.nodeType !== Node.TEXT_NODE) {
+                        return '';
+                    }
+
+                    const text = node.textContent || '';
+                    if (!text) {
+                        return '';
+                    }
+
+                    const separators = /[\s.,;:!?()[\]{}"'`<>\/\\|]+/;
+                    let start = Math.min(offset, text.length);
+                    let end = Math.min(offset, text.length);
+                    while (start > 0 && !separators.test(text[start - 1])) {
+                        start--;
+                    }
+
+                    while (end < text.length && !separators.test(text[end])) {
+                        end++;
+                    }
+
+                    return collapseWhitespace(text.slice(start, end));
+                };
+
+                const contextState = {
+                    ref: '',
+                    selectedText: '',
+                    clickedWord: ''
+                };
+
+                const menu = document.createElement('div');
+                menu.className = 'stndr-context-menu';
+                menu.innerHTML = `
+                    <button type="button" data-menu-action="copy">Copy</button>
+                    <button type="button" data-menu-action="print">Print</button>
+                    <button type="button" data-menu-action="dictionary">Dictionary</button>
+                    <div class="separator" role="separator"></div>
+                    <button type="button" data-menu-action="more-tools">More tools</button>
+                `;
+                document.body.appendChild(menu);
+
+                const hideMenu = () => {
+                    menu.classList.remove('open');
+                };
+
+                const showMenu = (clientX, clientY) => {
+                    menu.classList.add('open');
+                    const width = menu.offsetWidth || 180;
+                    const height = menu.offsetHeight || 160;
+                    const maxX = Math.max(8, window.innerWidth - width - 8);
+                    const maxY = Math.max(8, window.innerHeight - height - 8);
+                    menu.style.left = `${Math.max(8, Math.min(clientX, maxX))}px`;
+                    menu.style.top = `${Math.max(8, Math.min(clientY, maxY))}px`;
+                };
+
+                document.addEventListener('contextmenu', (event) => {
+                    const row = event.target.closest('.reader-row');
+                    if (!row) {
+                        hideMenu();
+                        return;
+                    }
+
+                    event.preventDefault();
+                    selectRow(row);
+                    contextState.ref = row.dataset.ref || '';
+                    send({ type: 'rowSelected', ref: contextState.ref });
+                    const selection = window.getSelection();
+                    contextState.selectedText = selection && !selection.isCollapsed
+                        ? collapseWhitespace(selection.toString())
+                        : '';
+                    contextState.clickedWord = getWordAtPoint(event.clientX, event.clientY);
+                    const copyButton = menu.querySelector('[data-menu-action="copy"]');
+                    if (copyButton) {
+                        copyButton.disabled = !contextState.selectedText;
+                    }
+                    showMenu(event.clientX, event.clientY);
+                });
+
+                menu.addEventListener('click', async (event) => {
+                    const action = event.target.closest('[data-menu-action]')?.dataset.menuAction;
+                    if (!action) {
+                        return;
+                    }
+
+                    hideMenu();
+                    switch (action) {
+                        case 'copy':
+                            document.execCommand('copy');
+                            break;
+                        case 'print':
+                            window.print();
+                            break;
+                        case 'more-tools':
+                            break;
+                        case 'dictionary':
+                            send({
+                                type: 'dictionaryClicked',
+                                ref: contextState.ref,
+                                word: extractWordFromText(contextState.selectedText) || contextState.clickedWord || contextState.selectedText
+                            });
+                            break;
+                    }
+                });
+
+                document.addEventListener('pointerdown', (event) => {
+                    if (menu.classList.contains('open') && !menu.contains(event.target)) {
+                        hideMenu();
+                    }
+                });
+
+                document.addEventListener('scroll', hideMenu, { passive: true });
+                window.addEventListener('blur', hideMenu);
+                document.addEventListener('keydown', (event) => {
+                    if (event.key === 'Escape') {
+                        hideMenu();
+                    }
+                });
 
                 document.addEventListener('click', (event) => {
                     const row = event.target.closest('.reader-row');

@@ -60,7 +60,14 @@ public partial class MainWindow
         {
             _advancedSearchExpandedScopeKeys.Add(key);
         }
+        _isDictionaryDocked = state.DictionaryDocked;
+        _dictionaryCurrentWord = state.DictionaryCurrentWord ?? string.Empty;
+        _dictionaryCurrentReference = state.DictionaryCurrentReference ?? string.Empty;
+        _dictionaryPopupLeft = state.DictionaryPopupLeft;
+        _dictionaryPopupTop = state.DictionaryPopupTop;
         RefreshSavedSearchesList();
+        RefreshDictionarySurface();
+        ConstrainDictionaryPopupPosition();
 
         _leftExpandedWidth = Math.Max(CollapsedPanelWidth, state.LeftExpandedWidth);
         _rightExpandedWidth = Math.Max(CollapsedPanelWidth, state.RightExpandedWidth);
@@ -564,6 +571,11 @@ public partial class MainWindow
             AdvancedSearchAutosave = _advancedSearchAutosave,
             AdvancedSearchScopeTitleDisplay = _advancedSearchScopeTitleDisplay,
             AdvancedSearchExpandedScopeKeys = _advancedSearchExpandedScopeKeys.OrderBy(key => key, StringComparer.OrdinalIgnoreCase).ToList(),
+            DictionaryDocked = _isDictionaryDocked,
+            DictionaryCurrentWord = _dictionaryCurrentWord,
+            DictionaryCurrentReference = _dictionaryCurrentReference,
+            DictionaryPopupLeft = _dictionaryPopupLeft,
+            DictionaryPopupTop = _dictionaryPopupTop,
             SelectedTabIndex = _tabs.Count == 0 ? -1 : Math.Clamp(_centerTabs.SelectedIndex, 0, _tabs.Count - 1)
         };
         state.OpenTabs = state.Tabs

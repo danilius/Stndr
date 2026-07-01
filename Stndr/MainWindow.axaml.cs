@@ -57,10 +57,24 @@ public partial class MainWindow : Window
     private TextBox? _leftPanelSearchBox;
     private Border? _leftPanelSearchSuggestionsContainer;
     private ListBox? _leftPanelSearchSuggestions;
+    private Border? _dictionarySidebarCard;
+    private TextBlock? _dictionarySidebarWord;
+    private TextBlock? _dictionarySidebarReference;
+    private TextBlock? _dictionarySidebarStatus;
+    private Button? _dictionarySidebarPopoutButton;
+    private Button? _dictionarySidebarCloseButton;
     private TextBlock? _rightPanelTitle;
     private StackPanel? _rightPanelBody;
     private TabControl? _centerTabs;
     private Grid? _centerTabContentHost;
+    private Canvas? _floatingOverlayCanvas;
+    private Border? _dictionaryPopup;
+    private Border? _dictionaryPopupDragHandle;
+    private TextBlock? _dictionaryPopupWord;
+    private TextBlock? _dictionaryPopupReference;
+    private TextBlock? _dictionaryPopupStatus;
+    private Button? _dictionaryPopupDockButton;
+    private Button? _dictionaryPopupCloseButton;
     private TreeView? _libraryTree;
     private ScrollViewer? _libraryTreeScrollViewer;
     private TreeViewItem? _selectedLibraryTreeItem;
@@ -115,6 +129,13 @@ public partial class MainWindow : Window
     private bool _advancedSearchAutosave;
     private InstalledBookTitleDisplay _advancedSearchScopeTitleDisplay = InstalledBookTitleDisplay.Both;
     private readonly HashSet<string> _advancedSearchExpandedScopeKeys = new(StringComparer.OrdinalIgnoreCase);
+    private bool _isDictionaryDocked;
+    private string _dictionaryCurrentWord = string.Empty;
+    private string _dictionaryCurrentReference = string.Empty;
+    private double _dictionaryPopupLeft = 360;
+    private double _dictionaryPopupTop = 140;
+    private Point? _dictionaryPopupDragPointerOrigin;
+    private Point? _dictionaryPopupDragPopupOrigin;
 
     public event EventHandler? StartupCompleted;
 
@@ -138,6 +159,12 @@ public partial class MainWindow : Window
         _leftPanelSearchBox = this.FindControl<TextBox>("LeftPanelSearchBox");
         _leftPanelSearchSuggestionsContainer = this.FindControl<Border>("LeftPanelSearchSuggestionsContainer");
         _leftPanelSearchSuggestions = this.FindControl<ListBox>("LeftPanelSearchSuggestions");
+        _dictionarySidebarCard = this.FindControl<Border>("DictionarySidebarCard");
+        _dictionarySidebarWord = this.FindControl<TextBlock>("DictionarySidebarWord");
+        _dictionarySidebarReference = this.FindControl<TextBlock>("DictionarySidebarReference");
+        _dictionarySidebarStatus = this.FindControl<TextBlock>("DictionarySidebarStatus");
+        _dictionarySidebarPopoutButton = this.FindControl<Button>("DictionarySidebarPopoutButton");
+        _dictionarySidebarCloseButton = this.FindControl<Button>("DictionarySidebarCloseButton");
         if (_leftPanelSearchSuggestions is not null)
         {
             _leftPanelSearchSuggestions.ItemTemplate = new FuncDataTemplate<object>((item, _) =>
@@ -166,6 +193,14 @@ public partial class MainWindow : Window
         _centerTabs = centerTabs;
         _centerTabContentHost = this.FindControl<Grid>("CenterTabContentHost")
             ?? throw new InvalidOperationException("CenterTabContentHost control was not found.");
+        _floatingOverlayCanvas = this.FindControl<Canvas>("FloatingOverlayCanvas");
+        _dictionaryPopup = this.FindControl<Border>("DictionaryPopup");
+        _dictionaryPopupDragHandle = this.FindControl<Border>("DictionaryPopupDragHandle");
+        _dictionaryPopupWord = this.FindControl<TextBlock>("DictionaryPopupWord");
+        _dictionaryPopupReference = this.FindControl<TextBlock>("DictionaryPopupReference");
+        _dictionaryPopupStatus = this.FindControl<TextBlock>("DictionaryPopupStatus");
+        _dictionaryPopupDockButton = this.FindControl<Button>("DictionaryPopupDockButton");
+        _dictionaryPopupCloseButton = this.FindControl<Button>("DictionaryPopupCloseButton");
 
         _tabs = new ObservableCollection<TabItem>();
         centerTabs.ItemsSource = _tabs;
@@ -199,10 +234,12 @@ public partial class MainWindow : Window
         ApplyRightPanelState(false, DefaultExpandedPanelWidth);
         EnsureDefaultTabs();
         UpdateTabHeaderStates();
+        InitializeDictionaryUi();
 
         this.Opened += async (_, _) => await CompleteStartupAsync();
         this.Closing += (_, _) => SaveLayoutState();
         this.Closed += (_, _) => SaveLayoutState();
+        this.SizeChanged += (_, _) => ConstrainDictionaryPopupPosition();
     }
 
     private async Task CompleteStartupAsync()
