@@ -244,9 +244,11 @@
                                     SelectionChanged="OnSavedSearchSelectionChanged" />
                         </Expander>
 
-                        <Expander Header="Dictionary"
-                                 IsExpanded="True"
-                                 HorizontalAlignment="Stretch">
+                        <Expander x:Name="DictionarySidebarSection"
+                                  Header="Dictionary"
+                                  IsExpanded="True"
+                                  IsVisible="False"
+                                  HorizontalAlignment="Stretch">
                            <Border x:Name="DictionarySidebarCard"
                                    IsVisible="False"
                                    Background="#F8FAFC"
@@ -282,6 +284,11 @@
                                               FontSize="11"
                                               Foreground="#667085"
                                               TextWrapping="Wrap" />
+                                   <TextBlock x:Name="DictionarySidebarPrimaryGloss"
+                                              FontWeight="SemiBold"
+                                              Foreground="#1D2939"
+                                              TextWrapping="Wrap"
+                                              IsVisible="False" />
                                    <TextBlock x:Name="DictionarySidebarStatus"
                                               Foreground="#475467"
                                               TextWrapping="Wrap"

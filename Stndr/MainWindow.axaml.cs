@@ -57,9 +57,11 @@ public partial class MainWindow : Window
     private TextBox? _leftPanelSearchBox;
     private Border? _leftPanelSearchSuggestionsContainer;
     private ListBox? _leftPanelSearchSuggestions;
+    private Expander? _dictionarySidebarSection;
     private Border? _dictionarySidebarCard;
     private TextBlock? _dictionarySidebarWord;
     private TextBlock? _dictionarySidebarReference;
+    private TextBlock? _dictionarySidebarPrimaryGloss;
     private TextBlock? _dictionarySidebarStatus;
     private Button? _dictionarySidebarPopoutButton;
     private Button? _dictionarySidebarCloseButton;
@@ -132,6 +134,10 @@ public partial class MainWindow : Window
     private bool _isDictionaryDocked;
     private string _dictionaryCurrentWord = string.Empty;
     private string _dictionaryCurrentReference = string.Empty;
+    private string _dictionaryPrimaryGloss = string.Empty;
+    private string _dictionaryStatusText = "Right-click a word in the reader and choose Dictionary.";
+    private CancellationTokenSource _dictionaryLookupCts = new();
+    private readonly Dictionary<string, IReadOnlyList<SefariaDictionaryEntry>> _dictionaryLookupCache = new(StringComparer.Ordinal);
     private double _dictionaryPopupLeft = 360;
     private double _dictionaryPopupTop = 140;
 
@@ -157,9 +163,11 @@ public partial class MainWindow : Window
         _leftPanelSearchBox = this.FindControl<TextBox>("LeftPanelSearchBox");
         _leftPanelSearchSuggestionsContainer = this.FindControl<Border>("LeftPanelSearchSuggestionsContainer");
         _leftPanelSearchSuggestions = this.FindControl<ListBox>("LeftPanelSearchSuggestions");
+        _dictionarySidebarSection = this.FindControl<Expander>("DictionarySidebarSection");
         _dictionarySidebarCard = this.FindControl<Border>("DictionarySidebarCard");
         _dictionarySidebarWord = this.FindControl<TextBlock>("DictionarySidebarWord");
         _dictionarySidebarReference = this.FindControl<TextBlock>("DictionarySidebarReference");
+        _dictionarySidebarPrimaryGloss = this.FindControl<TextBlock>("DictionarySidebarPrimaryGloss");
         _dictionarySidebarStatus = this.FindControl<TextBlock>("DictionarySidebarStatus");
         _dictionarySidebarPopoutButton = this.FindControl<Button>("DictionarySidebarPopoutButton");
         _dictionarySidebarCloseButton = this.FindControl<Button>("DictionarySidebarCloseButton");

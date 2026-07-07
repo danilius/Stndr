@@ -9,8 +9,15 @@ namespace Stndr;
 
 public sealed class DictionaryPopupWindow : Window
 {
+    private static readonly IBrush PopupBackgroundBrush = new SolidColorBrush(Color.Parse("#FFFFFF"));
+    private static readonly IBrush PopupBorderBrush = new SolidColorBrush(Color.Parse("#D0D5DD"));
+    private static readonly IBrush PopupSectionDividerBrush = new SolidColorBrush(Color.Parse("#EAECF0"));
+    private static readonly IBrush MutedTextBrush = new SolidColorBrush(Color.Parse("#667085"));
+    private static readonly IBrush StatusTextBrush = new SolidColorBrush(Color.Parse("#475467"));
+
     private readonly TextBlock _wordText;
     private readonly TextBlock _referenceText;
+    private readonly TextBlock _primaryGlossText;
     private readonly TextBlock _statusText;
     private readonly Border _dragHandle;
     private Point? _dragPointerOrigin;
@@ -38,19 +45,29 @@ public sealed class DictionaryPopupWindow : Window
         _referenceText = new TextBlock
         {
             FontSize = 11,
-            Foreground = new SolidColorBrush(Color.Parse("#667085")),
+            Foreground = MutedTextBrush,
             TextWrapping = TextWrapping.Wrap,
             IsVisible = false
         };
         _statusText = new TextBlock
         {
-            Foreground = new SolidColorBrush(Color.Parse("#475467")),
+            Foreground = StatusTextBrush,
             TextWrapping = TextWrapping.Wrap
+        };
+        _primaryGlossText = new TextBlock
+        {
+            FontWeight = FontWeight.SemiBold,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = new SolidColorBrush(Color.Parse("#1D2939")),
+            IsVisible = false
         };
 
         var dockButton = new Button
         {
             Content = "Move to sidebar",
+            Background = Brushes.Transparent,
+            BorderBrush = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
             Padding = new Thickness(8, 2),
             MinHeight = 26
         };
@@ -62,7 +79,10 @@ public sealed class DictionaryPopupWindow : Window
 
         var closeButton = new Button
         {
-            Content = "x",
+            Content = "✕",
+            Background = Brushes.Transparent,
+            BorderBrush = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
             Width = 24,
             Height = 24,
             Padding = new Thickness(0),
@@ -78,7 +98,9 @@ public sealed class DictionaryPopupWindow : Window
         _dragHandle = new Border
         {
             Background = Brushes.Transparent,
-            Padding = new Thickness(0),
+            BorderBrush = PopupSectionDividerBrush,
+            BorderThickness = new Thickness(0, 0, 0, 1),
+            Padding = new Thickness(0, 0, 0, 8),
             Child = new Grid
             {
                 ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"),
@@ -106,12 +128,11 @@ public sealed class DictionaryPopupWindow : Window
 
         Content = new Border
         {
-            Background = new SolidColorBrush(Color.Parse("#F8FAFC")),
-            BorderBrush = new SolidColorBrush(Color.Parse("#D0D5DD")),
+            Background = PopupBackgroundBrush,
+            BorderBrush = PopupBorderBrush,
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(8),
-            BoxShadow = BoxShadows.Parse("0 4 12 0 #22000000"),
-            Padding = new Thickness(10),
+            CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(12, 10),
             Child = new StackPanel
             {
                 Spacing = 8,
@@ -120,17 +141,20 @@ public sealed class DictionaryPopupWindow : Window
                     _dragHandle,
                     _wordText,
                     _referenceText,
+                    _primaryGlossText,
                     _statusText
                 }
             }
         };
     }
 
-    public void UpdateEntry(string word, string reference, string status)
+    public void UpdateEntry(string word, string reference, string primaryGloss, string status)
     {
         _wordText.Text = word;
         _referenceText.Text = reference;
         _referenceText.IsVisible = !string.IsNullOrWhiteSpace(reference);
+        _primaryGlossText.Text = primaryGloss;
+        _primaryGlossText.IsVisible = !string.IsNullOrWhiteSpace(primaryGloss);
         _statusText.Text = status;
     }
 
