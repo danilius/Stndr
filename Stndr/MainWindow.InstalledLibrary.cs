@@ -26,6 +26,9 @@ public partial class MainWindow
 {
     private int _installedBooksTreeRefreshGeneration;
 
+    // Cancels the previous search's debounce + API call when the user types a new character.
+    private CancellationTokenSource _installedBooksSearchCts = new();
+
     private void RefreshInstalledBooksTree()
     {
         _ = RefreshInstalledBooksTreeAsync();
@@ -135,7 +138,7 @@ public partial class MainWindow
         };
     }
 
-    private void OnInstalledBooksSearchTextChanged(object? sender, TextChangedEventArgs e)
+    private async void OnInstalledBooksSearchTextChanged(object? sender, TextChangedEventArgs e)
     {
         if (_leftPanelSearchSuggestionsContainer is null || _leftPanelSearchSuggestions is null)
             return;
@@ -147,13 +150,67 @@ public partial class MainWindow
             return;
         }
 
-        var matches = EnumerateInstalledCategoriesFromTree()
+        // Cancel the previous search (debounce + in-flight API call) and start a new one
+        _installedBooksSearchCts.Cancel();
+        _installedBooksSearchCts.Dispose();
+        _installedBooksSearchCts = new CancellationTokenSource();
+        var cts = _installedBooksSearchCts;
+
+        // Show local matches immediately — no network round-trip needed
+        var localMatches = FindInstalledCategoriesByTitleOrHebrew(query);
+        ShowInstalledBookSuggestions(localMatches, cts);
+
+        // Debounce: avoid a network call on every keystroke
+        try { await Task.Delay(350, cts.Token); }
+        catch (OperationCanceledException) { return; }
+
+        // Ask Sefaria to resolve the query via transliteration (e.g. "bereshit" → "Genesis")
+        IReadOnlyList<string> transliterationKeys;
+        try { transliterationKeys = await _sefariaLibrary.FetchTransliterationMatchKeysAsync(query, cts.Token); }
+        catch (OperationCanceledException) { return; }
+
+        if (transliterationKeys.Count == 0 || cts.IsCancellationRequested)
+            return;
+
+        // Find books matched via transliteration that aren't already in the local results
+        var alreadyShown = new HashSet<string>(
+            localMatches.Select(c => c.Title),
+            StringComparer.OrdinalIgnoreCase);
+
+        var transliterationKeySet = new HashSet<string>(transliterationKeys, StringComparer.OrdinalIgnoreCase);
+
+        var extraMatches = EnumerateInstalledCategoriesFromTree()
+            .Where(c => !alreadyShown.Contains(c.Title) && transliterationKeySet.Contains(c.Title))
+            .ToList();
+
+        if (extraMatches.Count == 0 || cts.IsCancellationRequested)
+            return;
+
+        var merged = localMatches.Concat(extraMatches).Take(10).ToList();
+        ShowInstalledBookSuggestions(merged, cts);
+    }
+
+    // Returns installed books/categories whose English or Hebrew title contains the query.
+    private List<InstalledSefariaCategory> FindInstalledCategoriesByTitleOrHebrew(string query)
+    {
+        return EnumerateInstalledCategoriesFromTree()
             .Where(c =>
                 c.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
                 (c.HebrewTitle?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false))
-            .Cast<object>()
             .Take(10)
             .ToList();
+    }
+
+    // Updates the suggestion dropdown, guarding against stale results from a cancelled search.
+    private void ShowInstalledBookSuggestions(IReadOnlyList<InstalledSefariaCategory> matches, CancellationTokenSource cts)
+    {
+        if (cts.IsCancellationRequested ||
+            _leftPanelSearchSuggestions is null ||
+            _leftPanelSearchSuggestionsContainer is null)
+        {
+            return;
+        }
+
         _leftPanelSearchSuggestions.ItemsSource = matches;
         _leftPanelSearchSuggestionsContainer.IsVisible = matches.Count > 0;
     }
