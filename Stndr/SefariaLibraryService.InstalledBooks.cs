@@ -716,6 +716,11 @@ public sealed partial class SefariaLibraryService
 
     private static bool HasArrayTextChild(JsonElement text)
     {
+        if (text.ValueKind == JsonValueKind.Array)
+        {
+            return true;
+        }
+
         if (text.ValueKind != JsonValueKind.Object)
         {
             return false;
@@ -733,7 +738,7 @@ public sealed partial class SefariaLibraryService
             return true;
         }
 
-        return text.EnumerateObject().Any(property => property.Value.ValueKind == JsonValueKind.Array);
+        return text.EnumerateObject().Any(property => HasArrayTextChild(property.Value));
     }
 
     private static void ApplyJsonMetadata(InstalledSefariaBook record, JsonElement root)
