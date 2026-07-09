@@ -48,6 +48,7 @@ public partial class MainWindow
                             FontWeight = FontWeight.SemiBold
                         },
                         CreateDataStorageFolderSettingRow(),
+                        CreateCrashLogFolderSettingRow(),
                         new TextBlock
                         {
                             Text = "Title language",
@@ -180,6 +181,55 @@ public partial class MainWindow
                             })
                     }
                 }
+            }
+        };
+    }
+
+    private static Control CreateCrashLogFolderSettingRow()
+    {
+        var statusText = new TextBlock
+        {
+            Text = "Crash logs are saved separately in this folder, one file per crash.",
+            Foreground = new SolidColorBrush(Color.Parse("#475467")),
+            TextWrapping = TextWrapping.Wrap
+        };
+
+        var openButton = new Button
+        {
+            Content = "Open crash log folder",
+            MinWidth = 170
+        };
+        openButton.Click += (_, _) =>
+        {
+            try
+            {
+                CrashLogService.OpenCrashLogFolder();
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
+            {
+                statusText.Text = $"Could not open crash log folder: {ex.Message}";
+            }
+        };
+
+        return new StackPanel
+        {
+            Spacing = 6,
+            Margin = new Thickness(0, 0, 0, 8),
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = "Crash logs",
+                    FontWeight = FontWeight.SemiBold
+                },
+                new TextBlock
+                {
+                    Text = CrashLogService.CrashLogFolder,
+                    FontWeight = FontWeight.SemiBold,
+                    TextWrapping = TextWrapping.Wrap
+                },
+                openButton,
+                statusText
             }
         };
     }

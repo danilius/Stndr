@@ -54,7 +54,7 @@ public sealed partial class SefariaLibraryService
             return units;
         }
 
-        AppendTextUnits(textElement, units, new List<int>());
+        AppendTextUnits(textElement, units, new List<string>());
         return units;
     }
 
@@ -415,6 +415,16 @@ public sealed partial class SefariaLibraryService
             return;
         }
 
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                AppendTextElement(property.Value, lines, chapterNumber);
+            }
+
+            return;
+        }
+
         if (element.ValueKind != JsonValueKind.Array)
         {
             return;
@@ -446,7 +456,7 @@ public sealed partial class SefariaLibraryService
         }
     }
 
-    private static void AppendTextUnits(JsonElement element, List<ReaderTextUnit> units, List<int> path)
+    private static void AppendTextUnits(JsonElement element, List<ReaderTextUnit> units, List<string> path)
     {
         if (element.ValueKind == JsonValueKind.String)
         {
@@ -454,6 +464,17 @@ public sealed partial class SefariaLibraryService
             if (!string.IsNullOrWhiteSpace(text))
             {
                 units.Add(new ReaderTextUnit(string.Join(".", path), text));
+            }
+
+            return;
+        }
+
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                var nextPath = new List<string>(path) { property.Name };
+                AppendTextUnits(property.Value, units, nextPath);
             }
 
             return;
@@ -467,7 +488,7 @@ public sealed partial class SefariaLibraryService
         var index = 1;
         foreach (var item in element.EnumerateArray())
         {
-            var nextPath = new List<int>(path) { index };
+            var nextPath = new List<string>(path) { index.ToString() };
             AppendTextUnits(item, units, nextPath);
             index++;
         }
@@ -477,7 +498,7 @@ public sealed partial class SefariaLibraryService
     {
         if (textElement.ValueKind != JsonValueKind.Array)
         {
-            AppendTextUnits(textElement, units, new List<int>());
+            AppendTextUnits(textElement, units, new List<string>());
             return;
         }
 
@@ -812,14 +833,14 @@ public sealed partial class SefariaLibraryService
         }
 
         if (rawTextElement.TryGetProperty(string.Empty, out var defaultTextElement) &&
-            defaultTextElement.ValueKind == JsonValueKind.Array)
+            HasTextContent(defaultTextElement))
         {
             textElement = defaultTextElement;
             return true;
         }
 
         if (rawTextElement.TryGetProperty("default", out defaultTextElement) &&
-            defaultTextElement.ValueKind == JsonValueKind.Array)
+            HasTextContent(defaultTextElement))
         {
             textElement = defaultTextElement;
             return true;
@@ -832,8 +853,26 @@ public sealed partial class SefariaLibraryService
                 textElement = property.Value;
                 return true;
             }
+
+            if (property.Value.ValueKind == JsonValueKind.Object &&
+                HasTextContent(property.Value))
+            {
+                textElement = rawTextElement;
+                return true;
+            }
         }
 
         return false;
+    }
+
+    private static bool HasTextContent(JsonElement element)
+    {
+        return element.ValueKind switch
+        {
+            JsonValueKind.String => !string.IsNullOrWhiteSpace(element.GetString()),
+            JsonValueKind.Array => element.EnumerateArray().Any(HasTextContent),
+            JsonValueKind.Object => element.EnumerateObject().Any(property => HasTextContent(property.Value)),
+            _ => false
+        };
     }
 }
