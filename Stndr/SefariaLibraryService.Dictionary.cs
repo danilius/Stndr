@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -21,20 +22,37 @@ public sealed partial class SefariaLibraryService
 
     public async Task<IReadOnlyList<SefariaDictionaryEntry>> LookupDictionaryEntriesAsync(
         string word,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? lookupRef = null)
     {
         if (string.IsNullOrWhiteSpace(word))
         {
             return Array.Empty<SefariaDictionaryEntry>();
         }
 
-        var url = WordsApiBaseUrl + Uri.EscapeDataString(word.Trim());
+        var url = BuildWordsApiUrl(word.Trim(), lookupRef);
         using var response = await HttpClient.GetAsync(url, cancellationToken);
         response.EnsureSuccessStatusCode();
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
         return ParseDictionaryEntries(document.RootElement);
+    }
+
+    private static string BuildWordsApiUrl(string word, string? lookupRef)
+    {
+        var url = new StringBuilder(WordsApiBaseUrl.Length + word.Length + 64);
+        url.Append(WordsApiBaseUrl);
+        url.Append(Uri.EscapeDataString(word));
+        url.Append("?always_consonants=1");
+
+        if (!string.IsNullOrWhiteSpace(lookupRef))
+        {
+            url.Append("&lookup_ref=");
+            url.Append(Uri.EscapeDataString(lookupRef.Trim()));
+        }
+
+        return url.ToString();
     }
 
     private static IReadOnlyList<SefariaDictionaryEntry> ParseDictionaryEntries(JsonElement root)

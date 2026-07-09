@@ -110,8 +110,25 @@ public partial class MainWindow
                     var dictionaryWord = root.TryGetProperty("word", out var dictionaryWordElement)
                         ? dictionaryWordElement.GetString()
                         : string.Empty;
+                    PixelPoint? dictionaryAnchor = null;
+                    if (root.TryGetProperty("clientX", out var clientXElement) &&
+                        clientXElement.TryGetDouble(out var clientX) &&
+                        root.TryGetProperty("clientY", out var clientYElement) &&
+                        clientYElement.TryGetDouble(out var clientY) &&
+                        state.ReaderWebView is not null)
+                    {
+                        try
+                        {
+                            dictionaryAnchor = state.ReaderWebView.PointToScreen(new Point(clientX, clientY));
+                        }
+                        catch (InvalidOperationException)
+                        {
+                            // WebView may not be attached to a visual tree yet.
+                        }
+                    }
+
                     SelectReaderRowFromWebReference(state, dictionaryReference);
-                    ShowDictionaryEntry(dictionaryWord, dictionaryReference);
+                    ShowDictionaryEntry(dictionaryWord, dictionaryReference, dictionaryAnchor);
                     break;
             }
         }
@@ -667,7 +684,9 @@ public partial class MainWindow
                 const contextState = {
                     ref: '',
                     selectedText: '',
-                    clickedWord: ''
+                    clickedWord: '',
+                    clientX: 0,
+                    clientY: 0
                 };
 
                 const menu = document.createElement('div');
@@ -711,6 +730,8 @@ public partial class MainWindow
                         ? collapseWhitespace(selection.toString())
                         : '';
                     contextState.clickedWord = getWordAtPoint(event.clientX, event.clientY);
+                    contextState.clientX = event.clientX;
+                    contextState.clientY = event.clientY;
                     const copyButton = menu.querySelector('[data-menu-action="copy"]');
                     if (copyButton) {
                         copyButton.disabled = !contextState.selectedText;
@@ -738,7 +759,9 @@ public partial class MainWindow
                             send({
                                 type: 'dictionaryClicked',
                                 ref: contextState.ref,
-                                word: extractWordFromText(contextState.selectedText) || contextState.clickedWord || contextState.selectedText
+                                word: extractWordFromText(contextState.selectedText) || contextState.clickedWord || contextState.selectedText,
+                                clientX: contextState.clientX,
+                                clientY: contextState.clientY
                             });
                             break;
                     }

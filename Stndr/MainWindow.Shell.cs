@@ -76,6 +76,12 @@ public partial class MainWindow
         ApplyRightPanelState(state.RightCollapsed, _rightExpandedWidth);
 
         ApplyTabsFromState(state);
+
+        if (_isDictionaryDocked)
+        {
+            UpdateReaderTools();
+            RefreshDictionarySurface();
+        }
     }
 
     private void ApplyTabsFromState(LayoutState state)

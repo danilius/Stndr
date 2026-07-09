@@ -243,59 +243,6 @@
                                     HorizontalAlignment="Stretch"
                                     SelectionChanged="OnSavedSearchSelectionChanged" />
                         </Expander>
-
-                        <Expander x:Name="DictionarySidebarSection"
-                                  Header="Dictionary"
-                                  IsExpanded="True"
-                                  IsVisible="False"
-                                  HorizontalAlignment="Stretch">
-                           <Border x:Name="DictionarySidebarCard"
-                                   IsVisible="False"
-                                   Background="#F8FAFC"
-                                   BorderBrush="#D0D5DD"
-                                   BorderThickness="1"
-                                   CornerRadius="8"
-                                   Padding="10">
-                               <StackPanel Spacing="8">
-                                   <Grid ColumnDefinitions="*,Auto,Auto"
-                                         ColumnSpacing="6">
-                                       <TextBlock Text="Dictionary"
-                                                  FontWeight="SemiBold"
-                                                  VerticalAlignment="Center" />
-                                       <Button x:Name="DictionarySidebarPopoutButton"
-                                               Grid.Column="1"
-                                               Content="Pop out"
-                                               Padding="8,2"
-                                               MinHeight="26" />
-                                       <Button x:Name="DictionarySidebarCloseButton"
-                                               Grid.Column="2"
-                                               Content="x"
-                                               Width="24"
-                                               Height="24"
-                                               Padding="0"
-                                               MinWidth="0"
-                                               MinHeight="0" />
-                                   </Grid>
-                                   <TextBlock x:Name="DictionarySidebarWord"
-                                              FontSize="16"
-                                              FontWeight="SemiBold"
-                                              TextWrapping="Wrap" />
-                                   <TextBlock x:Name="DictionarySidebarReference"
-                                              FontSize="11"
-                                              Foreground="#667085"
-                                              TextWrapping="Wrap" />
-                                   <TextBlock x:Name="DictionarySidebarPrimaryGloss"
-                                              FontWeight="SemiBold"
-                                              Foreground="#1D2939"
-                                              TextWrapping="Wrap"
-                                              IsVisible="False" />
-                                   <TextBlock x:Name="DictionarySidebarStatus"
-                                              Foreground="#475467"
-                                              TextWrapping="Wrap"
-                                              Text="Dictionary lookup is not connected yet." />
-                               </StackPanel>
-                           </Border>
-                        </Expander>
                     </StackPanel>
                 </ScrollViewer>
 
@@ -404,7 +351,7 @@
                                        VerticalAlignment="Center" />
                             <Button x:Name="DictionaryPopupDockButton"
                                     Grid.Column="1"
-                                    Content="Move to sidebar"
+                                    Content="Dock"
                                     Padding="8,2"
                                     MinHeight="26" />
                             <Button x:Name="DictionaryPopupCloseButton"

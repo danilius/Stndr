@@ -64,7 +64,7 @@ public sealed class DictionaryPopupWindow : Window
 
         var dockButton = new Button
         {
-            Content = "Move to sidebar",
+            Content = "Dock",
             Background = Brushes.Transparent,
             BorderBrush = Brushes.Transparent,
             BorderThickness = new Thickness(0),

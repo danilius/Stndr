@@ -57,14 +57,11 @@ public partial class MainWindow : Window
     private TextBox? _leftPanelSearchBox;
     private Border? _leftPanelSearchSuggestionsContainer;
     private ListBox? _leftPanelSearchSuggestions;
-    private Expander? _dictionarySidebarSection;
-    private Border? _dictionarySidebarCard;
-    private TextBlock? _dictionarySidebarWord;
-    private TextBlock? _dictionarySidebarReference;
-    private TextBlock? _dictionarySidebarPrimaryGloss;
-    private TextBlock? _dictionarySidebarStatus;
-    private Button? _dictionarySidebarPopoutButton;
-    private Button? _dictionarySidebarCloseButton;
+    private TextBlock? _dictionaryToolsWord;
+    private TextBlock? _dictionaryToolsReference;
+    private TextBlock? _dictionaryToolsPrimaryGloss;
+    private TextBlock? _dictionaryToolsStatus;
+    private bool _isDictionaryToolsExpanded = true;
     private TextBlock? _rightPanelTitle;
     private StackPanel? _rightPanelBody;
     private TabControl? _centerTabs;
@@ -140,6 +137,8 @@ public partial class MainWindow : Window
     private readonly Dictionary<string, IReadOnlyList<SefariaDictionaryEntry>> _dictionaryLookupCache = new(StringComparer.Ordinal);
     private double _dictionaryPopupLeft = 360;
     private double _dictionaryPopupTop = 140;
+    private PixelPoint? _dictionaryAnchorScreenPoint;
+    private bool _dictionaryPopupUserPositioned;
 
     public event EventHandler? StartupCompleted;
 
@@ -163,14 +162,6 @@ public partial class MainWindow : Window
         _leftPanelSearchBox = this.FindControl<TextBox>("LeftPanelSearchBox");
         _leftPanelSearchSuggestionsContainer = this.FindControl<Border>("LeftPanelSearchSuggestionsContainer");
         _leftPanelSearchSuggestions = this.FindControl<ListBox>("LeftPanelSearchSuggestions");
-        _dictionarySidebarSection = this.FindControl<Expander>("DictionarySidebarSection");
-        _dictionarySidebarCard = this.FindControl<Border>("DictionarySidebarCard");
-        _dictionarySidebarWord = this.FindControl<TextBlock>("DictionarySidebarWord");
-        _dictionarySidebarReference = this.FindControl<TextBlock>("DictionarySidebarReference");
-        _dictionarySidebarPrimaryGloss = this.FindControl<TextBlock>("DictionarySidebarPrimaryGloss");
-        _dictionarySidebarStatus = this.FindControl<TextBlock>("DictionarySidebarStatus");
-        _dictionarySidebarPopoutButton = this.FindControl<Button>("DictionarySidebarPopoutButton");
-        _dictionarySidebarCloseButton = this.FindControl<Button>("DictionarySidebarCloseButton");
         if (_leftPanelSearchSuggestions is not null)
         {
             _leftPanelSearchSuggestions.ItemTemplate = new FuncDataTemplate<object>((item, _) =>
