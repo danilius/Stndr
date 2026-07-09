@@ -2031,10 +2031,8 @@ public partial class MainWindow
         var matches = EnumerateAllLibraryNodes(_sefariaRoot)
             .Where(node => node switch
             {
-                SefariaBookNode book => book.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                                        (book.HebrewTitle?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false),
-                SefariaCategoryNode cat => cat.Category?.Contains(query, StringComparison.OrdinalIgnoreCase) == true ||
-                                           (cat.HebrewCategory?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false),
+                SefariaBookNode book => SearchTextMatcher.Matches(query, book.Title, book.DisplayTitle, book.HebrewTitle),
+                SefariaCategoryNode cat => SearchTextMatcher.Matches(query, cat.Category, cat.DisplayTitle, cat.HebrewCategory),
                 _ => false
             })
             .Take(10)
