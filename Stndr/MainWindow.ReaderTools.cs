@@ -65,25 +65,39 @@ public partial class MainWindow
         }
 
         _rightPanelBody.Children.Clear();
+        ClearDictionaryToolsControls();
         _rightPanelTitle.Text = "Reader Tools";
+
+        if (_isDictionaryDocked)
+        {
+            _rightPanelBody.Children.Add(CreateDockedDictionaryToolsControl());
+        }
 
         if (_centerTabs?.SelectedItem is not TabItem selectedTab)
         {
-            _rightPanelBody.Children.Add(new TextBlock
+            if (!_isDictionaryDocked)
             {
-                Text = "Open a text to see reader tools.",
-                TextWrapping = TextWrapping.Wrap
-            });
+                _rightPanelBody.Children.Add(new TextBlock
+                {
+                    Text = "Open a text to see reader tools.",
+                    TextWrapping = TextWrapping.Wrap
+                });
+            }
+
             return;
         }
 
         if (!_openReaderTabs.TryGetValue(selectedTab, out var readerState))
         {
-            _rightPanelBody.Children.Add(new TextBlock
+            if (!_isDictionaryDocked)
             {
-                Text = "Open a text to see reader tools.",
-                TextWrapping = TextWrapping.Wrap
-            });
+                _rightPanelBody.Children.Add(new TextBlock
+                {
+                    Text = "Open a text to see reader tools.",
+                    TextWrapping = TextWrapping.Wrap
+                });
+            }
+
             return;
         }
 

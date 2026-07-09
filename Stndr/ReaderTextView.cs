@@ -48,8 +48,13 @@ public sealed class ReaderTextView : SelectableTextBlock
             Header = "Copy"
         };
         _copyMenuItem.Click += async (_, _) => await CopyCurrentTextAsync();
+        var dictionaryMenuItem = new MenuItem
+        {
+            Header = "Dictionary"
+        };
         var contextMenu = new ContextMenu();
         contextMenu.Items.Add(_copyMenuItem);
+        contextMenu.Items.Add(dictionaryMenuItem);
         ContextMenu = contextMenu;
         ContextMenu.Opening += OnContextMenuOpening;
         AddHandler(PointerPressedEvent, TrackParagraphClickStart, RoutingStrategies.Tunnel);

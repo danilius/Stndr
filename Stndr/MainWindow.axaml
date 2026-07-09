@@ -238,10 +238,10 @@
                         <Expander Header="Saved Searches"
                                   IsExpanded="True"
                                   HorizontalAlignment="Stretch">
-                            <ListBox x:Name="SavedSearchesList"
-                                     MinHeight="80"
-                                     HorizontalAlignment="Stretch"
-                                     SelectionChanged="OnSavedSearchSelectionChanged" />
+                           <ListBox x:Name="SavedSearchesList"
+                                    MinHeight="80"
+                                    HorizontalAlignment="Stretch"
+                                    SelectionChanged="OnSavedSearchSelectionChanged" />
                         </Expander>
                     </StackPanel>
                 </ScrollViewer>
@@ -323,5 +323,64 @@
                 </ScrollViewer>
             </Grid>
         </Border>
+
+        <Canvas x:Name="FloatingOverlayCanvas"
+                Grid.Row="2"
+                Grid.ColumnSpan="5"
+                ZIndex="200">
+            <Border x:Name="DictionaryPopup"
+                    IsVisible="False"
+                    Width="280"
+                    MinHeight="150"
+                    Background="#F8FAFC"
+                    BorderBrush="#D0D5DD"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Canvas.Left="360"
+                    Canvas.Top="140"
+                    BoxShadow="0 4 12 0 #22000000">
+                <StackPanel Spacing="8"
+                            Margin="10">
+                    <Border x:Name="DictionaryPopupDragHandle"
+                            Background="Transparent"
+                            Padding="0">
+                        <Grid ColumnDefinitions="*,Auto,Auto"
+                              ColumnSpacing="6">
+                            <TextBlock Text="Dictionary"
+                                       FontWeight="SemiBold"
+                                       VerticalAlignment="Center" />
+                            <Button x:Name="DictionaryPopupDockButton"
+                                    Grid.Column="1"
+                                    Content="Dock"
+                                    Padding="8,2"
+                                    MinHeight="26" />
+                            <Button x:Name="DictionaryPopupCloseButton"
+                                    Grid.Column="2"
+                                    Content="x"
+                                    Width="24"
+                                    Height="24"
+                                    Padding="0"
+                                    MinWidth="0"
+                                    MinHeight="0" />
+                        </Grid>
+                    </Border>
+                    <StackPanel Spacing="8"
+                                Margin="0">
+                        <TextBlock x:Name="DictionaryPopupWord"
+                                   FontSize="16"
+                                   FontWeight="SemiBold"
+                                   TextWrapping="Wrap" />
+                        <TextBlock x:Name="DictionaryPopupReference"
+                                   FontSize="11"
+                                   Foreground="#667085"
+                                   TextWrapping="Wrap" />
+                        <TextBlock x:Name="DictionaryPopupStatus"
+                                   Foreground="#475467"
+                                   TextWrapping="Wrap"
+                                   Text="Dictionary lookup is not connected yet." />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Canvas>
     </Grid>
 </Window>

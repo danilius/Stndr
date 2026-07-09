@@ -37,6 +37,11 @@ public partial class MainWindow
         public bool AdvancedSearchAutosave { get; set; }
         public InstalledBookTitleDisplay AdvancedSearchScopeTitleDisplay { get; set; } = InstalledBookTitleDisplay.Both;
         public List<string> AdvancedSearchExpandedScopeKeys { get; set; } = new();
+        public bool DictionaryDocked { get; set; }
+        public string DictionaryCurrentWord { get; set; } = string.Empty;
+        public string DictionaryCurrentReference { get; set; } = string.Empty;
+        public double DictionaryPopupLeft { get; set; } = 360;
+        public double DictionaryPopupTop { get; set; } = 140;
         public int SelectedTabIndex { get; set; }
     }
 

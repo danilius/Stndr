@@ -28,6 +28,9 @@ public partial class MainWindow
     private const double LibraryVersionDropdownWidth = 400;
     private const int GeneralBulkDownloadBookThreshold = 5;
 
+    // Cancels the previous search's debounce + API call when the user types a new character.
+    private CancellationTokenSource _libraryManagerSearchCts = new();
+
     private sealed record CategoryBulkTarget(
         string ActionTitle,
         string Description,
@@ -2016,7 +2019,7 @@ public partial class MainWindow
         return "No description is available for this book.";
     }
 
-    private void OnLibraryManagerSearchTextChanged(object? sender, TextChangedEventArgs e)
+    private async void OnLibraryManagerSearchTextChanged(object? sender, TextChangedEventArgs e)
     {
         if (_librarySearchSuggestionsContainer is null || _librarySearchSuggestions is null || _sefariaRoot is null)
             return;
@@ -2028,17 +2031,91 @@ public partial class MainWindow
             return;
         }
 
-        var matches = EnumerateAllLibraryNodes(_sefariaRoot)
+        // Capture root now; it could theoretically change while we await
+        var sefariaRoot = _sefariaRoot;
+
+        // Cancel the previous search (debounce + in-flight API call) and start a new one
+        _libraryManagerSearchCts.Cancel();
+        _libraryManagerSearchCts.Dispose();
+        _libraryManagerSearchCts = new CancellationTokenSource();
+        var cts = _libraryManagerSearchCts;
+
+        // Show local matches immediately — no network round-trip needed
+        var localMatches = FindLibraryNodesByTitleOrHebrew(sefariaRoot, query);
+        ShowLibraryManagerSuggestions(localMatches, cts);
+
+        // Debounce: avoid a network call on every keystroke
+        try { await Task.Delay(350, cts.Token); }
+        catch (OperationCanceledException) { return; }
+
+        // Ask Sefaria to resolve the query via transliteration (e.g. "shemot" → "Exodus")
+        IReadOnlyList<string> transliterationKeys;
+        try { transliterationKeys = await _sefariaLibrary.FetchTransliterationMatchKeysAsync(query, cts.Token); }
+        catch (OperationCanceledException) { return; }
+
+        if (transliterationKeys.Count == 0 || cts.IsCancellationRequested)
+            return;
+
+        // Build a set for O(1) lookup when scanning potentially thousands of library nodes
+        var transliterationKeySet = new HashSet<string>(transliterationKeys, StringComparer.OrdinalIgnoreCase);
+
+        // Track titles already shown so we don't surface duplicates
+        var alreadyShown = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var node in localMatches)
+        {
+            alreadyShown.Add(node switch
+            {
+                SefariaBookNode book => book.Title,
+                SefariaCategoryNode cat => cat.Category ?? string.Empty,
+                _ => string.Empty
+            });
+        }
+
+        var extraMatches = EnumerateAllLibraryNodes(sefariaRoot)
             .Where(node => node switch
             {
-                SefariaBookNode book => book.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                                        (book.HebrewTitle?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false),
-                SefariaCategoryNode cat => cat.Category?.Contains(query, StringComparison.OrdinalIgnoreCase) == true ||
-                                           (cat.HebrewCategory?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false),
+                SefariaBookNode book =>
+                    !alreadyShown.Contains(book.Title) && transliterationKeySet.Contains(book.Title),
+                SefariaCategoryNode cat when cat.Category is not null =>
+                    !alreadyShown.Contains(cat.Category) && transliterationKeySet.Contains(cat.Category),
+                _ => false
+            })
+            .ToList();
+
+        if (extraMatches.Count == 0 || cts.IsCancellationRequested)
+            return;
+
+        var merged = localMatches.Concat(extraMatches).Take(10).ToList();
+        ShowLibraryManagerSuggestions(merged, cts);
+    }
+
+    // Returns library nodes whose English or Hebrew title/category name contains the query.
+    private static List<SefariaNode> FindLibraryNodesByTitleOrHebrew(SefariaCategoryNode root, string query)
+    {
+        return EnumerateAllLibraryNodes(root)
+            .Where(node => node switch
+            {
+                SefariaBookNode book =>
+                    book.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                    (book.HebrewTitle?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false),
+                SefariaCategoryNode cat =>
+                    (cat.Category?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (cat.HebrewCategory?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false),
                 _ => false
             })
             .Take(10)
             .ToList();
+    }
+
+    // Updates the suggestion dropdown, guarding against stale results from a cancelled search.
+    private void ShowLibraryManagerSuggestions(IReadOnlyList<SefariaNode> matches, CancellationTokenSource cts)
+    {
+        if (cts.IsCancellationRequested ||
+            _librarySearchSuggestions is null ||
+            _librarySearchSuggestionsContainer is null)
+        {
+            return;
+        }
 
         _librarySearchSuggestions.ItemsSource = matches;
         _librarySearchSuggestionsContainer.IsVisible = matches.Count > 0;
