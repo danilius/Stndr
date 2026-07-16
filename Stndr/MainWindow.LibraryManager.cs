@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
@@ -27,6 +28,7 @@ public partial class MainWindow
 {
     private const double LibraryVersionDropdownWidth = 400;
     private const int GeneralBulkDownloadBookThreshold = 5;
+    private const int LibraryDownloadAllConcurrency = 4;
 
     // Cancels the previous search's debounce + API call when the user types a new character.
     private CancellationTokenSource _libraryManagerSearchCts = new();
@@ -35,6 +37,29 @@ public partial class MainWindow
         string ActionTitle,
         string Description,
         List<SefariaBookNode> Books);
+
+    private sealed record LibraryBulkDownloadProgress(
+        int CompletedFiles,
+        int TotalFiles,
+        string CurrentBook,
+        string CurrentLanguage,
+        double CurrentFilePercent);
+
+    private sealed class LibraryBulkDownloadDialog
+    {
+        public required Window Window { get; init; }
+        public required TextBlock Status { get; init; }
+        public required TextBlock Detail { get; init; }
+        public required ProgressBar OverallProgress { get; init; }
+        public required ProgressBar FileProgress { get; init; }
+        public required Button CancelButton { get; init; }
+        public bool IsClosingProgrammatically { get; set; }
+    }
+
+    private sealed record LibraryBulkDownloadItem(
+        SefariaBookNode Book,
+        SefariaVersionOption Version,
+        string LanguageLabel);
 
     private sealed class CategoryVersionChoice
     {
@@ -166,6 +191,14 @@ public partial class MainWindow
         };
         libraryManagerSearchButton.Click += ToggleLibraryManagerSearchClicked;
 
+        _libraryDownloadAllButton = new Button
+        {
+            Content = "Download All",
+            MinWidth = 110,
+            IsEnabled = false
+        };
+        _libraryDownloadAllButton.Click += async (_, _) => await DownloadAllLibraryAsync();
+
         var leftPane = new Grid
         {
             RowDefinitions = new RowDefinitions("Auto,*"),
@@ -184,6 +217,7 @@ public partial class MainWindow
                             FontWeight = FontWeight.SemiBold,
                             VerticalAlignment = VerticalAlignment.Center
                         },
+                        _libraryDownloadAllButton,
                         libraryManagerSearchButton,
                         _libraryManagerSearchBox
                     }
@@ -428,6 +462,10 @@ public partial class MainWindow
             return;
         }
 
+        if (_libraryDownloadAllButton is not null)
+        {
+            _libraryDownloadAllButton.IsEnabled = false;
+        }
         _libraryStatus.Text = "Loading Sefaria index...";
         _libraryTree.ItemsSource = null;
         _selectedSefariaBook = null;
@@ -443,6 +481,10 @@ public partial class MainWindow
                 .OrderBy(n => n.Order)
                 .Select(CreateLibraryTreeItem)
                 .ToList();
+            if (_libraryDownloadAllButton is not null)
+            {
+                _libraryDownloadAllButton.IsEnabled = !_isSefariaDownloading;
+            }
             _libraryStatus.Text = $"Loaded from {_sefariaLibrary.StorageRootFolder}";
         }
         catch (Exception ex)
@@ -1218,7 +1260,11 @@ public partial class MainWindow
         }
     }
 
-    private async Task DownloadBookVersionAsync(SefariaBookNode book, SefariaVersionOption? version, CancellationToken cancellationToken)
+    private async Task DownloadBookVersionAsync(
+        SefariaBookNode book,
+        SefariaVersionOption? version,
+        CancellationToken cancellationToken,
+        Action<double>? progressUpdated = null)
     {
         var previousVersion = book.SelectedVersion;
         book.SelectedVersion = version;
@@ -1232,6 +1278,7 @@ public partial class MainWindow
                 {
                     _libraryProgress.Value = percent;
                 }
+                progressUpdated?.Invoke(percent);
                 SetLibraryStatus($"Downloading {book.Title}: {percent:0}%");
             });
 
@@ -1241,6 +1288,339 @@ public partial class MainWindow
         {
             book.SelectedVersion = previousVersion;
         }
+    }
+
+    private async Task DownloadAllLibraryAsync()
+    {
+        if (_sefariaRoot is null)
+        {
+            SetLibraryStatus("The library is still loading.");
+            return;
+        }
+
+        var target = new CategoryBulkTarget(
+            "Download all",
+            "Download Hebrew and translation texts for every book in the library. Already-installed versions are skipped.",
+            EnumerateBooks(_sefariaRoot).ToList());
+        await DownloadAllLibraryParallelAsync(target);
+    }
+
+    private async Task DownloadAllLibraryParallelAsync(CategoryBulkTarget target)
+    {
+        if (_isSefariaDownloading)
+        {
+            SetLibraryStatus("A download is already in progress.");
+            return;
+        }
+
+        _isSefariaDownloading = true;
+        _sefariaDownloadCts = new CancellationTokenSource();
+        var downloadCts = _sefariaDownloadCts;
+        var progressDialog = CreateLibraryBulkDownloadDialog(target.ActionTitle, target.Books.Count * 2, _sefariaDownloadCts);
+        progressDialog.Detail.Text = "Checking installed files and available versions.";
+        _ = progressDialog.Window.ShowDialog(this);
+        UpdateLibraryDetails();
+
+        var downloadedFiles = 0;
+        var skippedFiles = 0;
+        var unavailableFiles = 0;
+        var failedFiles = 0;
+        var completedFiles = 0;
+        var activeDownloads = 0;
+        var refreshedBooks = new ConcurrentDictionary<string, SefariaBookNode>(StringComparer.Ordinal);
+
+        try
+        {
+            var workItems = new List<LibraryBulkDownloadItem>();
+            var installedVersionsByTitle = await Task.Run(
+                () => _sefariaLibrary.GetInstalledBooks()
+                    .GroupBy(book => book.Title, StringComparer.Ordinal)
+                    .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.Ordinal),
+                downloadCts.Token);
+            var orderedBooks = target.Books
+                .OrderBy(book => book.Order)
+                .ThenBy(book => book.Title, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            for (var index = 0; index < orderedBooks.Count; index++)
+            {
+                downloadCts.Token.ThrowIfCancellationRequested();
+                var book = orderedBooks[index];
+                if (index % 25 == 0)
+                {
+                    progressDialog.Status.Text = $"Checking {index + 1}/{orderedBooks.Count}: {book.Title}";
+                    await Task.Delay(1, downloadCts.Token);
+                }
+
+                await EnsureVersionsLoadedAsync(book);
+                installedVersionsByTitle.TryGetValue(book.Title, out var installedVersions);
+                installedVersions ??= new List<InstalledSefariaBook>();
+                var hasHebrew = installedVersions.Any(SefariaLibraryService.IsHebrew);
+                var hasTranslation = installedVersions.Any(version => !SefariaLibraryService.IsHebrew(version));
+
+                if (hasHebrew)
+                {
+                    skippedFiles++;
+                }
+                else
+                {
+                    var hebrewVersion = SelectBulkVersion(book, true, null);
+                    if (hebrewVersion is null)
+                    {
+                        unavailableFiles++;
+                    }
+                    else
+                    {
+                        workItems.Add(new LibraryBulkDownloadItem(book, hebrewVersion, "Hebrew"));
+                    }
+                }
+
+                if (hasTranslation)
+                {
+                    skippedFiles++;
+                }
+                else
+                {
+                    var englishVersion = SelectBulkVersion(book, false, null);
+                    if (englishVersion is null)
+                    {
+                        unavailableFiles++;
+                    }
+                    else
+                    {
+                        workItems.Add(new LibraryBulkDownloadItem(book, englishVersion, "Translation"));
+                    }
+                }
+            }
+
+            var totalFiles = workItems.Count + skippedFiles + unavailableFiles;
+            progressDialog.OverallProgress.Maximum = Math.Max(totalFiles, 1);
+            progressDialog.OverallProgress.Value = skippedFiles + unavailableFiles;
+            progressDialog.FileProgress.IsIndeterminate = workItems.Count > 0;
+            completedFiles = skippedFiles + unavailableFiles;
+
+            if (workItems.Count == 0)
+            {
+                SetLibraryStatus("Download all complete. Everything available is already installed.");
+                progressDialog.Status.Text = "Download all complete.";
+                progressDialog.Detail.Text = "No new files were needed.";
+                return;
+            }
+
+            var queue = new ConcurrentQueue<LibraryBulkDownloadItem>(workItems);
+            var workerCount = Math.Min(LibraryDownloadAllConcurrency, workItems.Count);
+            progressDialog.Status.Text = $"Downloading {workerCount} files at a time...";
+            progressDialog.Detail.Text = $"{workItems.Count} files queued.";
+
+            Task CreateWorker(int workerNumber)
+            {
+                return Task.Run(async () =>
+                {
+                    while (queue.TryDequeue(out var item))
+                    {
+                        downloadCts.Token.ThrowIfCancellationRequested();
+                        var nowActive = Interlocked.Increment(ref activeDownloads);
+                        await Dispatcher.UIThread.InvokeAsync(() =>
+                        {
+                            progressDialog.Status.Text = $"Downloading {nowActive} files at a time...";
+                            progressDialog.Detail.Text = $"Starting {item.Book.Title} ({item.LanguageLabel}).";
+                            SetLibraryStatus($"Download all: {item.Book.Title} ({item.LanguageLabel})");
+                        });
+
+                        try
+                        {
+                            var downloadBook = CreateBookVersionTarget(item.Book, item.Version);
+                            var progress = new Progress<double>(percent =>
+                            {
+                                Dispatcher.UIThread.Post(() =>
+                                {
+                                    if (!ReferenceEquals(_sefariaDownloadCts, downloadCts))
+                                    {
+                                        return;
+                                    }
+
+                                    progressDialog.Detail.Text = $"{item.Book.Title} ({item.LanguageLabel}): {percent:0}%";
+                                    SetLibraryStatus($"Download all: {item.Book.Title} ({item.LanguageLabel}) {percent:0}%");
+                                });
+                            });
+
+                            await _sefariaLibrary.DownloadBookAsync(downloadBook, progress, downloadCts.Token);
+                            Interlocked.Increment(ref downloadedFiles);
+                            refreshedBooks[item.Book.Title] = item.Book;
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            throw;
+                        }
+                        catch
+                        {
+                            Interlocked.Increment(ref failedFiles);
+                        }
+                        finally
+                        {
+                            var finished = Interlocked.Increment(ref completedFiles);
+                            var stillActive = Interlocked.Decrement(ref activeDownloads);
+                            await Dispatcher.UIThread.InvokeAsync(() =>
+                            {
+                                progressDialog.OverallProgress.Value = finished;
+                                progressDialog.Status.Text = $"Downloaded {finished}/{totalFiles} files";
+                                progressDialog.Detail.Text = stillActive > 0
+                                    ? $"{stillActive} active, {queue.Count} queued."
+                                    : $"{queue.Count} queued.";
+                            });
+                        }
+                    }
+                }, downloadCts.Token);
+            }
+
+            var workers = Enumerable.Range(1, workerCount).Select(CreateWorker).ToArray();
+            await Task.WhenAll(workers);
+        }
+        catch (OperationCanceledException)
+        {
+            SetLibraryStatus("Cancelled download all.");
+            return;
+        }
+        finally
+        {
+            _isSefariaDownloading = false;
+            _sefariaDownloadCts?.Dispose();
+            _sefariaDownloadCts = null;
+            progressDialog.IsClosingProgrammatically = true;
+            progressDialog.Window.Close();
+            RefreshInstalledBooksTree();
+            foreach (var book in refreshedBooks.Values)
+            {
+                RefreshOpenReaderTabForBook(book);
+            }
+            UpdateLibraryDetails();
+        }
+
+        SetLibraryStatus(
+            $"Download all complete. Downloaded: {downloadedFiles}, skipped: {skippedFiles}, unavailable: {unavailableFiles}, failed: {failedFiles}.");
+    }
+
+    private LibraryBulkDownloadDialog CreateLibraryBulkDownloadDialog(
+        string title,
+        int totalBooks,
+        CancellationTokenSource cancellationTokenSource)
+    {
+        var status = new TextBlock
+        {
+            Text = "Preparing download...",
+            FontWeight = FontWeight.SemiBold,
+            TextWrapping = TextWrapping.Wrap
+        };
+        var detail = new TextBlock
+        {
+            Text = $"{totalBooks} books selected.",
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = new SolidColorBrush(Color.Parse("#475467"))
+        };
+        var overallProgress = new ProgressBar
+        {
+            Minimum = 0,
+            Maximum = Math.Max(totalBooks, 1),
+            Height = 10
+        };
+        var fileProgress = new ProgressBar
+        {
+            Minimum = 0,
+            Maximum = 100,
+            Height = 8
+        };
+        var cancelButton = new Button
+        {
+            Content = "Cancel",
+            MinWidth = 90
+        };
+        var dialog = new Window
+        {
+            Title = title,
+            Width = 520,
+            Height = 260,
+            CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Content = new StackPanel
+            {
+                Spacing = 12,
+                Margin = new Thickness(16),
+                Children =
+                {
+                    status,
+                    detail,
+                    new TextBlock
+                    {
+                        Text = "Overall progress",
+                        FontWeight = FontWeight.SemiBold
+                    },
+                    overallProgress,
+                    new TextBlock
+                    {
+                        Text = "Current file",
+                        FontWeight = FontWeight.SemiBold
+                    },
+                    fileProgress,
+                    new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal,
+                        HorizontalAlignment = HorizontalAlignment.Right,
+                        Children =
+                        {
+                            cancelButton
+                        }
+                    }
+                }
+            }
+        };
+
+        void CancelDownload()
+        {
+            cancelButton.IsEnabled = false;
+            cancelButton.Content = "Cancelling...";
+            status.Text = "Cancelling download...";
+            cancellationTokenSource.Cancel();
+        }
+
+        cancelButton.Click += (_, _) => CancelDownload();
+
+        LibraryBulkDownloadDialog? result = null;
+        dialog.Closing += (_, e) =>
+        {
+            if (result?.IsClosingProgrammatically == true)
+            {
+                return;
+            }
+
+            e.Cancel = true;
+            CancelDownload();
+        };
+
+        result = new LibraryBulkDownloadDialog
+        {
+            Window = dialog,
+            Status = status,
+            Detail = detail,
+            OverallProgress = overallProgress,
+            FileProgress = fileProgress,
+            CancelButton = cancelButton
+        };
+        return result;
+    }
+
+    private void UpdateLibraryBulkDownloadDialog(
+        LibraryBulkDownloadDialog? dialog,
+        LibraryBulkDownloadProgress progress)
+    {
+        if (dialog is null)
+        {
+            return;
+        }
+
+        dialog.OverallProgress.Value = progress.CompletedFiles;
+        dialog.FileProgress.Value = progress.CurrentFilePercent;
+        dialog.Status.Text = $"Downloading {progress.CompletedFiles + 1}/{progress.TotalFiles}: {progress.CurrentBook}";
+        dialog.Detail.Text = $"{progress.CurrentLanguage}: {progress.CurrentFilePercent:0}%";
     }
 
     private async Task DownloadCategoryAsync(CategoryBulkTarget target, bool includeHebrew, bool includeTranslation)
@@ -1253,6 +1633,8 @@ public partial class MainWindow
 
         _isSefariaDownloading = true;
         _sefariaDownloadCts = new CancellationTokenSource();
+        var progressDialog = CreateLibraryBulkDownloadDialog(target.ActionTitle, target.Books.Count, _sefariaDownloadCts);
+        _ = progressDialog.Window.ShowDialog(this);
         UpdateLibraryDetails();
 
         var downloadedBooks = 0;
@@ -1272,9 +1654,15 @@ public partial class MainWindow
 
             for (var index = 0; index < orderedBooks.Count; index++)
             {
+                _sefariaDownloadCts.Token.ThrowIfCancellationRequested();
                 var book = orderedBooks[index];
                 var downloadedForBook = false;
                 var unavailableForBook = false;
+
+                progressDialog.OverallProgress.Value = index;
+                progressDialog.FileProgress.Value = 0;
+                progressDialog.Status.Text = $"Checking {index + 1}/{orderedBooks.Count}: {book.Title}";
+                progressDialog.Detail.Text = "Looking for installed and available versions.";
 
                 await EnsureVersionsLoadedAsync(book);
                 var installedVersions = _sefariaLibrary.GetInstalledVersionsForTitle(book.Title);
@@ -1291,7 +1679,13 @@ public partial class MainWindow
                     else
                     {
                         SetLibraryStatus($"Downloading {index + 1}/{orderedBooks.Count}: {book.Title} (Hebrew)");
-                        await DownloadBookVersionAsync(book, hebrewVersion, _sefariaDownloadCts.Token);
+                        await DownloadBookVersionAsync(
+                            book,
+                            hebrewVersion,
+                            _sefariaDownloadCts.Token,
+                            percent => UpdateLibraryBulkDownloadDialog(
+                                progressDialog,
+                                new LibraryBulkDownloadProgress(index, orderedBooks.Count, book.Title, "Hebrew", percent)));
                         downloadedForBook = true;
                     }
                 }
@@ -1306,7 +1700,13 @@ public partial class MainWindow
                     else
                     {
                         SetLibraryStatus($"Downloading {index + 1}/{orderedBooks.Count}: {book.Title} (Translation)");
-                        await DownloadBookVersionAsync(book, englishVersion, _sefariaDownloadCts.Token);
+                        await DownloadBookVersionAsync(
+                            book,
+                            englishVersion,
+                            _sefariaDownloadCts.Token,
+                            percent => UpdateLibraryBulkDownloadDialog(
+                                progressDialog,
+                                new LibraryBulkDownloadProgress(index, orderedBooks.Count, book.Title, "Translation", percent)));
                         downloadedForBook = true;
                     }
                 }
@@ -1324,6 +1724,8 @@ public partial class MainWindow
                 {
                     skippedBooks++;
                 }
+
+                progressDialog.OverallProgress.Value = index + 1;
             }
         }
         catch (OperationCanceledException)
@@ -1341,6 +1743,8 @@ public partial class MainWindow
             _isSefariaDownloading = false;
             _sefariaDownloadCts?.Dispose();
             _sefariaDownloadCts = null;
+            progressDialog.IsClosingProgrammatically = true;
+            progressDialog.Window.Close();
             RefreshInstalledBooksTree();
             foreach (var book in refreshedBooks)
             {
@@ -1762,10 +2166,13 @@ public partial class MainWindow
             _librarySingleTranslationActionButton is null ||
             _libraryCategoryHebrewActionButton is null ||
             _libraryCategoryTranslationActionButton is null ||
-            _libraryCancelButton is null)
+            _libraryCancelButton is null ||
+            _libraryDownloadAllButton is null)
         {
             return;
         }
+
+        _libraryDownloadAllButton.IsEnabled = _sefariaRoot is not null && !_isSefariaDownloading;
 
         if (_selectedSefariaBook is not null)
         {

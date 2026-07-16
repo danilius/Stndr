@@ -25,11 +25,38 @@ public sealed partial class SefariaLibraryService
         var content = await textDownload;
         ValidateDownloadedBookJson(content, book.Title, book.SelectedVersion);
         var filePath = GetBookFilePath(book.Title, book.SelectedVersion);
-        await File.WriteAllTextAsync(filePath, content, Encoding.UTF8, cancellationToken);
+        await WriteDownloadedBookAtomicallyAsync(filePath, content, cancellationToken);
         UpsertInstalledBook(CreateInstalledBookRecord(book, filePath, content));
 
         // Schema download runs in background; UI never waits for it
         _ = schemaDownload;
+    }
+
+    private static async Task WriteDownloadedBookAtomicallyAsync(
+        string filePath,
+        string content,
+        CancellationToken cancellationToken)
+    {
+        var directory = Path.GetDirectoryName(filePath);
+        if (!string.IsNullOrWhiteSpace(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        var tempPath = $"{filePath}.{Guid.NewGuid():N}.tmp";
+        try
+        {
+            await File.WriteAllTextAsync(tempPath, content, Encoding.UTF8, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            File.Move(tempPath, filePath, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(tempPath))
+            {
+                File.Delete(tempPath);
+            }
+        }
     }
 
     private async Task<string> DownloadWithRetryAsync(

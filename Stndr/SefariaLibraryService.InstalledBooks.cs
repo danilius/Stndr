@@ -152,6 +152,7 @@ public sealed partial class SefariaLibraryService
         foreach (var book in installedBooks)
         {
             var current = roots;
+            var categoryPath = new List<string>();
             for (var i = 0; i < book.Categories.Count; i++)
             {
                 var categoryName = book.Categories[i];
@@ -160,6 +161,7 @@ public sealed partial class SefariaLibraryService
                     continue;
                 }
 
+                categoryPath.Add(categoryName);
                 var categoryOrder = book.CategoryOrders.ElementAtOrDefault(i);
                 var hebrewCategoryName = book.HebrewCategories.ElementAtOrDefault(i);
                 var category = current.OfType<InstalledSefariaCategory>()
@@ -170,9 +172,14 @@ public sealed partial class SefariaLibraryService
                     {
                         Title = categoryName,
                         HebrewTitle = hebrewCategoryName,
+                        CategoryPath = string.Join("/", categoryPath),
                         Order = categoryOrder
                     };
                     current.Add(category);
+                }
+                else if (string.IsNullOrWhiteSpace(category.CategoryPath))
+                {
+                    category.CategoryPath = string.Join("/", categoryPath);
                 }
 
                 current = category.Children;
@@ -186,6 +193,7 @@ public sealed partial class SefariaLibraryService
                 {
                     Title = book.Title,
                     HebrewTitle = book.HebrewTitle,
+                    CategoryPath = string.Join("/", categoryPath.Append(book.Title)),
                     IsBookTitle = true,
                     Order = book.Order
                 };
@@ -227,6 +235,23 @@ public sealed partial class SefariaLibraryService
             .OrderByDescending(IsHebrew)
             .ThenBy(book => book.VersionTitle, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    public Dictionary<string, List<InstalledSefariaBook>> GetInstalledVersionsByTitle(
+        IReadOnlyList<InstalledSefariaBook> installedBooks)
+    {
+        return installedBooks
+            .SelectMany(ExpandTalmudBilingualVersions)
+            .GroupBy(book => book.Title, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => group
+                    .GroupBy(book => book.Key, StringComparer.OrdinalIgnoreCase)
+                    .Select(versionGroup => versionGroup.First())
+                    .OrderByDescending(IsHebrew)
+                    .ThenBy(book => book.VersionTitle, StringComparer.OrdinalIgnoreCase)
+                    .ToList(),
+                StringComparer.Ordinal);
     }
 
     public List<InstalledSefariaBook> GetInstalledVersionSummariesForTitle(string title)
@@ -559,31 +584,37 @@ public sealed partial class SefariaLibraryService
 
     private void UpsertInstalledBook(InstalledSefariaBook book)
     {
-        var installed = LoadInstalledBooks();
-        var existing = installed.FindIndex(item => string.Equals(item.Key, book.Key, StringComparison.Ordinal));
-        if (existing >= 0)
+        lock (_installedBooksCacheGate)
         {
-            book.LastScrollOffset = installed[existing].LastScrollOffset;
-            installed[existing] = book;
-        }
-        else
-        {
-            installed.Add(book);
-        }
+            var installed = LoadInstalledBooks();
+            var existing = installed.FindIndex(item => string.Equals(item.Key, book.Key, StringComparison.Ordinal));
+            if (existing >= 0)
+            {
+                book.LastScrollOffset = installed[existing].LastScrollOffset;
+                installed[existing] = book;
+            }
+            else
+            {
+                installed.Add(book);
+            }
 
-        SaveInstalledBooks(installed);
+            SaveInstalledBooks(installed);
+        }
     }
 
     private void RemoveInstalledBook(string title, SefariaVersionOption? version)
     {
-        var key = $"{title}|{version?.LanguageCode ?? "en"}|{version?.VersionTitle ?? string.Empty}";
-        var installed = LoadInstalledBooks();
-        installed.RemoveAll(book =>
-            string.Equals(book.Key, key, StringComparison.Ordinal) ||
-            (string.Equals(book.Title, title, StringComparison.Ordinal) &&
-             string.Equals(book.LanguageCode, version?.LanguageCode ?? "en", StringComparison.OrdinalIgnoreCase) &&
-             string.Equals(book.VersionTitle, version?.VersionTitle ?? string.Empty, StringComparison.Ordinal)));
-        SaveInstalledBooks(installed);
+        lock (_installedBooksCacheGate)
+        {
+            var key = $"{title}|{version?.LanguageCode ?? "en"}|{version?.VersionTitle ?? string.Empty}";
+            var installed = LoadInstalledBooks();
+            installed.RemoveAll(book =>
+                string.Equals(book.Key, key, StringComparison.Ordinal) ||
+                (string.Equals(book.Title, title, StringComparison.Ordinal) &&
+                 string.Equals(book.LanguageCode, version?.LanguageCode ?? "en", StringComparison.OrdinalIgnoreCase) &&
+                 string.Equals(book.VersionTitle, version?.VersionTitle ?? string.Empty, StringComparison.Ordinal)));
+            SaveInstalledBooks(installed);
+        }
     }
 
     private InstalledSefariaBook CreateInstalledBookRecord(SefariaBookNode book, string filePath, string json)

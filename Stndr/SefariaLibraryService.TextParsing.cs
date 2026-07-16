@@ -30,17 +30,26 @@ public sealed partial class SefariaLibraryService
 
     public List<ReaderTextUnit> ReadInstalledBookUnits(InstalledSefariaBook book)
     {
+        return ReadInstalledBookUnits(book, CancellationToken.None);
+    }
+
+    public List<ReaderTextUnit> ReadInstalledBookUnits(InstalledSefariaBook book, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
         var json = ReadJsonTextFile(book.FilePath);
+        cancellationToken.ThrowIfCancellationRequested();
         using var document = JsonDocument.Parse(json);
+        cancellationToken.ThrowIfCancellationRequested();
         var root = document.RootElement;
         if (IsTalmud(book))
         {
             var schema = GetBookSchema(book.Title);
-            return ReadTalmudTextUnits(book, root, schema);
+            return ReadTalmudTextUnits(book, root, schema, cancellationToken);
         }
 
         if (!TryGetPrimaryTextElement(root, out var textElement))
         {
+            cancellationToken.ThrowIfCancellationRequested();
             return new List<ReaderTextUnit>
             {
                 new("1", json)
@@ -50,12 +59,50 @@ public sealed partial class SefariaLibraryService
         var units = new List<ReaderTextUnit>();
         if (IsMishnah(book))
         {
-            AppendMishnahTextUnits(textElement, units);
+            AppendMishnahTextUnits(textElement, units, cancellationToken);
             return units;
         }
 
-        AppendTextUnits(textElement, units, new List<string>());
+        AppendTextUnits(textElement, units, new List<string>(), cancellationToken);
         return units;
+    }
+
+    public IEnumerable<ReaderTextUnit> StreamInstalledBookUnits(
+        InstalledSefariaBook book,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var json = ReadJsonTextFile(book.FilePath);
+        cancellationToken.ThrowIfCancellationRequested();
+        using var document = JsonDocument.Parse(json);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var root = document.RootElement;
+        if (IsTalmud(book))
+        {
+            var schema = GetBookSchema(book.Title);
+            foreach (var unit in EnumerateTalmudTextUnits(book, root, schema, cancellationToken))
+            {
+                yield return unit;
+            }
+
+            yield break;
+        }
+
+        if (!TryGetPrimaryTextElement(root, out var textElement))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return new ReaderTextUnit("1", json);
+            yield break;
+        }
+
+        var units = IsMishnah(book)
+            ? EnumerateMishnahTextUnits(textElement, cancellationToken)
+            : EnumerateTextUnits(textElement, new List<string>(), cancellationToken);
+        foreach (var unit in units)
+        {
+            yield return unit;
+        }
     }
 
     public List<ReaderNavigationPage> ReadInstalledBookNavigationPages(InstalledSefariaBook book)
@@ -456,8 +503,14 @@ public sealed partial class SefariaLibraryService
         }
     }
 
-    private static void AppendTextUnits(JsonElement element, List<ReaderTextUnit> units, List<string> path)
+    private static void AppendTextUnits(
+        JsonElement element,
+        List<ReaderTextUnit> units,
+        List<string> path,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         if (element.ValueKind == JsonValueKind.String)
         {
             var text = element.GetString();
@@ -473,8 +526,9 @@ public sealed partial class SefariaLibraryService
         {
             foreach (var property in element.EnumerateObject())
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 var nextPath = new List<string>(path) { property.Name };
-                AppendTextUnits(property.Value, units, nextPath);
+                AppendTextUnits(property.Value, units, nextPath, cancellationToken);
             }
 
             return;
@@ -488,26 +542,86 @@ public sealed partial class SefariaLibraryService
         var index = 1;
         foreach (var item in element.EnumerateArray())
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var nextPath = new List<string>(path) { index.ToString() };
-            AppendTextUnits(item, units, nextPath);
+            AppendTextUnits(item, units, nextPath, cancellationToken);
             index++;
         }
     }
 
-    private static void AppendMishnahTextUnits(JsonElement textElement, List<ReaderTextUnit> units)
+    private static IEnumerable<ReaderTextUnit> EnumerateTextUnits(
+        JsonElement element,
+        List<string> path,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (element.ValueKind == JsonValueKind.String)
+        {
+            var text = element.GetString();
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                yield return new ReaderTextUnit(string.Join(".", path), text);
+            }
+
+            yield break;
+        }
+
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var nextPath = new List<string>(path) { property.Name };
+                foreach (var unit in EnumerateTextUnits(property.Value, nextPath, cancellationToken))
+                {
+                    yield return unit;
+                }
+            }
+
+            yield break;
+        }
+
+        if (element.ValueKind != JsonValueKind.Array)
+        {
+            yield break;
+        }
+
+        var index = 1;
+        foreach (var item in element.EnumerateArray())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var nextPath = new List<string>(path) { index.ToString() };
+            foreach (var unit in EnumerateTextUnits(item, nextPath, cancellationToken))
+            {
+                yield return unit;
+            }
+
+            index++;
+        }
+    }
+
+    private static void AppendMishnahTextUnits(
+        JsonElement textElement,
+        List<ReaderTextUnit> units,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
         if (textElement.ValueKind != JsonValueKind.Array)
         {
-            AppendTextUnits(textElement, units, new List<string>());
+            AppendTextUnits(textElement, units, new List<string>(), cancellationToken);
             return;
         }
 
         var chapterNumber = 1;
         foreach (var chapter in textElement.EnumerateArray())
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             if (chapter.ValueKind != JsonValueKind.Array)
             {
-                var chapterText = NormalizeMishnahUnitText(CollectText(chapter));
+                var chapterText = NormalizeMishnahUnitText(CollectText(chapter, cancellationToken));
                 if (!string.IsNullOrWhiteSpace(chapterText))
                 {
                     units.Add(new ReaderTextUnit(chapterNumber.ToString(), chapterText));
@@ -520,7 +634,9 @@ public sealed partial class SefariaLibraryService
             var mishnahNumber = 1;
             foreach (var mishnah in chapter.EnumerateArray())
             {
-                var mishnahText = NormalizeMishnahUnitText(CollectText(mishnah));
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var mishnahText = NormalizeMishnahUnitText(CollectText(mishnah, cancellationToken));
                 if (!string.IsNullOrWhiteSpace(mishnahText))
                 {
                     units.Add(new ReaderTextUnit($"{chapterNumber}.{mishnahNumber}", mishnahText));
@@ -533,8 +649,66 @@ public sealed partial class SefariaLibraryService
         }
     }
 
+    private static IEnumerable<ReaderTextUnit> EnumerateMishnahTextUnits(
+        JsonElement textElement,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (textElement.ValueKind != JsonValueKind.Array)
+        {
+            foreach (var unit in EnumerateTextUnits(textElement, new List<string>(), cancellationToken))
+            {
+                yield return unit;
+            }
+
+            yield break;
+        }
+
+        var chapterNumber = 1;
+        foreach (var chapter in textElement.EnumerateArray())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (chapter.ValueKind != JsonValueKind.Array)
+            {
+                var chapterText = NormalizeMishnahUnitText(CollectText(chapter, cancellationToken));
+                if (!string.IsNullOrWhiteSpace(chapterText))
+                {
+                    yield return new ReaderTextUnit(chapterNumber.ToString(), chapterText);
+                }
+
+                chapterNumber++;
+                continue;
+            }
+
+            var mishnahNumber = 1;
+            foreach (var mishnah in chapter.EnumerateArray())
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var mishnahText = NormalizeMishnahUnitText(CollectText(mishnah, cancellationToken));
+                if (!string.IsNullOrWhiteSpace(mishnahText))
+                {
+                    yield return new ReaderTextUnit($"{chapterNumber}.{mishnahNumber}", mishnahText);
+                }
+
+                mishnahNumber++;
+            }
+
+            chapterNumber++;
+        }
+    }
+
     private static string CollectText(JsonElement element)
     {
+        return CollectText(element, CancellationToken.None);
+    }
+
+    private static string CollectText(JsonElement element, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
         if (element.ValueKind == JsonValueKind.String)
         {
             return element.GetString() ?? string.Empty;
@@ -548,7 +722,9 @@ public sealed partial class SefariaLibraryService
         var parts = new List<string>();
         foreach (var item in element.EnumerateArray())
         {
-            var text = CollectText(item);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var text = CollectText(item, cancellationToken);
             if (!string.IsNullOrWhiteSpace(text))
             {
                 parts.Add(text);
@@ -622,8 +798,14 @@ public sealed partial class SefariaLibraryService
         return text.Length > 0 && text[0] == '\uFEFF' ? text[1..] : text;
     }
 
-    private static List<ReaderTextUnit> ReadTalmudTextUnits(InstalledSefariaBook book, JsonElement root, BookSchema? schema = null)
+    private static List<ReaderTextUnit> ReadTalmudTextUnits(
+        InstalledSefariaBook book,
+        JsonElement root,
+        BookSchema? schema = null,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var units = new List<ReaderTextUnit>();
         if (root.TryGetProperty("pages", out var pages) && pages.ValueKind == JsonValueKind.Array)
         {
@@ -631,6 +813,8 @@ public sealed partial class SefariaLibraryService
             var hebrewChapterTitle = string.Empty;
             foreach (var pageRoot in pages.EnumerateArray())
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 var pageChapterTitles = GetTalmudChapterTitles(pageRoot);
                 if (!string.IsNullOrWhiteSpace(pageChapterTitles.ChapterTitle) ||
                     !string.IsNullOrWhiteSpace(pageChapterTitles.HebrewChapterTitle))
@@ -639,7 +823,7 @@ public sealed partial class SefariaLibraryService
                     hebrewChapterTitle = pageChapterTitles.HebrewChapterTitle;
                 }
 
-                AppendTalmudPageTextUnits(book, pageRoot, units, chapterTitle, hebrewChapterTitle);
+                AppendTalmudPageTextUnits(book, pageRoot, units, chapterTitle, hebrewChapterTitle, cancellationToken);
             }
 
             return units;
@@ -649,20 +833,89 @@ public sealed partial class SefariaLibraryService
             textElement.ValueKind == JsonValueKind.Array &&
             textElement.EnumerateArray().Any(item => item.ValueKind == JsonValueKind.Array))
         {
-            AppendDirectTalmudTextUnits(textElement, units, schema, book);
+            AppendDirectTalmudTextUnits(textElement, units, schema, book, cancellationToken);
             return units;
         }
 
         var (singlePageChapterTitle, singlePageHebrewChapterTitle) = GetTalmudChapterTitles(root);
-        AppendTalmudPageTextUnits(book, root, units, singlePageChapterTitle, singlePageHebrewChapterTitle);
+        AppendTalmudPageTextUnits(book, root, units, singlePageChapterTitle, singlePageHebrewChapterTitle, cancellationToken);
         return units;
     }
 
-    private static void AppendDirectTalmudTextUnits(JsonElement textElement, List<ReaderTextUnit> units, BookSchema? schema, InstalledSefariaBook book)
+    private static IEnumerable<ReaderTextUnit> EnumerateTalmudTextUnits(
+        InstalledSefariaBook book,
+        JsonElement root,
+        BookSchema? schema,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (root.TryGetProperty("pages", out var pages) && pages.ValueKind == JsonValueKind.Array)
+        {
+            var chapterTitle = string.Empty;
+            var hebrewChapterTitle = string.Empty;
+            foreach (var pageRoot in pages.EnumerateArray())
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var pageChapterTitles = GetTalmudChapterTitles(pageRoot);
+                if (!string.IsNullOrWhiteSpace(pageChapterTitles.ChapterTitle) ||
+                    !string.IsNullOrWhiteSpace(pageChapterTitles.HebrewChapterTitle))
+                {
+                    chapterTitle = pageChapterTitles.ChapterTitle;
+                    hebrewChapterTitle = pageChapterTitles.HebrewChapterTitle;
+                }
+
+                foreach (var unit in EnumerateTalmudPageTextUnits(
+                    book,
+                    pageRoot,
+                    chapterTitle,
+                    hebrewChapterTitle,
+                    cancellationToken))
+                {
+                    yield return unit;
+                }
+            }
+
+            yield break;
+        }
+
+        if (root.TryGetProperty("text", out var textElement) &&
+            textElement.ValueKind == JsonValueKind.Array &&
+            textElement.EnumerateArray().Any(item => item.ValueKind == JsonValueKind.Array))
+        {
+            foreach (var unit in EnumerateDirectTalmudTextUnits(textElement, schema, book, cancellationToken))
+            {
+                yield return unit;
+            }
+
+            yield break;
+        }
+
+        var (singlePageChapterTitle, singlePageHebrewChapterTitle) = GetTalmudChapterTitles(root);
+        foreach (var unit in EnumerateTalmudPageTextUnits(
+            book,
+            root,
+            singlePageChapterTitle,
+            singlePageHebrewChapterTitle,
+            cancellationToken))
+        {
+            yield return unit;
+        }
+    }
+
+    private static void AppendDirectTalmudTextUnits(
+        JsonElement textElement,
+        List<ReaderTextUnit> units,
+        BookSchema? schema,
+        InstalledSefariaBook book,
+        CancellationToken cancellationToken = default)
     {
         var address = 0;
         foreach (var pageElement in textElement.EnumerateArray())
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             var page = FormatTalmudPageFromAddress(address);
             var (chTitle, chHe) = GetChapterTitleFromSchema(schema, page);
             if (pageElement.ValueKind == JsonValueKind.Array)
@@ -670,7 +923,9 @@ public sealed partial class SefariaLibraryService
                 var paragraphNumber = 1;
                 foreach (var paragraph in pageElement.EnumerateArray())
                 {
-                    var paragraphText = CollapseWhitespace(CollectText(paragraph));
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    var paragraphText = CollapseWhitespace(CollectText(paragraph, cancellationToken));
                     if (!string.IsNullOrWhiteSpace(paragraphText))
                     {
                         units.Add(new ReaderTextUnit($"{page}.{paragraphNumber}", paragraphText, chTitle, chHe));
@@ -680,10 +935,51 @@ public sealed partial class SefariaLibraryService
             }
             else
             {
-                var text = CollapseWhitespace(CollectText(pageElement));
+                var text = CollapseWhitespace(CollectText(pageElement, cancellationToken));
                 if (!string.IsNullOrWhiteSpace(text))
                 {
                     units.Add(new ReaderTextUnit($"{page}.1", text, chTitle, chHe));
+                }
+            }
+
+            address++;
+        }
+    }
+
+    private static IEnumerable<ReaderTextUnit> EnumerateDirectTalmudTextUnits(
+        JsonElement textElement,
+        BookSchema? schema,
+        InstalledSefariaBook book,
+        CancellationToken cancellationToken)
+    {
+        var address = 0;
+        foreach (var pageElement in textElement.EnumerateArray())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var page = FormatTalmudPageFromAddress(address);
+            var (chTitle, chHe) = GetChapterTitleFromSchema(schema, page);
+            if (pageElement.ValueKind == JsonValueKind.Array)
+            {
+                var paragraphNumber = 1;
+                foreach (var paragraph in pageElement.EnumerateArray())
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    var paragraphText = CollapseWhitespace(CollectText(paragraph, cancellationToken));
+                    if (!string.IsNullOrWhiteSpace(paragraphText))
+                    {
+                        yield return new ReaderTextUnit($"{page}.{paragraphNumber}", paragraphText, chTitle, chHe);
+                        paragraphNumber++;
+                    }
+                }
+            }
+            else
+            {
+                var text = CollapseWhitespace(CollectText(pageElement, cancellationToken));
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    yield return new ReaderTextUnit($"{page}.1", text, chTitle, chHe);
                 }
             }
 
@@ -703,8 +999,11 @@ public sealed partial class SefariaLibraryService
         JsonElement root,
         List<ReaderTextUnit> units,
         string chapterTitle,
-        string hebrewChapterTitle)
+        string hebrewChapterTitle,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var page = GetTalmudPage(root);
         var textPropertyName = IsHebrew(book) && root.TryGetProperty("he", out var heElement) && heElement.ValueKind == JsonValueKind.Array
             ? "he"
@@ -720,7 +1019,9 @@ public sealed partial class SefariaLibraryService
             var paragraphNumber = 1;
             foreach (var paragraph in textElement.EnumerateArray())
             {
-                var paragraphText = CollapseWhitespace(CollectText(paragraph));
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var paragraphText = CollapseWhitespace(CollectText(paragraph, cancellationToken));
                 if (!string.IsNullOrWhiteSpace(paragraphText))
                 {
                     units.Add(new ReaderTextUnit($"{page}.{paragraphNumber}", paragraphText, chapterTitle, hebrewChapterTitle));
@@ -730,10 +1031,54 @@ public sealed partial class SefariaLibraryService
         }
         else
         {
-            var text = CollapseWhitespace(CollectText(textElement));
+            var text = CollapseWhitespace(CollectText(textElement, cancellationToken));
             if (!string.IsNullOrWhiteSpace(text))
             {
                 units.Add(new ReaderTextUnit($"{page}.1", text, chapterTitle, hebrewChapterTitle));
+            }
+        }
+    }
+
+    private static IEnumerable<ReaderTextUnit> EnumerateTalmudPageTextUnits(
+        InstalledSefariaBook book,
+        JsonElement root,
+        string chapterTitle,
+        string hebrewChapterTitle,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var page = GetTalmudPage(root);
+        var textPropertyName = IsHebrew(book) && root.TryGetProperty("he", out var heElement) && heElement.ValueKind == JsonValueKind.Array
+            ? "he"
+            : "text";
+
+        if (!root.TryGetProperty(textPropertyName, out var textElement))
+        {
+            yield break;
+        }
+
+        if (textElement.ValueKind == JsonValueKind.Array)
+        {
+            var paragraphNumber = 1;
+            foreach (var paragraph in textElement.EnumerateArray())
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var paragraphText = CollapseWhitespace(CollectText(paragraph, cancellationToken));
+                if (!string.IsNullOrWhiteSpace(paragraphText))
+                {
+                    yield return new ReaderTextUnit($"{page}.{paragraphNumber}", paragraphText, chapterTitle, hebrewChapterTitle);
+                    paragraphNumber++;
+                }
+            }
+        }
+        else
+        {
+            var text = CollapseWhitespace(CollectText(textElement, cancellationToken));
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                yield return new ReaderTextUnit($"{page}.1", text, chapterTitle, hebrewChapterTitle);
             }
         }
     }

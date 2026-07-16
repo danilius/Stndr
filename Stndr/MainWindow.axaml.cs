@@ -94,6 +94,7 @@ public partial class MainWindow : Window
     private Button? _libraryCategoryHebrewActionButton;
     private Button? _libraryCategoryTranslationActionButton;
     private Button? _libraryCancelButton;
+    private Button? _libraryDownloadAllButton;
     private TextBox? _libraryManagerSearchBox;
     private Border? _librarySearchSuggestionsContainer;
     private ListBox? _librarySearchSuggestions;
