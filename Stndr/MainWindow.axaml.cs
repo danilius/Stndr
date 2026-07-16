@@ -261,6 +261,8 @@ public partial class MainWindow : Window
             StartupCompleted?.Invoke(this, EventArgs.Empty);
         }
 
+        _ = ReconcileInstalledBooksAfterStartupAsync();
+
         // Prompt for a Data folder only after startup has completed, so the (topmost) splash
         // window has been dismissed and the modal dialog is actually reachable. The Background
         // priority queues this after the splash-close post raised by StartupCompleted.

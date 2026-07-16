@@ -14,6 +14,12 @@ namespace Stndr;
 
 public sealed partial class SefariaLibraryService
 {
+    public sealed record InstalledBooksReconciliationResult(
+        int Added,
+        int Refreshed,
+        int Removed,
+        int Invalid);
+
     public bool IsBookDownloaded(SefariaBookNode book)
     {
         var filePath = GetExistingDownloadPath(book);
@@ -61,42 +67,137 @@ public sealed partial class SefariaLibraryService
         }
 
         var installed = LoadInstalledBooks();
+        var changed = NormalizeInstalledBookManifest(installed, refreshChangedMetadata: false, CancellationToken.None);
+
+        if (changed)
+        {
+            SaveInstalledBooks(installed);
+        }
+
+        var result = SortInstalledBooksForDisplay(installed);
+
+        lock (_installedBooksCacheGate)
+        {
+            _getInstalledBooksResultCache = CloneInstalledBooks(result);
+            UpdateCachedSourcesFolderFingerprint();
+        }
+
+        return result;
+    }
+
+    public async Task<InstalledBooksReconciliationResult> ReconcileInstalledBooksAsync(
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsConfigured || string.IsNullOrEmpty(SourcesFolder) || !Directory.Exists(SourcesFolder))
+        {
+            return new InstalledBooksReconciliationResult(0, 0, 0, 0);
+        }
+
+        return await Task.Run(() =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var installed = LoadInstalledBooks();
+            var beforeKeys = installed.Select(book => book.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var beforeByPath = installed
+                .Where(book => !string.IsNullOrWhiteSpace(book.FilePath))
+                .GroupBy(book => Path.GetFullPath(book.FilePath), StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+
+            var changed = NormalizeInstalledBookManifest(installed, refreshChangedMetadata: true, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var afterKeys = installed.Select(book => book.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var removed = beforeKeys.Count(key => !afterKeys.Contains(key));
+            var added = afterKeys.Count(key => !beforeKeys.Contains(key));
+            var refreshed = installed.Count(book =>
+                !string.IsNullOrWhiteSpace(book.FilePath) &&
+                beforeByPath.TryGetValue(Path.GetFullPath(book.FilePath), out var previous) &&
+                !InstalledBookMetadataMatches(previous, book));
+
+            if (changed)
+            {
+                SaveInstalledBooks(installed);
+            }
+
+            return new InstalledBooksReconciliationResult(added, refreshed, removed, 0);
+        }, cancellationToken);
+    }
+
+    private bool NormalizeInstalledBookManifest(
+        List<InstalledSefariaBook> installed,
+        bool refreshChangedMetadata,
+        CancellationToken cancellationToken)
+    {
         var changed = false;
+        var installedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        for (var i = installed.Count - 1; i >= 0; i--)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var book = installed[i];
+            if (string.IsNullOrWhiteSpace(book.FilePath) ||
+                IsReservedSourcesJsonFile(Path.GetFileName(book.FilePath)) ||
+                !File.Exists(book.FilePath))
+            {
+                installed.RemoveAt(i);
+                changed = true;
+                continue;
+            }
+
+            var normalizedBookPath = Path.GetFullPath(book.FilePath);
+            if (!string.Equals(book.FilePath, normalizedBookPath, StringComparison.OrdinalIgnoreCase))
+            {
+                book.FilePath = normalizedBookPath;
+                changed = true;
+            }
+
+            var fingerprintMatches = InstalledBookFingerprintMatchesFile(book);
+            if (!fingerprintMatches && refreshChangedMetadata)
+            {
+                var refreshed = TryCreateInstalledBookFromFile(book.FilePath, cacheJson: false);
+                if (refreshed is not null)
+                {
+                    refreshed.LastScrollOffset = book.LastScrollOffset;
+                    installed[i] = refreshed;
+                    book = refreshed;
+                    changed = true;
+                }
+                else
+                {
+                    installed.RemoveAt(i);
+                    changed = true;
+                    continue;
+                }
+            }
+
+            installedPaths.Add(book.FilePath);
+        }
 
         foreach (var filePath in Directory.EnumerateFiles(SourcesFolder, "*.json"))
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var fileName = Path.GetFileName(filePath);
             if (IsReservedSourcesJsonFile(fileName))
             {
                 continue;
             }
 
-            if (installed.Any(book => string.Equals(book.FilePath, filePath, StringComparison.OrdinalIgnoreCase)))
+            var normalizedPath = Path.GetFullPath(filePath);
+            if (installedPaths.Contains(normalizedPath))
             {
                 continue;
             }
 
-            var inferred = TryCreateInstalledBookFromFile(filePath);
+            if (!refreshChangedMetadata)
+            {
+                continue;
+            }
+
+            var inferred = TryCreateInstalledBookFromFile(normalizedPath, cacheJson: false);
             if (inferred is not null)
             {
                 installed.Add(inferred);
-                changed = true;
-            }
-        }
-
-        installed.RemoveAll(book => string.IsNullOrWhiteSpace(book.FilePath) || !File.Exists(book.FilePath));
-        for (var i = 0; i < installed.Count; i++)
-        {
-            var refreshed = TryCreateInstalledBookFromFile(installed[i].FilePath);
-            if (refreshed is null)
-            {
-                continue;
-            }
-
-            refreshed.LastScrollOffset = installed[i].LastScrollOffset;
-            if (!InstalledBookMetadataMatches(installed[i], refreshed))
-            {
-                installed[i] = refreshed;
+                installedPaths.Add(inferred.FilePath);
                 changed = true;
             }
         }
@@ -112,28 +213,21 @@ public sealed partial class SefariaLibraryService
             .ToList();
         if (deduplicated.Count != installed.Count)
         {
-            installed = deduplicated;
+            installed.Clear();
+            installed.AddRange(deduplicated);
             changed = true;
         }
 
-        if (changed)
-        {
-            SaveInstalledBooks(installed);
-        }
+        return changed;
+    }
 
-        var result = installed
+    private static List<InstalledSefariaBook> SortInstalledBooksForDisplay(IEnumerable<InstalledSefariaBook> installed)
+    {
+        return installed
             .OrderBy(book => string.Join("/", book.Categories), StringComparer.OrdinalIgnoreCase)
             .ThenBy(book => book.Title, StringComparer.OrdinalIgnoreCase)
             .ThenBy(book => book.VersionTitle, StringComparer.OrdinalIgnoreCase)
             .ToList();
-
-        lock (_installedBooksCacheGate)
-        {
-            _getInstalledBooksResultCache = CloneInstalledBooks(result);
-            UpdateCachedSourcesFolderFingerprint();
-        }
-
-        return result;
     }
 
     public ObservableCollection<object> BuildInstalledTree()
@@ -631,11 +725,12 @@ public sealed partial class SefariaLibraryService
 
         using var document = JsonDocument.Parse(json);
         ApplyJsonMetadata(record, document.RootElement);
+        ApplyFileFingerprint(record);
         SeedBookJsonCache(filePath, json, record);
         return record;
     }
 
-    private InstalledSefariaBook? TryCreateInstalledBookFromFile(string filePath)
+    private InstalledSefariaBook? TryCreateInstalledBookFromFile(string filePath, bool cacheJson = true)
     {
         try
         {
@@ -657,7 +752,16 @@ public sealed partial class SefariaLibraryService
 
             var json = ReadJsonTextFile(filePath);
             var book = TryCreateInstalledBookFromJson(json, filePath);
-            CacheBookJsonEntry(filePath, lastWrite, json, book);
+            if (book is not null)
+            {
+                ApplyFileFingerprint(book);
+            }
+
+            if (cacheJson)
+            {
+                CacheBookJsonEntry(filePath, lastWrite, json, book);
+            }
+
             return book;
         }
         catch
@@ -683,12 +787,44 @@ public sealed partial class SefariaLibraryService
             };
             ApplyFileNameMetadata(record, filePath);
             ApplyJsonMetadata(record, root);
+            ApplyFileFingerprint(record);
             return string.IsNullOrWhiteSpace(record.Title) ? null : record;
         }
         catch (JsonException)
         {
             return null;
         }
+    }
+
+    private static bool InstalledBookFingerprintMatchesFile(InstalledSefariaBook book)
+    {
+        if (string.IsNullOrWhiteSpace(book.FilePath) || !File.Exists(book.FilePath))
+        {
+            return false;
+        }
+
+        var info = new FileInfo(book.FilePath);
+        return book.FileLength == info.Length &&
+            book.FileLastWriteTimeUtc == info.LastWriteTimeUtc;
+    }
+
+    private static bool ApplyFileFingerprint(InstalledSefariaBook book)
+    {
+        if (string.IsNullOrWhiteSpace(book.FilePath) || !File.Exists(book.FilePath))
+        {
+            return false;
+        }
+
+        var info = new FileInfo(book.FilePath);
+        var fullPath = info.FullName;
+        var changed = !string.Equals(book.FilePath, fullPath, StringComparison.OrdinalIgnoreCase) ||
+            book.FileLength != info.Length ||
+            book.FileLastWriteTimeUtc != info.LastWriteTimeUtc;
+
+        book.FilePath = fullPath;
+        book.FileLength = info.Length;
+        book.FileLastWriteTimeUtc = info.LastWriteTimeUtc;
+        return changed;
     }
 
     private bool IsInstalledBookFile(string filePath)
@@ -1028,6 +1164,8 @@ public sealed partial class SefariaLibraryService
             LanguageCode = book.LanguageCode,
             VersionTitle = book.VersionTitle,
             FilePath = book.FilePath,
+            FileLength = book.FileLength,
+            FileLastWriteTimeUtc = book.FileLastWriteTimeUtc,
             LastScrollOffset = book.LastScrollOffset
         };
     }

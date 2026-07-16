@@ -66,6 +66,24 @@ public partial class MainWindow
         });
     }
 
+    private async Task ReconcileInstalledBooksAfterStartupAsync()
+    {
+        try
+        {
+            var result = await _sefariaLibrary.ReconcileInstalledBooksAsync();
+            if (result.Added == 0 && result.Refreshed == 0 && result.Removed == 0)
+            {
+                return;
+            }
+
+            await RefreshInstalledBooksTreeAsync();
+        }
+        catch
+        {
+            // Startup reconciliation is best-effort; normal download/delete paths keep the manifest current.
+        }
+    }
+
     private TreeViewItem CreateInstalledBookTreeItem(object node)
     {
         var item = new TreeViewItem
