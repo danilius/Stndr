@@ -354,6 +354,11 @@ public partial class MainWindow
             return CreateAdvancedSearchView();
         }
 
+        if (string.Equals(title, DictionaryTabTitle, StringComparison.Ordinal))
+        {
+            return CreateDictionaryView();
+        }
+
         throw new InvalidOperationException($"Unknown utility tab: {title}");
     }
 
@@ -402,6 +407,11 @@ public partial class MainWindow
     private void OpenAdvancedSearchClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         OpenOrSelectTab(AdvancedSearchTabTitle);
+    }
+
+    private void OpenDictionaryClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        OpenOrSelectTab(DictionaryTabTitle);
     }
 
     private void OpenOrSelectTab(string title)
@@ -688,6 +698,7 @@ public partial class MainWindow
     {
         return string.Equals(title, LibraryManagerTabTitle, StringComparison.Ordinal) ||
             string.Equals(title, AdvancedSearchTabTitle, StringComparison.Ordinal) ||
+            string.Equals(title, DictionaryTabTitle, StringComparison.Ordinal) ||
             string.Equals(title, SettingsTabTitle, StringComparison.Ordinal);
     }
 }

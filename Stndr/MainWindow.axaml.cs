@@ -41,6 +41,7 @@ public partial class MainWindow : Window
     private const string LibraryManagerTabTitle = "Library Manager";
     private const string SettingsTabTitle = "Settings";
     private const string AdvancedSearchTabTitle = "Advanced Search";
+    private const string DictionaryTabTitle = "Dictionary";
     private const string AllCommentariesSelectionKey = "__all_commentaries__";
     private static readonly TimeSpan StartupContentLoadedTimeout = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan StartupLayoutUpdatedTimeout = TimeSpan.FromMilliseconds(250);
@@ -61,6 +62,10 @@ public partial class MainWindow : Window
     private TextBlock? _dictionaryToolsReference;
     private TextBlock? _dictionaryToolsPrimaryGloss;
     private TextBlock? _dictionaryToolsStatus;
+    private TextBox? _dictionaryLookupBox;
+    private TextBlock? _dictionaryLookupReference;
+    private TextBlock? _dictionaryLookupStatus;
+    private StackPanel? _dictionaryLookupResultsPanel;
     private bool _isDictionaryToolsExpanded = true;
     private TextBlock? _rightPanelTitle;
     private StackPanel? _rightPanelBody;
@@ -117,6 +122,7 @@ public partial class MainWindow : Window
     private SefariaBookNode? _selectedSefariaBook;
     private SefariaBookNode? _libraryVersionBoxesBook;
     private SefariaCategoryNode? _selectedSefariaCategory;
+    private Task? _libraryLoadTask;
     private int _librarySelectionVersion;
     private CancellationTokenSource? _sefariaDownloadCts;
     private CancellationTokenSource? _categoryInstallProgressCts;
@@ -310,7 +316,7 @@ public partial class MainWindow : Window
         UpdateLibraryDetails();
         RefreshOpenReaderTabs();
         UpdateReaderTools();
-        _ = LoadSefariaLibraryAsync();
+        _libraryLoadTask = LoadSefariaLibraryAsync();
     }
 
     private async Task WaitForSelectedTabContentReadyAsync()

@@ -151,6 +151,7 @@
                         Spacing="8">
                 <Button Content="Library Manager" Click="OpenLibraryManagerClicked" />
                 <Button Content="Advanced Search" Click="OpenAdvancedSearchClicked" />
+                <Button Content="Dictionary" Click="OpenDictionaryClicked" />
                 <Button Content="Settings" Click="OpenSettingsClicked" />
             </StackPanel>
         </Border>

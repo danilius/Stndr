@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -14,6 +15,8 @@ public sealed class SefariaDictionaryEntry
     public string Pronunciation { get; init; } = string.Empty;
     public string LexiconName { get; init; } = string.Empty;
     public string Definition { get; init; } = string.Empty;
+    public string ContentText { get; init; } = string.Empty;
+    public IReadOnlyList<string> Refs { get; init; } = Array.Empty<string>();
 }
 
 public sealed partial class SefariaLibraryService
@@ -71,9 +74,10 @@ public sealed partial class SefariaLibraryService
                 continue;
             }
 
-            var definition = item.TryGetProperty("content", out var contentElement)
-                ? FindFirstDefinition(contentElement)
-                : string.Empty;
+            var definitions = item.TryGetProperty("content", out var contentElement)
+                ? FindDefinitions(contentElement)
+                : new List<string>();
+            var definition = definitions.FirstOrDefault() ?? string.Empty;
 
             entries.Add(new SefariaDictionaryEntry
             {
@@ -81,55 +85,66 @@ public sealed partial class SefariaLibraryService
                 Transliteration = GetJsonString(item, "transliteration"),
                 Pronunciation = GetJsonString(item, "pronunciation"),
                 LexiconName = GetJsonString(item, "parent_lexicon"),
-                Definition = definition
+                Definition = definition,
+                ContentText = string.Join(Environment.NewLine + Environment.NewLine, definitions),
+                Refs = GetStringArray(item, "refs")
             });
         }
 
         return entries;
     }
 
-    private static string FindFirstDefinition(JsonElement element)
+    private static List<string> FindDefinitions(JsonElement element)
     {
-        return element.ValueKind switch
-        {
-            JsonValueKind.Object => FindFirstDefinitionInObject(element),
-            JsonValueKind.Array => FindFirstDefinitionInArray(element),
-            _ => string.Empty
-        };
+        var definitions = new List<string>();
+        AppendDefinitions(element, definitions);
+        return definitions;
     }
 
-    private static string FindFirstDefinitionInObject(JsonElement element)
+    private static void AppendDefinitions(JsonElement element, List<string> definitions)
     {
-        if (element.TryGetProperty("definition", out var definitionElement) &&
-            definitionElement.ValueKind == JsonValueKind.String &&
-            definitionElement.GetString() is { Length: > 0 } definition)
+        switch (element.ValueKind)
         {
-            return definition;
-        }
+            case JsonValueKind.Object:
+                foreach (var property in element.EnumerateObject())
+                {
+                    if (string.Equals(property.Name, "definition", StringComparison.OrdinalIgnoreCase) &&
+                        property.Value.ValueKind == JsonValueKind.String &&
+                        property.Value.GetString() is { Length: > 0 } definition)
+                    {
+                        definitions.Add(definition);
+                        continue;
+                    }
 
-        foreach (var property in element.EnumerateObject())
-        {
-            var candidate = FindFirstDefinition(property.Value);
-            if (!string.IsNullOrWhiteSpace(candidate))
-            {
-                return candidate;
-            }
-        }
+                    AppendDefinitions(property.Value, definitions);
+                }
+                break;
 
-        return string.Empty;
+            case JsonValueKind.Array:
+                foreach (var item in element.EnumerateArray())
+                {
+                    AppendDefinitions(item, definitions);
+                }
+                break;
+        }
     }
 
-    private static string FindFirstDefinitionInArray(JsonElement element)
+    private static IReadOnlyList<string> GetStringArray(JsonElement element, string propertyName)
     {
-        foreach (var item in element.EnumerateArray())
+        if (!element.TryGetProperty(propertyName, out var arrayElement) ||
+            arrayElement.ValueKind != JsonValueKind.Array)
         {
-            var candidate = FindFirstDefinition(item);
-            if (!string.IsNullOrWhiteSpace(candidate))
-            {
-                return candidate;
-            }
+            return Array.Empty<string>();
         }
 
-        return string.Empty;
+        return arrayElement
+            .EnumerateArray()
+            .Where(item => item.ValueKind == JsonValueKind.String)
+            .Select(item => item.GetString())
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
     }
+
 }

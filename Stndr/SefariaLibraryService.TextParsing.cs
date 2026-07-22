@@ -1191,20 +1191,10 @@ public sealed partial class SefariaLibraryService
             return true;
         }
 
-        foreach (var property in rawTextElement.EnumerateObject())
+        if (HasTextContent(rawTextElement))
         {
-            if (property.Value.ValueKind == JsonValueKind.Array)
-            {
-                textElement = property.Value;
-                return true;
-            }
-
-            if (property.Value.ValueKind == JsonValueKind.Object &&
-                HasTextContent(property.Value))
-            {
-                textElement = rawTextElement;
-                return true;
-            }
+            textElement = rawTextElement;
+            return true;
         }
 
         return false;
