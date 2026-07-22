@@ -250,6 +250,36 @@ public partial class MainWindow
             }
         }
 
+        if (textTools.Children.Count > 0)
+        {
+            textTools.Children.Add(new Border
+            {
+                Height = 1,
+                Margin = new Thickness(0, 8, 0, 4),
+                Background = new SolidColorBrush(Color.Parse("#EAECF0"))
+            });
+        }
+
+        textTools.Children.Add(new TextBlock
+        {
+            Text = "Other versions may be available to download.",
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = new SolidColorBrush(Color.Parse("#667085")),
+            FontFamily = new FontFamily(GetSelectedUiFontFamily())
+        });
+
+        var manageVersionsButton = new Button
+        {
+            Content = "Manage Versions",
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 2, 0, 0),
+            Padding = new Thickness(8, 6)
+        };
+        ToolTip.SetTip(manageVersionsButton, "Open this book in Library Manager to download or delete versions.");
+        manageVersionsButton.Click += async (_, _) => await OpenLibraryManagerForWorkAsync(readerState.WorkTitle);
+        textTools.Children.Add(manageVersionsButton);
+
         _rightPanelBody.Children.Add(CreateReaderToolsGroup(
             "Versions",
             textTools,
