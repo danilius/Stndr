@@ -627,11 +627,15 @@ public sealed partial class SefariaLibraryService
 
     private List<InstalledSefariaBook> LoadInstalledBooks(bool forceRefresh = false)
     {
+        var database = _installedBooksDatabase;
+        if (database is null)
+        {
+            return new List<InstalledSefariaBook>();
+        }
+
         lock (_installedBooksCacheGate)
         {
-            var manifestLastWrite = File.Exists(InstalledBooksFilePath)
-                ? File.GetLastWriteTimeUtc(InstalledBooksFilePath)
-                : DateTime.MinValue;
+            var manifestLastWrite = database.GetLastWriteTimeUtc();
 
             if (!forceRefresh &&
                 _installedBooksCache is not null &&
@@ -641,21 +645,13 @@ public sealed partial class SefariaLibraryService
             }
 
             List<InstalledSefariaBook> installed;
-            if (!File.Exists(InstalledBooksFilePath))
+            try
+            {
+                installed = database.Read();
+            }
+            catch
             {
                 installed = new List<InstalledSefariaBook>();
-            }
-            else
-            {
-                try
-                {
-                    var json = ReadJsonTextFile(InstalledBooksFilePath);
-                    installed = JsonSerializer.Deserialize<List<InstalledSefariaBook>>(json) ?? new List<InstalledSefariaBook>();
-                }
-                catch
-                {
-                    installed = new List<InstalledSefariaBook>();
-                }
             }
 
             _installedBooksManifestLastWriteUtc = manifestLastWrite;
@@ -666,11 +662,12 @@ public sealed partial class SefariaLibraryService
 
     private void SaveInstalledBooks(List<InstalledSefariaBook> installed)
     {
-        var json = JsonSerializer.Serialize(installed, new JsonSerializerOptions { WriteIndented = true });
-        File.WriteAllText(InstalledBooksFilePath, json, Encoding.UTF8);
+        var database = _installedBooksDatabase
+            ?? throw new InvalidOperationException("The installed-books database is not configured.");
+        var lastWriteUtc = database.Write(installed);
         lock (_installedBooksCacheGate)
         {
-            _installedBooksManifestLastWriteUtc = File.GetLastWriteTimeUtc(InstalledBooksFilePath);
+            _installedBooksManifestLastWriteUtc = lastWriteUtc;
             _installedBooksCache = CloneInstalledBooks(installed);
             _getInstalledBooksResultCache = null;
         }
