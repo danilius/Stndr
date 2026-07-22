@@ -153,6 +153,7 @@ public partial class MainWindow
         public double ReaderWebScrollOffset { get; set; }
         public bool HasAppliedInitialWebScroll { get; set; }
         public bool IsApplyingWebScrollRestore { get; set; }
+        public int ReaderScrollRestoreVersion { get; set; }
         public string PendingExactReferenceWithinWork { get; set; } = string.Empty;
         public string SearchHighlightReferenceWithinWork { get; set; } = string.Empty;
         public List<string> SearchHighlightTerms { get; set; } = new();

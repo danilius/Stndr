@@ -10,6 +10,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 
@@ -25,6 +26,65 @@ public partial class MainWindow
     }
 
     private static readonly Regex DictionaryHtmlTagRegex = new("<.*?>", RegexOptions.Compiled);
+    private static readonly Regex DictionaryCitationRegex = new(
+        @"(?<![\p{L}\p{N}])(?<abbr>B\.?\s*Kam\.?|Gen\.?|Ge\.?|Ex\.?|Exod\.?|Lev\.?|Num\.?|Deut\.?|Josh\.?|Judg\.?|I\s+Sam\.?|II\s+Sam\.?|I\s+Kings?|II\s+Kings?|Isa\.?|Jer\.?|Ezek\.?|Ps\.?|Prov\.?|Job|Ruth|Lam\.?|Eccl\.?|Esth\.?|Dan\.?|Ezra|Neh\.?)\s+(?<loc>\d{1,4}(?::\d{1,4})?(?:[abABᵃᵇ])?)",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Dictionary<string, string> DictionaryCitationTitles = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["B Kam"] = "Bava Kamma",
+        ["B. Kam"] = "Bava Kamma",
+        ["B Kam."] = "Bava Kamma",
+        ["B. Kam."] = "Bava Kamma",
+        ["Gen"] = "Genesis",
+        ["Gen."] = "Genesis",
+        ["Ge"] = "Genesis",
+        ["Ge."] = "Genesis",
+        ["Ex"] = "Exodus",
+        ["Ex."] = "Exodus",
+        ["Exod"] = "Exodus",
+        ["Exod."] = "Exodus",
+        ["Lev"] = "Leviticus",
+        ["Lev."] = "Leviticus",
+        ["Num"] = "Numbers",
+        ["Num."] = "Numbers",
+        ["Deut"] = "Deuteronomy",
+        ["Deut."] = "Deuteronomy",
+        ["Josh"] = "Joshua",
+        ["Josh."] = "Joshua",
+        ["Judg"] = "Judges",
+        ["Judg."] = "Judges",
+        ["I Sam"] = "I Samuel",
+        ["I Sam."] = "I Samuel",
+        ["II Sam"] = "II Samuel",
+        ["II Sam."] = "II Samuel",
+        ["I King"] = "I Kings",
+        ["I Kings"] = "I Kings",
+        ["II King"] = "II Kings",
+        ["II Kings"] = "II Kings",
+        ["Isa"] = "Isaiah",
+        ["Isa."] = "Isaiah",
+        ["Jer"] = "Jeremiah",
+        ["Jer."] = "Jeremiah",
+        ["Ezek"] = "Ezekiel",
+        ["Ezek."] = "Ezekiel",
+        ["Ps"] = "Psalms",
+        ["Ps."] = "Psalms",
+        ["Prov"] = "Proverbs",
+        ["Prov."] = "Proverbs",
+        ["Job"] = "Job",
+        ["Ruth"] = "Ruth",
+        ["Lam"] = "Lamentations",
+        ["Lam."] = "Lamentations",
+        ["Eccl"] = "Ecclesiastes",
+        ["Eccl."] = "Ecclesiastes",
+        ["Esth"] = "Esther",
+        ["Esth."] = "Esther",
+        ["Dan"] = "Daniel",
+        ["Dan."] = "Daniel",
+        ["Ezra"] = "Ezra",
+        ["Neh"] = "Nehemiah",
+        ["Neh."] = "Nehemiah"
+    };
     private static readonly HashSet<char> HebrewPrefixLetters = new() { 'ו', 'ב', 'כ', 'ל', 'מ', 'ה', 'ש' };
 
     /// <summary>
@@ -62,6 +122,109 @@ public partial class MainWindow
         }
 
         RefreshDictionarySurface();
+    }
+
+    private Control CreateDictionaryView()
+    {
+        _dictionaryLookupBox = new TextBox
+        {
+            PlaceholderText = "Enter a Hebrew or Aramaic word...",
+            MinWidth = 280,
+            VerticalAlignment = VerticalAlignment.Center,
+            Text = _dictionaryCurrentWord
+        };
+        _dictionaryLookupBox.KeyDown += async (_, e) =>
+        {
+            if (e.Key != Key.Enter)
+            {
+                return;
+            }
+
+            e.Handled = true;
+            await RunDictionaryTabLookupAsync(_dictionaryLookupBox.Text, _dictionaryCurrentReference);
+        };
+
+        var lookupButton = new Button
+        {
+            Content = "Lookup",
+            MinWidth = 90
+        };
+        lookupButton.Click += async (_, _) =>
+            await RunDictionaryTabLookupAsync(_dictionaryLookupBox.Text, _dictionaryCurrentReference);
+
+        _dictionaryLookupReference = new TextBlock
+        {
+            Text = _dictionaryCurrentReference,
+            Foreground = new SolidColorBrush(Color.Parse("#667085")),
+            TextWrapping = TextWrapping.Wrap,
+            IsVisible = !string.IsNullOrWhiteSpace(_dictionaryCurrentReference)
+        };
+
+        _dictionaryLookupStatus = new TextBlock
+        {
+            Text = string.IsNullOrWhiteSpace(_dictionaryCurrentWord)
+                ? "Type a word, or right-click a word in the reader and choose Dictionary."
+                : _dictionaryStatusText,
+            Foreground = new SolidColorBrush(Color.Parse("#475467")),
+            TextWrapping = TextWrapping.Wrap
+        };
+
+        _dictionaryLookupResultsPanel = new StackPanel
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Spacing = 8
+        };
+
+        var header = new StackPanel
+        {
+            Spacing = 10,
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = "Dictionary",
+                    FontSize = 24,
+                    FontWeight = FontWeight.SemiBold
+                },
+                new TextBlock
+                {
+                    Text = "Look up Sefaria lexicon entries across available dictionaries.",
+                    Foreground = new SolidColorBrush(Color.Parse("#475467")),
+                    TextWrapping = TextWrapping.Wrap
+                },
+                new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 8,
+                    Children =
+                    {
+                        _dictionaryLookupBox,
+                        lookupButton
+                    }
+                },
+                _dictionaryLookupReference,
+                _dictionaryLookupStatus
+            }
+        };
+
+        var content = new StackPanel
+        {
+            Spacing = 18,
+            Margin = new Thickness(18),
+            Children =
+            {
+                header,
+                _dictionaryLookupResultsPanel
+            }
+        };
+
+        return new ScrollViewer
+        {
+            Background = Brushes.White,
+            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+            Content = content
+        };
     }
 
     private Control CreateDockedDictionaryToolsControl()
@@ -234,22 +397,470 @@ public partial class MainWindow
             : "Looking up dictionary entry...";
 
         RefreshDictionarySurface();
-        if (_isDictionaryDocked)
+        OpenOrSelectTab(DictionaryTabTitle);
+        ApplyDictionaryTabHeaderState();
+        _ = RunDictionaryTabLookupAsync(lookupWord, _dictionaryCurrentReference);
+        SaveLayoutState();
+    }
+
+    private void ApplyDictionaryTabHeaderState()
+    {
+        if (_dictionaryLookupBox is not null)
         {
-            EnsureRightPanelExpandedForDictionary();
-            if (_dictionaryToolsWord is null)
-            {
-                UpdateReaderTools();
-                RefreshDictionarySurface();
-            }
-        }
-        else
-        {
-            ShowDictionaryPopupWindow(repositionToAnchor: true);
+            _dictionaryLookupBox.Text = _dictionaryCurrentWord;
         }
 
-        _ = ResolveDictionaryEntryAsync(lookupWord, _dictionaryCurrentReference);
-        SaveLayoutState();
+        if (_dictionaryLookupReference is not null)
+        {
+            _dictionaryLookupReference.Text = _dictionaryCurrentReference;
+            _dictionaryLookupReference.IsVisible = !string.IsNullOrWhiteSpace(_dictionaryCurrentReference);
+        }
+
+        if (_dictionaryLookupStatus is not null)
+        {
+            _dictionaryLookupStatus.Text = _dictionaryStatusText;
+        }
+    }
+
+    private async Task RunDictionaryTabLookupAsync(string? word, string? reference)
+    {
+        var lookupWord = NormalizeDictionaryLookupWord(word);
+        var displayQuery = string.IsNullOrWhiteSpace(word) ? lookupWord : word.Trim();
+        _dictionaryCurrentWord = NormalizeDictionaryWord(displayQuery, reference);
+        _dictionaryCurrentReference = reference?.Trim() ?? _dictionaryCurrentReference;
+        _dictionaryPrimaryGloss = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(lookupWord))
+        {
+            _dictionaryStatusText = "Type or select a single word to look it up.";
+            ClearDictionaryTabResults();
+            ApplyDictionaryTabHeaderState();
+            RefreshDictionarySurface();
+            return;
+        }
+
+        _dictionaryStatusText = $"Looking up {lookupWord}...";
+        ClearDictionaryTabResults();
+        ApplyDictionaryTabHeaderState();
+        RefreshDictionarySurface();
+
+        _dictionaryLookupCts.Cancel();
+        _dictionaryLookupCts.Dispose();
+        _dictionaryLookupCts = new CancellationTokenSource();
+        var cts = _dictionaryLookupCts;
+
+        try
+        {
+            var entries = await LookupDictionaryEntriesWithFallbacksAsync(lookupWord, _dictionaryCurrentReference, cts.Token);
+            if (cts.IsCancellationRequested)
+            {
+                return;
+            }
+
+            if (entries.Count == 0)
+            {
+                _dictionaryStatusText = "No dictionary entries found.";
+                ApplyDictionaryTabHeaderState();
+                RefreshDictionarySurface();
+                return;
+            }
+
+            var best = entries[0];
+            _dictionaryPrimaryGloss = BuildPrimaryDictionaryGloss(best);
+            _dictionaryStatusText = $"{entries.Count} dictionary entr{(entries.Count == 1 ? "y" : "ies")} found.";
+            ApplyDictionaryTabHeaderState();
+            RenderDictionaryTabResults(entries);
+            RefreshDictionarySurface();
+            SaveLayoutState();
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (HttpRequestException)
+        {
+            _dictionaryPrimaryGloss = string.Empty;
+            _dictionaryStatusText = "Dictionary lookup failed. Check your internet connection and try again.";
+            ApplyDictionaryTabHeaderState();
+            RefreshDictionarySurface();
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            _dictionaryPrimaryGloss = string.Empty;
+            _dictionaryStatusText = "Dictionary lookup failed due to an unexpected response.";
+            ApplyDictionaryTabHeaderState();
+            RefreshDictionarySurface();
+        }
+    }
+
+    private void ClearDictionaryTabResults()
+    {
+        _dictionaryLookupResultsPanel?.Children.Clear();
+    }
+
+    private void RenderDictionaryTabResults(IReadOnlyList<SefariaDictionaryEntry> entries)
+    {
+        if (_dictionaryLookupResultsPanel is null)
+        {
+            return;
+        }
+
+        _dictionaryLookupResultsPanel.Children.Clear();
+        foreach (var entry in entries)
+        {
+            _dictionaryLookupResultsPanel.Children.Add(CreateDictionaryResultExpander(entry));
+        }
+    }
+
+    private Control CreateDictionaryResultExpander(SefariaDictionaryEntry entry)
+    {
+        var header = string.IsNullOrWhiteSpace(entry.LexiconName)
+            ? entry.Headword
+            : $"{entry.Headword} - {entry.LexiconName}";
+        var panel = new StackPanel
+        {
+            Spacing = 8,
+            Margin = new Thickness(8, 6, 8, 10)
+        };
+
+        var metaParts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(entry.Transliteration))
+        {
+            metaParts.Add(entry.Transliteration);
+        }
+
+        if (!string.IsNullOrWhiteSpace(entry.Pronunciation))
+        {
+            metaParts.Add($"/{entry.Pronunciation}/");
+        }
+
+        if (metaParts.Count > 0)
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = string.Join(" | ", metaParts),
+                Foreground = new SolidColorBrush(Color.Parse("#667085")),
+                TextWrapping = TextWrapping.Wrap
+            });
+        }
+
+        var definition = NormalizeDictionaryText(
+            string.IsNullOrWhiteSpace(entry.ContentText) ? entry.Definition : entry.ContentText);
+        AddDictionaryLinkedTextBlock(
+            panel,
+            string.IsNullOrWhiteSpace(definition) ? "Entry returned without a plain-text definition." : definition,
+            FlowDirection.LeftToRight);
+
+        if (entry.Refs.Count > 0)
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = "References",
+                FontWeight = FontWeight.SemiBold,
+                Margin = new Thickness(0, 6, 0, 0)
+            });
+
+            var refsPanel = new StackPanel
+            {
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                Spacing = 6
+            };
+            foreach (var reference in entry.Refs)
+            {
+                refsPanel.Children.Add(CreateDictionaryReferenceExpander(reference));
+            }
+
+            panel.Children.Add(refsPanel);
+        }
+
+        return new Expander
+        {
+            Header = header,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            IsExpanded = true,
+            Content = new Border
+            {
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                BorderBrush = new SolidColorBrush(Color.Parse("#EAECF0")),
+                BorderThickness = new Thickness(0, 1, 0, 0),
+                Child = panel
+            }
+        };
+    }
+
+    private Control CreateDictionaryReferenceExpander(string reference)
+    {
+        var contentPanel = new StackPanel
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Spacing = 8,
+            Margin = new Thickness(10, 6, 10, 10),
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = "Expand to load this reference.",
+                    Foreground = new SolidColorBrush(Color.Parse("#667085")),
+                    TextWrapping = TextWrapping.Wrap
+                }
+            }
+        };
+
+        var hasLoaded = false;
+        var expander = new Expander
+        {
+            Header = reference,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Content = new Border
+            {
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                Background = new SolidColorBrush(Color.Parse("#FCFCFD")),
+                BorderBrush = new SolidColorBrush(Color.Parse("#EAECF0")),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(6),
+                Child = contentPanel
+            }
+        };
+
+        expander.PropertyChanged += (_, e) =>
+        {
+            if (e.Property != Expander.IsExpandedProperty ||
+                !expander.IsExpanded ||
+                hasLoaded)
+            {
+                return;
+            }
+
+            hasLoaded = true;
+            _ = LoadDictionaryReferencePreviewAsync(reference, contentPanel);
+        };
+
+        return expander;
+    }
+
+    private async Task LoadDictionaryReferencePreviewAsync(string reference, StackPanel contentPanel)
+    {
+        contentPanel.Children.Clear();
+        contentPanel.Children.Add(new TextBlock
+        {
+            Text = "Loading reference from Sefaria...",
+            Foreground = new SolidColorBrush(Color.Parse("#667085")),
+            TextWrapping = TextWrapping.Wrap
+        });
+
+        try
+        {
+            var trimmedReference = reference.Trim();
+            var preview = await _sefariaLibrary.GetLinkPreviewAsync(
+                new SefariaLinkItem
+                {
+                    Ref = trimmedReference,
+                    SourceRef = trimmedReference,
+                    IndexTitle = ExtractDictionaryReferenceTitle(trimmedReference)
+                },
+                CancellationToken.None);
+
+            contentPanel.Children.Clear();
+            if (preview is null)
+            {
+                contentPanel.Children.Add(new TextBlock
+                {
+                    Text = "No preview text was available for this reference.",
+                    Foreground = new SolidColorBrush(Color.Parse("#B42318")),
+                    TextWrapping = TextWrapping.Wrap
+                });
+                return;
+            }
+
+            contentPanel.Children.Add(new TextBlock
+            {
+                Text = preview.IsFromInstalledBook ? "Preview from local data" : "Preview from Sefaria",
+                Foreground = new SolidColorBrush(Color.Parse("#667085")),
+                TextWrapping = TextWrapping.Wrap
+            });
+
+            AddDictionaryReferencePreviewText(contentPanel, preview.HebrewText, FlowDirection.RightToLeft);
+            AddDictionaryReferencePreviewText(contentPanel, preview.EnglishText, FlowDirection.LeftToRight);
+
+            if (string.IsNullOrWhiteSpace(preview.HebrewText) &&
+                string.IsNullOrWhiteSpace(preview.EnglishText))
+            {
+                contentPanel.Children.Add(new TextBlock
+                {
+                    Text = "Preview loaded, but no displayable text was returned.",
+                    Foreground = new SolidColorBrush(Color.Parse("#B42318")),
+                    TextWrapping = TextWrapping.Wrap
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            contentPanel.Children.Clear();
+            contentPanel.Children.Add(new TextBlock
+            {
+                Text = $"Could not load this reference: {ex.Message}",
+                Foreground = new SolidColorBrush(Color.Parse("#B42318")),
+                TextWrapping = TextWrapping.Wrap
+            });
+        }
+    }
+
+    private void AddDictionaryReferencePreviewText(StackPanel panel, string text, FlowDirection flowDirection)
+    {
+        var normalized = NormalizeDictionaryText(text);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return;
+        }
+
+        AddDictionaryLinkedTextBlock(panel, normalized, flowDirection);
+    }
+
+    private void AddDictionaryLinkedTextBlock(StackPanel panel, string text, FlowDirection flowDirection)
+    {
+        var citations = FindDictionaryCitations(text);
+        if (citations.Count == 0)
+        {
+            panel.Children.Add(new SelectableTextBlock
+            {
+                Text = text,
+                FlowDirection = flowDirection,
+                TextAlignment = flowDirection == FlowDirection.RightToLeft ? TextAlignment.Right : TextAlignment.Left,
+                TextWrapping = TextWrapping.Wrap
+            });
+            return;
+        }
+
+        panel.Children.Add(new DictionaryLinkedTextView(
+            text,
+            citations.Select(citation => new DictionaryCitationLink(
+                citation.Start,
+                citation.Length,
+                citation.DisplayText,
+                citation.FullReference,
+                citation.WorkTitle)),
+            flowDirection,
+            citation => _ = OpenDictionaryCitationAsync(citation.FullReference, citation.WorkTitle)));
+    }
+
+    private async Task OpenDictionaryCitationAsync(string fullReference, string workTitle)
+    {
+        if (string.IsNullOrWhiteSpace(fullReference) || string.IsNullOrWhiteSpace(workTitle))
+        {
+            return;
+        }
+
+        try
+        {
+            var preview = await _sefariaLibrary.GetLinkPreviewAsync(
+                new SefariaLinkItem
+                {
+                    Ref = fullReference,
+                    SourceRef = fullReference,
+                    IndexTitle = workTitle
+                },
+                CancellationToken.None);
+
+            if (preview is not null)
+            {
+                var fullVersions = _sefariaLibrary.GetFullInstalledVersionsForTitle(preview.WorkTitle);
+                if (fullVersions.Count > 0)
+                {
+                    OpenInstalledLinkSource(preview, CommentaryLanguage.English, fullVersions);
+                    return;
+                }
+            }
+        }
+        catch
+        {
+            // Fall back to a remote preview tab below; ambiguous dictionary links should fail softly.
+        }
+
+        OpenAdvancedSearchPreviewTab(new AdvancedSearchResult
+        {
+            Reference = fullReference,
+            WorkTitle = workTitle
+        });
+    }
+
+    private static IReadOnlyList<DictionaryCitationSpan> FindDictionaryCitations(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return Array.Empty<DictionaryCitationSpan>();
+        }
+
+        var citations = new List<DictionaryCitationSpan>();
+        foreach (Match match in DictionaryCitationRegex.Matches(text))
+        {
+            if (!match.Success)
+            {
+                continue;
+            }
+
+            var abbreviation = match.Groups["abbr"].Value.Trim();
+            var location = NormalizeDictionaryCitationLocation(match.Groups["loc"].Value);
+            if (string.IsNullOrWhiteSpace(location) ||
+                !TryResolveDictionaryCitationTitle(abbreviation, out var workTitle))
+            {
+                continue;
+            }
+
+            citations.Add(new DictionaryCitationSpan(
+                match.Index,
+                match.Length,
+                match.Value,
+                workTitle,
+                $"{workTitle} {location}"));
+        }
+
+        return citations;
+    }
+
+    private static bool TryResolveDictionaryCitationTitle(string abbreviation, out string workTitle)
+    {
+        var normalized = Regex.Replace(abbreviation.Trim(), @"\s+", " ");
+        return DictionaryCitationTitles.TryGetValue(normalized, out workTitle!);
+    }
+
+    private static string NormalizeDictionaryCitationLocation(string location)
+    {
+        return location
+            .Trim()
+            .Replace('ᵃ', 'a')
+            .Replace('ᵇ', 'b')
+            .Replace(':', '.');
+    }
+
+    private sealed record DictionaryCitationSpan(
+        int Start,
+        int Length,
+        string DisplayText,
+        string WorkTitle,
+        string FullReference);
+
+    private static string ExtractDictionaryReferenceTitle(string reference)
+    {
+        if (string.IsNullOrWhiteSpace(reference))
+        {
+            return string.Empty;
+        }
+
+        var parts = reference.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        var endIndex = parts.Length;
+        while (endIndex > 0 && parts[endIndex - 1].Any(char.IsDigit))
+        {
+            endIndex--;
+        }
+
+        return endIndex <= 0
+            ? reference.Trim()
+            : string.Join(' ', parts, 0, endIndex);
     }
 
     private async Task ResolveDictionaryEntryAsync(string lookupWord, string reference)
@@ -341,6 +952,62 @@ public partial class MainWindow
         }
 
         return null;
+    }
+
+    private async Task<IReadOnlyList<SefariaDictionaryEntry>> LookupDictionaryEntriesWithFallbacksAsync(
+        string lookupWord,
+        string reference,
+        CancellationToken cancellationToken)
+    {
+        var context = GetDictionaryReferenceContext(reference);
+        var lookupRef = FormatSefariaLookupRef(reference);
+        foreach (var candidate in BuildDictionaryLookupCandidates(lookupWord))
+        {
+            var cacheKey = BuildDictionaryCacheKey(candidate, lookupRef);
+            if (!_dictionaryLookupCache.TryGetValue(cacheKey, out var entries))
+            {
+                entries = await _sefariaLibrary.LookupDictionaryEntriesAsync(
+                    candidate,
+                    cancellationToken,
+                    lookupRef);
+                _dictionaryLookupCache[cacheKey] = entries;
+            }
+
+            if (entries.Count == 0)
+            {
+                continue;
+            }
+
+            var normalizedLookup = NormalizeDictionaryHebrewWord(candidate);
+            return entries
+                .OrderBy(entry => GetDictionaryResultPriority(entry.LexiconName))
+                .ThenByDescending(entry => ScoreDictionaryEntry(entry, normalizedLookup, context))
+                .ThenBy(entry => entry.LexiconName, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(entry => entry.Headword, StringComparer.Ordinal)
+                .ToList();
+        }
+
+        return Array.Empty<SefariaDictionaryEntry>();
+    }
+
+    private static int GetDictionaryResultPriority(string lexiconName)
+    {
+        if (lexiconName.Contains("Klein", StringComparison.OrdinalIgnoreCase))
+        {
+            return 0;
+        }
+
+        if (lexiconName.Contains("Jastrow", StringComparison.OrdinalIgnoreCase))
+        {
+            return 1;
+        }
+
+        if (lexiconName.Contains("BDB", StringComparison.OrdinalIgnoreCase))
+        {
+            return 2;
+        }
+
+        return 10;
     }
 
     private static string BuildDictionaryCacheKey(string candidate, string? lookupRef)

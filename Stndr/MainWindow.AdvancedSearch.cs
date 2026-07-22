@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
@@ -12,6 +14,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Controls.Primitives;
+using Avalonia.Controls.Templates;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -81,19 +84,58 @@ public partial class MainWindow
             Foreground = new SolidColorBrush(Color.Parse("#667085")),
             VerticalAlignment = VerticalAlignment.Center
         };
-        var resultsPanel = new StackPanel { Spacing = 0 };
         var resultSummary = new TextBlock
         {
             Foreground = new SolidColorBrush(Color.Parse("#667085")),
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(10, 8)
         };
+        var resultItems = new ObservableCollection<AdvancedSearchResult>();
+        var resultList = new ListBox
+        {
+            ItemsSource = resultItems,
+            Background = Brushes.White,
+            BorderThickness = new Thickness(0),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            ItemTemplate = new FuncDataTemplate<AdvancedSearchResult>((result, _) =>
+                result is null ? new TextBlock() : CreateAdvancedSearchResultRow(result))
+        };
+        var resultEmptyState = new TextBlock
+        {
+            Margin = new Thickness(16),
+            Foreground = new SolidColorBrush(Color.Parse("#667085")),
+            IsHitTestVisible = false
+        };
         var visibleResults = new List<AdvancedSearchResult>();
         var hasSearchRun = savedSearch is not null;
+        var isSearchRunning = false;
+        CancellationTokenSource? searchCts = null;
+        Action? activeFlushPendingResults = null;
+        var searchRunVersion = 0;
         TimeSpan? lastElapsed = null;
         AdvancedSearchQuery? currentQuery = savedSearch?.Query;
         var currentFields = new AdvancedSearchFormFields();
         var fieldValues = CreateAdvancedSearchFieldValues(savedSearch?.Query);
+
+        void RefreshAdvancedSearchResultState()
+        {
+            resultList.IsVisible = resultItems.Count > 0;
+            resultEmptyState.IsVisible = resultItems.Count == 0;
+            resultEmptyState.Text = !hasSearchRun
+                ? "Run a search to see matching installed texts here."
+                : "No results found. Try widening the scope or loosening the match mode.";
+        }
+
+        void SetAdvancedSearchResultItems(IReadOnlyList<AdvancedSearchResult> results)
+        {
+            resultItems.Clear();
+            foreach (var result in results)
+            {
+                resultItems.Add(result);
+            }
+
+            RefreshAdvancedSearchResultState();
+        }
 
         void RenderTemplateForm()
         {
@@ -114,7 +156,7 @@ public partial class MainWindow
         {
             status.Text = $"{savedSearch.Results.Count} saved results from {savedSearch.CompletedAtUtc.ToLocalTime():g}";
             visibleResults = savedSearch.Results.ToList();
-            RenderAdvancedSearchResults(resultsPanel, visibleResults, hasSearchRun);
+            SetAdvancedSearchResultItems(visibleResults);
             saveButton.IsEnabled = false;
         }
 
@@ -139,6 +181,24 @@ public partial class MainWindow
 
         runButton.Click += async (_, _) =>
         {
+            if (isSearchRunning)
+            {
+                var cts = searchCts;
+                searchCts = null;
+                cts?.Cancel();
+                activeFlushPendingResults?.Invoke();
+                var cancelledResultsCount = visibleResults.Count;
+                activeFlushPendingResults = null;
+                searchRunVersion++;
+                isSearchRunning = false;
+                runButton.Content = "Run Search";
+                runButton.IsEnabled = true;
+                status.Text = $"{cancelledResultsCount} results before search was cancelled.";
+                resultSummary.Text = $"{cancelledResultsCount.ToString("N0", CultureInfo.InvariantCulture)} results before cancellation";
+                saveButton.IsEnabled = visibleResults.Count > 0 && currentQuery is not null;
+                return;
+            }
+
             var template = templateBox.SelectedItem as AdvancedSearchTemplate ?? AdvancedSearchTemplates[0];
             if (!template.IsImplemented)
             {
@@ -152,26 +212,100 @@ public partial class MainWindow
                 return;
             }
 
-            runButton.IsEnabled = false;
+            searchCts?.Dispose();
+            searchCts = new CancellationTokenSource();
+            var runCts = searchCts;
+            var cancellationToken = runCts.Token;
+            var searchRunId = ++searchRunVersion;
+            isSearchRunning = true;
+            runButton.Content = "Cancel";
+            saveButton.IsEnabled = false;
             status.Text = query.TemplateId == SefariaTextSearchTemplateId
                 ? "Searching Sefaria..."
                 : "Searching installed books...";
             hasSearchRun = true;
+            currentQuery = query;
             lastElapsed = null;
+            visibleResults.Clear();
             UpdateAdvancedSearchResultSummary(resultSummary, visibleResults.Count, lastElapsed, hasSearchRun, false);
-            resultsPanel.Children.Clear();
+            resultItems.Clear();
+            RefreshAdvancedSearchResultState();
+            var pendingResults = new ConcurrentQueue<AdvancedSearchResult>();
+            var flushScheduled = 0;
+
+            void FlushPendingResults()
+            {
+                Interlocked.Exchange(ref flushScheduled, 0);
+                var flushedCount = 0;
+                while (flushedCount < 25 && pendingResults.TryDequeue(out var result))
+                {
+                    visibleResults.Add(result);
+                    resultItems.Add(result);
+                    flushedCount++;
+                }
+
+                if (flushedCount == 0)
+                {
+                    return;
+                }
+
+                RefreshAdvancedSearchResultState();
+                UpdateAdvancedSearchResultSummary(
+                    resultSummary,
+                    visibleResults.Count,
+                    lastElapsed,
+                    hasSearchRun,
+                    false);
+
+                if (!pendingResults.IsEmpty)
+                {
+                    SchedulePendingResultFlush();
+                }
+            }
+
+            void SchedulePendingResultFlush()
+            {
+                if (Interlocked.Exchange(ref flushScheduled, 1) == 1)
+                {
+                    return;
+                }
+
+                Dispatcher.UIThread.Post(FlushPendingResults, DispatcherPriority.Background);
+            }
+
+            activeFlushPendingResults = FlushPendingResults;
 
             try
             {
                 var stopwatch = Stopwatch.StartNew();
                 var results = query.TemplateId == SefariaTextSearchTemplateId
-                    ? await RunSefariaAdvancedSearchAsync(query)
-                    : await Task.Run(() => RunInstalledAdvancedSearch(query));
+                    ? await RunSefariaAdvancedSearchAsync(query, cancellationToken)
+                    : await Task.Run(() => RunInstalledAdvancedSearch(
+                        query,
+                        result =>
+                        {
+                            if (!cancellationToken.IsCancellationRequested)
+                            {
+                                pendingResults.Enqueue(result);
+                                SchedulePendingResultFlush();
+                            }
+                        },
+                        cancellationToken), cancellationToken);
                 stopwatch.Stop();
+                while (!pendingResults.IsEmpty)
+                {
+                    FlushPendingResults();
+                }
                 lastElapsed = stopwatch.Elapsed;
+                cancellationToken.ThrowIfCancellationRequested();
+                if (searchRunId != searchRunVersion)
+                {
+                    return;
+                }
+
                 currentQuery = query;
-                visibleResults = results;
-                RenderAdvancedSearchResults(resultsPanel, visibleResults, hasSearchRun);
+                visibleResults = results.ToList();
+                SetAdvancedSearchResultItems(visibleResults);
                 UpdateAdvancedSearchResultSummary(resultSummary, visibleResults.Count, lastElapsed, hasSearchRun, false);
                 if (_advancedSearchAutosave)
                 {
@@ -185,14 +319,46 @@ public partial class MainWindow
                     status.Text = $"{results.Count} results. Save when ready.";
                 }
             }
+            catch (OperationCanceledException)
+            {
+                while (!pendingResults.IsEmpty)
+                {
+                    FlushPendingResults();
+                }
+                if (searchRunId != searchRunVersion)
+                {
+                    return;
+                }
+
+                status.Text = $"{visibleResults.Count} results before search was cancelled.";
+                resultSummary.Text = $"{visibleResults.Count.ToString("N0", CultureInfo.InvariantCulture)} results before cancellation";
+                saveButton.IsEnabled = visibleResults.Count > 0 && currentQuery is not null;
+            }
             catch (Exception ex)
             {
+                if (searchRunId != searchRunVersion)
+                {
+                    return;
+                }
+
                 status.Text = $"Search failed: {ex.Message}";
                 UpdateAdvancedSearchResultSummary(resultSummary, visibleResults.Count, lastElapsed, hasSearchRun, false);
             }
             finally
             {
-                runButton.IsEnabled = template.IsImplemented;
+                runCts.Dispose();
+                if (ReferenceEquals(searchCts, runCts))
+                {
+                    searchCts = null;
+                }
+
+                if (searchRunId == searchRunVersion)
+                {
+                    activeFlushPendingResults = null;
+                    isSearchRunning = false;
+                    runButton.Content = "Run Search";
+                    runButton.IsEnabled = template.IsImplemented;
+                }
             }
         };
 
@@ -235,33 +401,32 @@ public partial class MainWindow
         };
 
         UpdateAdvancedSearchResultSummary(resultSummary, visibleResults.Count, lastElapsed, hasSearchRun, savedSearch is not null);
-        if (!hasSearchRun)
-        {
-            RenderAdvancedSearchResults(resultsPanel, visibleResults, hasSearchRun);
-        }
 
         var resultHeader = CreateAdvancedSearchGridHeader(resultSummary, () =>
         {
             _savedSearchTitlesHebrew = !_savedSearchTitlesHebrew;
-            RenderAdvancedSearchResults(resultsPanel, visibleResults, hasSearchRun);
+            SetAdvancedSearchResultItems(visibleResults);
             SaveLayoutState();
         });
-        var resultScroll = new ScrollViewer
+        var resultBody = new Grid
         {
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            Content = resultsPanel
+            Children =
+            {
+                resultList,
+                resultEmptyState
+            }
         };
+        RefreshAdvancedSearchResultState();
         var resultsArea = new Grid
         {
             RowDefinitions = new RowDefinitions("Auto,*"),
             Children =
             {
                 resultHeader,
-                resultScroll
+                resultBody
             }
         };
-        Grid.SetRow(resultScroll, 1);
+        Grid.SetRow(resultBody, 1);
 
         return new Grid
         {
@@ -435,6 +600,21 @@ public partial class MainWindow
                 RefreshAdvancedSearchScopePanel(fields);
                 SaveLayoutState();
             }));
+        }
+        else
+        {
+            var isSefariaSearch = fields.TemplateId == SefariaTextSearchTemplateId;
+            AddAdvancedSearchControls(fields.ScopePanel, CreateAdvancedSearchScopeChip(
+                new AdvancedSearchScopeSelection
+                {
+                    Kind = AdvancedSearchScopeKind.AllInstalled,
+                    Key = isSefariaSearch ? "All Sefaria books" : "All local books",
+                    Label = isSefariaSearch ? "All Sefaria books" : "All local books",
+                    HebrewLabel = isSefariaSearch
+                        ? "\u05db\u05dc \u05e1\u05e4\u05e8\u05d9\u05d0"
+                        : "\u05e1\u05e4\u05e8\u05d9\u05dd \u05de\u05e7\u05d5\u05de\u05d9\u05d9\u05dd"
+                },
+                null));
         }
 
         var editScopeButton = new Button
@@ -620,7 +800,11 @@ public partial class MainWindow
             Content = scopeTree
         };
         var okButton = new Button { Content = "Apply", MinWidth = 80 };
-        var clearButton = new Button { Content = "Clear scope", MinWidth = 96 };
+        var allScopeButton = new Button
+        {
+            Content = useSefariaLibraryScope ? "All Sefaria Books" : "All Local Books",
+            MinWidth = 128
+        };
         var cancelButton = new Button { Content = "Cancel", MinWidth = 76 };
         var dialog = new Window
         {
@@ -685,11 +869,11 @@ public partial class MainWindow
             action = "apply";
             dialog.Close();
         };
-        clearButton.Click += (_, _) =>
+        allScopeButton.Click += (_, _) =>
         {
             selected.Clear();
-            action = "apply";
-            dialog.Close();
+            RefreshSelectedChips();
+            refreshTree();
         };
         cancelButton.Click += (_, _) => dialog.Close();
         searchBox.TextChanged += (_, _) => refreshTree();
@@ -723,7 +907,7 @@ public partial class MainWindow
                     Margin = new Thickness(0, 12, 0, 0),
                     Children =
                     {
-                        clearButton,
+                        allScopeButton,
                         okButton,
                         cancelButton
                     }
@@ -923,7 +1107,7 @@ public partial class MainWindow
             InstalledSefariaCategory { IsBookTitle: false } category => new AdvancedSearchScopeSelection
             {
                 Kind = AdvancedSearchScopeKind.Category,
-                Key = category.Title,
+                Key = string.IsNullOrWhiteSpace(category.CategoryPath) ? category.Title : category.CategoryPath,
                 Label = category.Title,
                 HebrewLabel = category.HebrewTitle ?? string.Empty
             },
@@ -1157,10 +1341,22 @@ public partial class MainWindow
 
     private List<AdvancedSearchResult> RunInstalledAdvancedSearch(AdvancedSearchQuery query)
     {
-        var books = _sefariaLibrary.GetInstalledBooks()
+        return RunInstalledAdvancedSearch(query, null, CancellationToken.None);
+    }
+
+    private List<AdvancedSearchResult> RunInstalledAdvancedSearch(
+        AdvancedSearchQuery query,
+        Action<AdvancedSearchResult>? onResult,
+        CancellationToken cancellationToken)
+    {
+        var installedBooks = _sefariaLibrary.GetInstalledBooks();
+        cancellationToken.ThrowIfCancellationRequested();
+        var versionsByTitle = _sefariaLibrary.GetInstalledVersionsByTitle(installedBooks);
+        cancellationToken.ThrowIfCancellationRequested();
+        var books = installedBooks
             .Where(book => MatchesAdvancedSearchScope(book, query))
             .GroupBy(book => book.Title, StringComparer.Ordinal)
-            .Select(group => SelectAdvancedSearchBookForTitle(group.Key, group.ToList()))
+            .Select(group => SelectAdvancedSearchBookForTitle(group.Key, group.ToList(), versionsByTitle))
             .Where(book => book is not null)
             .Select(book => book!)
             .OrderBy(book => book.Categories.FirstOrDefault() ?? string.Empty, StringComparer.OrdinalIgnoreCase)
@@ -1171,45 +1367,77 @@ public partial class MainWindow
         var results = new List<AdvancedSearchResult>();
         foreach (var book in books)
         {
-            List<ReaderTextUnit> units;
+            cancellationToken.ThrowIfCancellationRequested();
+
             try
             {
-                units = _sefariaLibrary.ReadInstalledBookUnits(book);
+                bool AddResult(ReaderTextUnit unit)
+                {
+                    var result = new AdvancedSearchResult
+                    {
+                        Reference = $"{book.Title} {NormalizeReaderReferenceForSefaria(unit.Reference)}",
+                        WorkTitle = book.Title,
+                        VersionTitle = FormatReaderVersionTitle(book),
+                        Source = "Installed",
+                        Snippet = BuildAdvancedSearchSnippet(unit.Text),
+                        BookKey = book.Key,
+                        ReferenceWithinWork = NormalizeReaderUnitReference(unit.Reference),
+                        MatchedTerms = BuildAdvancedSearchMatchedTerms(query)
+                    };
+                    results.Add(result);
+                    onResult?.Invoke(result);
+                    return results.Count >= AdvancedSearchResultLimit;
+                }
+
+                if (ShouldGroupAdvancedSearchByChapter(query))
+                {
+                    var units = _sefariaLibrary.ReadInstalledBookUnits(book, cancellationToken);
+                    foreach (var unit in GetMatchingAdvancedSearchUnits(units, query, cancellationToken))
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        if (AddResult(unit))
+                        {
+                            return results;
+                        }
+                    }
+                }
+                else
+                {
+                    foreach (var unit in _sefariaLibrary.StreamInstalledBookUnits(book, cancellationToken))
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        if (!AdvancedSearchUnitMatches(unit.Text, query))
+                        {
+                            continue;
+                        }
+
+                        if (AddResult(unit))
+                        {
+                            return results;
+                        }
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch
             {
                 continue;
-            }
-
-            foreach (var unit in GetMatchingAdvancedSearchUnits(units, query))
-            {
-                results.Add(new AdvancedSearchResult
-                {
-                    Reference = $"{book.Title} {NormalizeReaderReferenceForSefaria(unit.Reference)}",
-                    WorkTitle = book.Title,
-                    VersionTitle = FormatReaderVersionTitle(book),
-                    Source = "Installed",
-                    Snippet = BuildAdvancedSearchSnippet(unit.Text),
-                    BookKey = book.Key,
-                    ReferenceWithinWork = NormalizeReaderUnitReference(unit.Reference),
-                    MatchedTerms = BuildAdvancedSearchMatchedTerms(query)
-                });
-
-                if (results.Count >= AdvancedSearchResultLimit)
-                {
-                    return results;
-                }
             }
         }
 
         return results;
     }
 
-    private async Task<List<AdvancedSearchResult>> RunSefariaAdvancedSearchAsync(AdvancedSearchQuery query)
+    private async Task<List<AdvancedSearchResult>> RunSefariaAdvancedSearchAsync(
+        AdvancedSearchQuery query,
+        CancellationToken cancellationToken)
     {
         var searchResults = await _sefariaLibrary.SearchTextsAsync(
             BuildSefariaTextSearchRequest(query),
-            CancellationToken.None);
+            cancellationToken);
         var workFilters = query.SelectedScopes
             .Where(scope => scope.Kind == AdvancedSearchScopeKind.Work)
             .Select(scope => scope.Key)
@@ -1227,6 +1455,8 @@ public partial class MainWindow
         var results = new List<AdvancedSearchResult>();
         foreach (var searchResult in searchResults.Take(AdvancedSearchResultLimit))
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             var workTitle = FirstNonEmptyAdvancedSearchValue(
                 searchResult.WorkTitle,
                 ExtractAdvancedSearchReferenceTitle(searchResult.Reference));
@@ -1301,23 +1531,68 @@ public partial class MainWindow
         return string.Join(", ", query.SelectedScopes.Select(scope => scope.Label));
     }
 
-    private static IEnumerable<ReaderTextUnit> GetMatchingAdvancedSearchUnits(
-        IReadOnlyList<ReaderTextUnit> units,
-        AdvancedSearchQuery query)
+    private static bool ShouldGroupAdvancedSearchByChapter(AdvancedSearchQuery query)
     {
-        if (query.TemplateId == SameUnitTemplateId &&
-            string.Equals(query.SameUnit, "chapter", StringComparison.OrdinalIgnoreCase))
+        return query.TemplateId == SameUnitTemplateId &&
+            string.Equals(query.SameUnit, "chapter", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static IEnumerable<ReaderTextUnit> GetMatchingAdvancedSearchUnits(
+        IEnumerable<ReaderTextUnit> units,
+        AdvancedSearchQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        if (ShouldGroupAdvancedSearchByChapter(query))
         {
-            return units
-                .GroupBy(unit => GetReferencePart(unit.Reference, 0), StringComparer.Ordinal)
-                .Where(group => AdvancedSearchTextContains(group.Select(unit => unit.Text), query.TermA, query.MatchMode) &&
-                    AdvancedSearchTextContains(group.Select(unit => unit.Text), query.TermB, query.MatchMode))
-                .SelectMany(group => group.Where(unit =>
-                    AdvancedSearchTextContains(unit.Text, query.TermA, query.MatchMode) ||
-                    AdvancedSearchTextContains(unit.Text, query.TermB, query.MatchMode)));
+            var chapters = new Dictionary<string, List<ReaderTextUnit>>(StringComparer.Ordinal);
+            foreach (var unit in units)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var chapterKey = GetReferencePart(unit.Reference, 0);
+                if (!chapters.TryGetValue(chapterKey, out var chapterUnits))
+                {
+                    chapterUnits = new List<ReaderTextUnit>();
+                    chapters[chapterKey] = chapterUnits;
+                }
+
+                chapterUnits.Add(unit);
+            }
+
+            foreach (var chapterUnits in chapters.Values)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (!AdvancedSearchTextContains(chapterUnits.Select(unit => unit.Text), query.TermA, query.MatchMode, cancellationToken) ||
+                    !AdvancedSearchTextContains(chapterUnits.Select(unit => unit.Text), query.TermB, query.MatchMode, cancellationToken))
+                {
+                    continue;
+                }
+
+                foreach (var unit in chapterUnits)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    if (AdvancedSearchTextContains(unit.Text, query.TermA, query.MatchMode) ||
+                        AdvancedSearchTextContains(unit.Text, query.TermB, query.MatchMode))
+                    {
+                        yield return unit;
+                    }
+                }
+            }
+
+            yield break;
         }
 
-        return units.Where(unit => AdvancedSearchUnitMatches(unit.Text, query));
+        foreach (var unit in units)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (AdvancedSearchUnitMatches(unit.Text, query))
+            {
+                yield return unit;
+            }
+        }
     }
 
     private static bool MatchesAdvancedSearchScope(InstalledSefariaBook book, AdvancedSearchQuery query)
@@ -1333,19 +1608,111 @@ public partial class MainWindow
             AdvancedSearchScopeKind.Work =>
                 string.Equals(book.Title, scope.Key, StringComparison.OrdinalIgnoreCase),
             AdvancedSearchScopeKind.Category =>
-                book.Categories.Any(category =>
-                    string.Equals(category, scope.Key, StringComparison.OrdinalIgnoreCase) ||
-                    (string.Equals(scope.Key, "Halakhah", StringComparison.OrdinalIgnoreCase) &&
-                     string.Equals(category, "Halacha", StringComparison.OrdinalIgnoreCase))),
+                MatchesAdvancedSearchCategoryScope(book, scope.Key),
             _ => true
         });
     }
 
-    private InstalledSefariaBook? SelectAdvancedSearchBookForTitle(string title, List<InstalledSefariaBook> scopedBooks)
+    private static bool MatchesAdvancedSearchCategoryScope(InstalledSefariaBook book, string scopeKey)
     {
-        var versions = _sefariaLibrary.GetInstalledVersionsForTitle(title)
-            .Where(version => scopedBooks.Any(scoped => string.Equals(scoped.Key, version.Key, StringComparison.Ordinal)))
+        var scopePath = SplitAdvancedSearchScopePath(scopeKey);
+        if (scopePath.Count > 1)
+        {
+            if (IsMishnahSederScope(scopePath))
+            {
+                return IsBaseMishnahTractateInSeder(book, scopePath[^1]);
+            }
+
+            if (IsTalmudSederScope(scopePath))
+            {
+                return IsBaseTalmudTractateInSeder(book, scopePath[^1]);
+            }
+
+            return BookCategoryPathStartsWith(book, scopePath);
+        }
+
+        if (IsSederCategoryName(scopeKey))
+        {
+            return IsBaseMishnahTractateInSeder(book, scopeKey) ||
+                IsBaseTalmudTractateInSeder(book, scopeKey);
+        }
+
+        return book.Categories.Any(category =>
+            string.Equals(category, scopeKey, StringComparison.OrdinalIgnoreCase) ||
+            (string.Equals(scopeKey, "Halakhah", StringComparison.OrdinalIgnoreCase) &&
+             string.Equals(category, "Halacha", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private static List<string> SplitAdvancedSearchScopePath(string scopeKey)
+    {
+        return scopeKey
+            .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .ToList();
+    }
+
+    private static bool IsSederCategoryName(string scopeKey)
+    {
+        return scopeKey.StartsWith("Seder ", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsMishnahSederScope(IReadOnlyList<string> scopePath)
+    {
+        return scopePath.Count >= 2 &&
+            string.Equals(scopePath[0], "Mishnah", StringComparison.OrdinalIgnoreCase) &&
+            IsSederCategoryName(scopePath[^1]);
+    }
+
+    private static bool IsTalmudSederScope(IReadOnlyList<string> scopePath)
+    {
+        return scopePath.Count >= 2 &&
+            string.Equals(scopePath[0], "Talmud", StringComparison.OrdinalIgnoreCase) &&
+            IsSederCategoryName(scopePath[^1]);
+    }
+
+    private static bool BookCategoryPathStartsWith(InstalledSefariaBook book, IReadOnlyList<string> scopePath)
+    {
+        if (book.Categories.Count < scopePath.Count)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < scopePath.Count; i++)
+        {
+            if (!string.Equals(book.Categories[i], scopePath[i], StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool IsBaseMishnahTractateInSeder(InstalledSefariaBook book, string seder)
+    {
+        return book.Categories.Count >= 2 &&
+            string.Equals(book.Categories[0], "Mishnah", StringComparison.OrdinalIgnoreCase) &&
+            book.Categories.Any(category => string.Equals(category, seder, StringComparison.OrdinalIgnoreCase)) &&
+            !book.Title.Contains(" on ", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsBaseTalmudTractateInSeder(InstalledSefariaBook book, string seder)
+    {
+        return book.Categories.Count >= 2 &&
+            string.Equals(book.Categories[0], "Talmud", StringComparison.OrdinalIgnoreCase) &&
+            book.Categories.Any(category => string.Equals(category, seder, StringComparison.OrdinalIgnoreCase)) &&
+            !book.Title.Contains(" on ", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private InstalledSefariaBook? SelectAdvancedSearchBookForTitle(
+        string title,
+        List<InstalledSefariaBook> scopedBooks,
+        IReadOnlyDictionary<string, List<InstalledSefariaBook>> versionsByTitle)
+    {
+        var versions = versionsByTitle.TryGetValue(title, out var titleVersions)
+            ? titleVersions
+                .Where(version => scopedBooks.Any(scoped => string.Equals(scoped.Key, version.Key, StringComparison.Ordinal)))
+                .ToList()
+            : new List<InstalledSefariaBook>();
         if (versions.Count == 0)
         {
             versions = scopedBooks
@@ -1417,7 +1784,26 @@ public partial class MainWindow
 
     private static bool AdvancedSearchTextContains(IEnumerable<string> texts, string term, string matchMode)
     {
-        return texts.Any(text => AdvancedSearchTextContains(text, term, matchMode));
+        return AdvancedSearchTextContains(texts, term, matchMode, CancellationToken.None);
+    }
+
+    private static bool AdvancedSearchTextContains(
+        IEnumerable<string> texts,
+        string term,
+        string matchMode,
+        CancellationToken cancellationToken)
+    {
+        foreach (var text in texts)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (AdvancedSearchTextContains(text, term, matchMode))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool AdvancedSearchTextContains(string text, string term, string matchMode)
@@ -1662,38 +2048,6 @@ public partial class MainWindow
         SaveLayoutState();
     }
 
-    private void RenderAdvancedSearchResults(StackPanel panel, IReadOnlyList<AdvancedSearchResult> results, bool hasSearchRun)
-    {
-        panel.Children.Clear();
-
-        if (!hasSearchRun)
-        {
-            panel.Children.Add(new TextBlock
-            {
-                Text = "Run a search to see matching installed texts here.",
-                Margin = new Thickness(16),
-                Foreground = new SolidColorBrush(Color.Parse("#667085"))
-            });
-            return;
-        }
-
-        if (results.Count == 0)
-        {
-            panel.Children.Add(new TextBlock
-            {
-                Text = "No results found. Try widening the scope or loosening the match mode.",
-                Margin = new Thickness(16),
-                Foreground = new SolidColorBrush(Color.Parse("#667085"))
-            });
-            return;
-        }
-
-        foreach (var result in results)
-        {
-            panel.Children.Add(CreateAdvancedSearchResultRow(result));
-        }
-    }
-
     private static void UpdateAdvancedSearchResultSummary(
         TextBlock summary,
         int count,
@@ -1715,7 +2069,9 @@ public partial class MainWindow
 
         if (elapsed is null)
         {
-            summary.Text = "Searching...";
+            summary.Text = count > 0
+                ? $"Searching... {count.ToString("N0", CultureInfo.InvariantCulture)} results"
+                : "Searching...";
             return;
         }
 

@@ -41,6 +41,7 @@ public partial class MainWindow : Window
     private const string LibraryManagerTabTitle = "Library Manager";
     private const string SettingsTabTitle = "Settings";
     private const string AdvancedSearchTabTitle = "Advanced Search";
+    private const string DictionaryTabTitle = "Dictionary";
     private const string AllCommentariesSelectionKey = "__all_commentaries__";
     private static readonly TimeSpan StartupContentLoadedTimeout = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan StartupLayoutUpdatedTimeout = TimeSpan.FromMilliseconds(250);
@@ -61,6 +62,10 @@ public partial class MainWindow : Window
     private TextBlock? _dictionaryToolsReference;
     private TextBlock? _dictionaryToolsPrimaryGloss;
     private TextBlock? _dictionaryToolsStatus;
+    private TextBox? _dictionaryLookupBox;
+    private TextBlock? _dictionaryLookupReference;
+    private TextBlock? _dictionaryLookupStatus;
+    private StackPanel? _dictionaryLookupResultsPanel;
     private bool _isDictionaryToolsExpanded = true;
     private TextBlock? _rightPanelTitle;
     private StackPanel? _rightPanelBody;
@@ -94,6 +99,7 @@ public partial class MainWindow : Window
     private Button? _libraryCategoryHebrewActionButton;
     private Button? _libraryCategoryTranslationActionButton;
     private Button? _libraryCancelButton;
+    private Button? _libraryDownloadAllButton;
     private TextBox? _libraryManagerSearchBox;
     private Border? _librarySearchSuggestionsContainer;
     private ListBox? _librarySearchSuggestions;
@@ -116,6 +122,7 @@ public partial class MainWindow : Window
     private SefariaBookNode? _selectedSefariaBook;
     private SefariaBookNode? _libraryVersionBoxesBook;
     private SefariaCategoryNode? _selectedSefariaCategory;
+    private Task? _libraryLoadTask;
     private int _librarySelectionVersion;
     private CancellationTokenSource? _sefariaDownloadCts;
     private CancellationTokenSource? _categoryInstallProgressCts;
@@ -260,6 +267,8 @@ public partial class MainWindow : Window
             StartupCompleted?.Invoke(this, EventArgs.Empty);
         }
 
+        _ = ReconcileInstalledBooksAfterStartupAsync();
+
         // Prompt for a Data folder only after startup has completed, so the (topmost) splash
         // window has been dismissed and the modal dialog is actually reachable. The Background
         // priority queues this after the splash-close post raised by StartupCompleted.
@@ -307,7 +316,7 @@ public partial class MainWindow : Window
         UpdateLibraryDetails();
         RefreshOpenReaderTabs();
         UpdateReaderTools();
-        _ = LoadSefariaLibraryAsync();
+        _libraryLoadTask = LoadSefariaLibraryAsync();
     }
 
     private async Task WaitForSelectedTabContentReadyAsync()

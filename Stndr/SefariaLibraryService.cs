@@ -31,6 +31,7 @@ public sealed partial class SefariaLibraryService
     private static readonly SemaphoreSlim LinksCacheGate = new(1, 1);
     private readonly object _installedBooksCacheGate = new();
     private readonly SemaphoreSlim _booksManifestGate = new(1, 1);
+    private InstalledBooksDatabase? _installedBooksDatabase;
     private List<InstalledSefariaBook>? _installedBooksCache;
     private List<InstalledSefariaBook>? _getInstalledBooksResultCache;
     private DateTime _installedBooksManifestLastWriteUtc;
@@ -101,6 +102,7 @@ public sealed partial class SefariaLibraryService
         _booksManifestCache = null;
         _workShortDescriptionsCache = null;
         InvalidateInstalledBooksCaches();
+        _installedBooksDatabase = null;
 
         if (string.IsNullOrWhiteSpace(storageRootFolder))
         {
@@ -127,6 +129,7 @@ public sealed partial class SefariaLibraryService
         IndexFilePath = Path.Combine(SourcesFolder, IndexFileName);
         BooksManifestFilePath = Path.Combine(SourcesFolder, BooksManifestFileName);
         InstalledBooksFilePath = Path.Combine(DatabaseFolder, InstalledBooksFileName);
+        _installedBooksDatabase = new InstalledBooksDatabase(InstalledBooksFilePath);
         VersionMetadataDbPath = Path.Combine(DatabaseFolder, VersionMetadataFileName);
         CommentariesDbPath = Path.Combine(DatabaseFolder, CommentariesDbFileName);
         LinksDbPath = Path.Combine(DatabaseFolder, LinksDbFileName);

@@ -43,7 +43,8 @@ public partial class MainWindow
         InstalledSefariaBook book,
         SavedTabState? savedState,
         bool selectAfterOpen = true,
-        bool renderImmediately = true)
+        bool renderImmediately = true,
+        string? initialReferenceWithinWork = null)
     {
         if (_tabs is null || _centerTabs is null)
         {
@@ -59,6 +60,11 @@ public partial class MainWindow
         var existing = _openReaderTabs.FirstOrDefault(pair => string.Equals(pair.Value.WorkTitle, book.Title, StringComparison.Ordinal));
         if (existing.Key is not null)
         {
+            if (!string.IsNullOrWhiteSpace(initialReferenceWithinWork))
+            {
+                BeginReaderReferenceNavigation(existing.Value, initialReferenceWithinWork);
+            }
+
             if (SefariaLibraryService.IsHebrew(book))
             {
                 var selectedHebrewText = installedVersions.FirstOrDefault(version => string.Equals(version.Key, book.Key, StringComparison.Ordinal));
@@ -87,6 +93,11 @@ public partial class MainWindow
         }
 
         var state = CreateReaderTabState(book, installedVersions, savedState);
+        if (!string.IsNullOrWhiteSpace(initialReferenceWithinWork))
+        {
+            BeginReaderReferenceNavigation(state, initialReferenceWithinWork);
+        }
+
         Control tabContent;
         bool needsSchemaDownload = !_sefariaLibrary.HasSchema(book.Title);
 
@@ -1273,12 +1284,12 @@ public partial class MainWindow
         var existing = FindReaderTabByWorkTitle(preview.WorkTitle);
         if (existing.Key is not null)
         {
+            BeginReaderReferenceNavigation(existing.Value, preview.ReferenceWithinWork);
             if (_centerTabs is not null)
             {
                 _centerTabs.SelectedItem = existing.Key;
             }
 
-            ScrollReaderStateToReference(existing.Value, preview.ReferenceWithinWork);
             return;
         }
 
@@ -1288,12 +1299,7 @@ public partial class MainWindow
             return;
         }
 
-        OpenInstalledBook(targetBook);
-        var opened = FindReaderTabByWorkTitle(preview.WorkTitle);
-        if (opened.Key is not null)
-        {
-            ScrollReaderStateToReference(opened.Value, preview.ReferenceWithinWork);
-        }
+        OpenInstalledBook(targetBook, null, initialReferenceWithinWork: preview.ReferenceWithinWork);
     }
 
     private void PopulateReaderTabWithInstalledLinkSource(
@@ -1309,12 +1315,12 @@ public partial class MainWindow
         }
 
         var readerState = CreateReaderTabState(targetBook, fullVersions, null);
+        BeginReaderReferenceNavigation(readerState, preview.ReferenceWithinWork);
         var readerContent = InitializeReaderTabContent(readerState);
         ReplaceTabContent(tab, readerContent);
         _openReaderTabs[tab] = readerState;
         tab.Tag = readerState.WorkTitle;
         RenderReaderContent(readerState);
-        ScrollReaderStateToReference(readerState, preview.ReferenceWithinWork);
         if (_centerTabs is not null)
         {
             _centerTabs.SelectedItem = tab;
@@ -1347,10 +1353,23 @@ public partial class MainWindow
             return;
         }
 
-        state.PendingExactReferenceWithinWork = NormalizeReaderUnitReference(referenceWithinWork);
+        BeginReaderReferenceNavigation(state, referenceWithinWork);
         Dispatcher.UIThread.Post(
             () => ScrollReaderToExactReference(state, referenceWithinWork),
             DispatcherPriority.Background);
+    }
+
+    private static void BeginReaderReferenceNavigation(ReaderTabState state, string referenceWithinWork)
+    {
+        var normalizedReference = NormalizeReaderUnitReference(referenceWithinWork);
+        if (string.IsNullOrWhiteSpace(normalizedReference))
+        {
+            return;
+        }
+
+        state.ReaderScrollRestoreVersion++;
+        state.PendingExactReferenceWithinWork = normalizedReference;
+        state.IsApplyingWebScrollRestore = true;
     }
 
     private void ScrollReaderToExactReference(ReaderTabState state, string referenceWithinWork)
@@ -1366,8 +1385,11 @@ public partial class MainWindow
         var row = state.ReaderRows
             .Where(candidate => !candidate.IsChapterHeading)
             .FirstOrDefault(candidate =>
-                string.Equals(candidate.Primary?.Reference, normalizedReference, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(candidate.Translation?.Reference, normalizedReference, StringComparison.OrdinalIgnoreCase));
+                IsReaderReferenceMatch(candidate.Primary?.Reference, normalizedReference) ||
+                IsReaderReferenceMatch(candidate.Translation?.Reference, normalizedReference));
+        row ??= state.ReaderRows
+            .FirstOrDefault(candidate =>
+                string.Equals(candidate.ChapterKey, normalizedReference, StringComparison.OrdinalIgnoreCase));
         if (row is null)
         {
             return;
@@ -1376,6 +1398,36 @@ public partial class MainWindow
         ScrollReaderRowToTop(state, row);
         state.SelectedReaderRow = row;
         UpdateReaderChapterHeader(state, row);
+    }
+
+    private async Task ClearPendingReaderReferenceAfterConfirmationAsync(
+        ReaderTabState state,
+        string pendingReference,
+        int restoreVersion)
+    {
+        // Leave the exact target in place long enough to outlast the tab and WebView
+        // restoration passes that can occur while the new document settles.
+        await Task.Delay(1800);
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (state.ReaderScrollRestoreVersion == restoreVersion &&
+                string.Equals(state.PendingExactReferenceWithinWork, pendingReference, StringComparison.Ordinal))
+            {
+                state.PendingExactReferenceWithinWork = string.Empty;
+                state.IsApplyingWebScrollRestore = false;
+            }
+        });
+    }
+
+    private static bool IsReaderReferenceMatch(string? rowReference, string normalizedReference)
+    {
+        if (string.IsNullOrWhiteSpace(rowReference) || string.IsNullOrWhiteSpace(normalizedReference))
+        {
+            return false;
+        }
+
+        var normalizedRowReference = NormalizeReaderUnitReference(rowReference);
+        return string.Equals(normalizedRowReference, normalizedReference, StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task LoadCommentariesForSelectionAsync(

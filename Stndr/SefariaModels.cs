@@ -246,6 +246,8 @@ public sealed class InstalledSefariaBook
     public string LanguageCode { get; set; } = "en";
     public string VersionTitle { get; set; } = string.Empty;
     public string FilePath { get; set; } = string.Empty;
+    public long FileLength { get; set; }
+    public DateTime FileLastWriteTimeUtc { get; set; }
     public double LastScrollOffset { get; set; }
 
     [JsonIgnore]
@@ -264,6 +266,7 @@ public sealed class InstalledSefariaCategory
 {
     public string Title { get; set; } = string.Empty;
     public string? HebrewTitle { get; set; }
+    public string CategoryPath { get; set; } = string.Empty;
     public bool IsBookTitle { get; set; }
     public float Order { get; set; }
     public ObservableCollection<object> Children { get; } = new();

@@ -9,6 +9,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input.Platform;
 using Avalonia.Media;
 using Avalonia.Threading;
 
@@ -103,6 +104,13 @@ public partial class MainWindow
                     }
                     break;
 
+                case "referenceScrolled":
+                    var scrolledReference = root.TryGetProperty("ref", out var scrolledRefElement)
+                        ? scrolledRefElement.GetString()
+                        : string.Empty;
+                    ConfirmReaderReferenceScroll(state, scrolledReference);
+                    break;
+
                 case "dictionaryClicked":
                     var dictionaryReference = root.TryGetProperty("ref", out var dictionaryRefElement)
                         ? dictionaryRefElement.GetString()
@@ -130,11 +138,31 @@ public partial class MainWindow
                     SelectReaderRowFromWebReference(state, dictionaryReference);
                     ShowDictionaryEntry(dictionaryWord, dictionaryReference, dictionaryAnchor);
                     break;
+
+                case "copyClicked":
+                    var copyText = root.TryGetProperty("text", out var copyTextElement)
+                        ? copyTextElement.GetString()
+                        : string.Empty;
+                    _ = CopyReaderWebSelectionAsync(copyText);
+                    break;
             }
         }
         catch (JsonException)
         {
             // Ignore malformed browser messages; the WebView is a rendering surface, not trusted app state.
+        }
+    }
+
+    private async Task CopyReaderWebSelectionAsync(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return;
+        }
+
+        if (TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)
+        {
+            await clipboard.SetTextAsync(text);
         }
     }
 
@@ -155,6 +183,35 @@ public partial class MainWindow
         }
 
         OnReaderParagraphSelectionChanged(state, row);
+    }
+
+    private void ConfirmReaderReferenceScroll(ReaderTabState state, string? reference)
+    {
+        var pendingReference = state.PendingExactReferenceWithinWork;
+        if (string.IsNullOrWhiteSpace(pendingReference) || string.IsNullOrWhiteSpace(reference))
+        {
+            return;
+        }
+
+        var row = state.ReaderRows
+            .Where(candidate => !candidate.IsChapterHeading)
+            .FirstOrDefault(candidate => string.Equals(
+                GetReaderRowWebReference(state, candidate),
+                reference,
+                StringComparison.Ordinal));
+        var isTargetRow = row is not null &&
+            (IsReaderReferenceMatch(row.Primary?.Reference, pendingReference) ||
+             IsReaderReferenceMatch(row.Translation?.Reference, pendingReference) ||
+             string.Equals(row.ChapterKey, pendingReference, StringComparison.OrdinalIgnoreCase));
+        if (!isTargetRow)
+        {
+            return;
+        }
+
+        _ = ClearPendingReaderReferenceAfterConfirmationAsync(
+            state,
+            pendingReference,
+            state.ReaderScrollRestoreVersion);
     }
 
     private string BuildReaderWebDocument(ReaderTabState state)
@@ -748,7 +805,7 @@ public partial class MainWindow
                     hideMenu();
                     switch (action) {
                         case 'copy':
-                            document.execCommand('copy');
+                            send({ type: 'copyClicked', text: contextState.selectedText });
                             break;
                         case 'print':
                             window.print();
@@ -863,6 +920,12 @@ public partial class MainWindow
 
                     selectRow(row);
                     row.scrollIntoView({ block: 'start', inline: 'nearest' });
+                    window.requestAnimationFrame(() => {
+                        window.requestAnimationFrame(() => send({
+                            type: 'referenceScrolled',
+                            ref: reference
+                        }));
+                    });
                 };
 
                 window.stndrScrollToChapter = (chapter) => {
@@ -946,51 +1009,62 @@ public partial class MainWindow
             return;
         }
 
+        var restoreVersion = state.ReaderScrollRestoreVersion;
         state.IsApplyingWebScrollRestore = true;
         Dispatcher.UIThread.Post(() =>
         {
-            if (IsActiveReaderState(state))
+            if (IsActiveReaderState(state) && state.ReaderScrollRestoreVersion == restoreVersion)
             {
-                RestoreReaderWebScroll(state);
+                RestoreReaderWebScroll(state, restoreVersion);
             }
-        }, DispatcherPriority.Loaded);
+        }, DispatcherPriority.Background);
     }
 
     private void RestoreReaderWebScroll(ReaderTabState state)
     {
-        RestoreReaderWebScroll(state, 0);
-        _ = RestoreReaderWebScrollAfterDelayAsync(state, 150);
-        _ = RestoreReaderWebScrollAfterDelayAsync(state, 450);
-        _ = RestoreReaderWebScrollAfterDelayAsync(state, 900);
-        _ = RestoreReaderWebScrollAfterDelayAsync(state, 1400);
+        RestoreReaderWebScroll(state, state.ReaderScrollRestoreVersion);
     }
 
-    private async Task RestoreReaderWebScrollAfterDelayAsync(ReaderTabState state, int delayMilliseconds)
+    private void RestoreReaderWebScroll(ReaderTabState state, int restoreVersion)
+    {
+        RestoreReaderWebScroll(state, 0, restoreVersion);
+        _ = RestoreReaderWebScrollAfterDelayAsync(state, 150, restoreVersion);
+        _ = RestoreReaderWebScrollAfterDelayAsync(state, 450, restoreVersion);
+        _ = RestoreReaderWebScrollAfterDelayAsync(state, 900, restoreVersion);
+        _ = RestoreReaderWebScrollAfterDelayAsync(state, 1400, restoreVersion);
+    }
+
+    private async Task RestoreReaderWebScrollAfterDelayAsync(
+        ReaderTabState state,
+        int delayMilliseconds,
+        int restoreVersion)
     {
         await Task.Delay(delayMilliseconds);
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (IsActiveReaderState(state))
+            if (IsActiveReaderState(state) && state.ReaderScrollRestoreVersion == restoreVersion)
             {
-                RestoreReaderWebScroll(state, delayMilliseconds);
+                RestoreReaderWebScroll(state, delayMilliseconds, restoreVersion);
             }
         });
     }
 
-    private void RestoreReaderWebScroll(ReaderTabState state, int delayMilliseconds)
+    private void RestoreReaderWebScroll(
+        ReaderTabState state,
+        int delayMilliseconds,
+        int restoreVersion)
     {
+        if (state.ReaderScrollRestoreVersion != restoreVersion)
+        {
+            return;
+        }
+
         var targetReference = !string.IsNullOrWhiteSpace(state.PendingExactReferenceWithinWork)
             ? state.PendingExactReferenceWithinWork
             : state.SearchHighlightReferenceWithinWork;
         if (!string.IsNullOrWhiteSpace(targetReference))
         {
             ScrollReaderToExactReference(state, targetReference);
-            if (delayMilliseconds >= 1400)
-            {
-                state.PendingExactReferenceWithinWork = string.Empty;
-                Dispatcher.UIThread.Post(() => state.IsApplyingWebScrollRestore = false, DispatcherPriority.Background);
-            }
-
             return;
         }
 
