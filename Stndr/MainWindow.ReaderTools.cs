@@ -110,6 +110,7 @@ public partial class MainWindow
             FontWeight = FontWeight.SemiBold,
             TextWrapping = TextWrapping.Wrap
         });
+        _rightPanelBody.Children.Add(CreateReaderToolsExpandCollapseButton(readerState));
 
         _rightPanelBody.Children.Add(CreateReaderToolsGroup(
             CreateNavigationGroupHeader(readerState),
@@ -3779,6 +3780,96 @@ public partial class MainWindow
             var nextOffset = Math.Max(0, readerList.Scroll.Offset.Y + point.Y);
             readerList.Scroll.Offset = new Vector(readerList.Scroll.Offset.X, nextOffset);
         });
+    }
+
+    private Control CreateReaderToolsExpandCollapseButton(ReaderTabState readerState)
+    {
+        var anyExpanded = AreAnyReaderToolsSectionsExpanded(readerState);
+        var button = new Button
+        {
+            Content = anyExpanded ? "Collapse all" : "Expand all",
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Padding = new Thickness(8, 2),
+            MinHeight = 26,
+            Margin = new Thickness(0, 2, 0, 2)
+        };
+        ToolTip.SetTip(button, "Expand or collapse Reader Tools sections");
+        button.Click += (_, _) =>
+        {
+            SetAllReaderToolsSectionsExpanded(readerState, expandAll: !anyExpanded);
+            UpdateReaderTools();
+            SaveLayoutState();
+        };
+        return button;
+    }
+
+    private bool AreAnyReaderToolsSectionsExpanded(ReaderTabState readerState)
+    {
+        if (readerState.IsNavigationExpanded ||
+            readerState.IsCommentariesExpanded ||
+            readerState.IsLinksExpanded ||
+            readerState.IsTextsExpanded)
+        {
+            return true;
+        }
+
+        if (HasTorahSedrot(readerState.Primary) && readerState.IsSedrotExpanded)
+        {
+            return true;
+        }
+
+        if (_settings.ShowReaderLicenses && readerState.IsLicensesExpanded)
+        {
+            return true;
+        }
+
+        if (_isDictionaryDocked && _isDictionaryToolsExpanded)
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private void SetAllReaderToolsSectionsExpanded(ReaderTabState readerState, bool expandAll)
+    {
+        readerState.IsNavigationExpanded = expandAll;
+        if (HasTorahSedrot(readerState.Primary))
+        {
+            readerState.IsSedrotExpanded = expandAll;
+        }
+
+        readerState.IsCommentariesExpanded = expandAll;
+        readerState.IsTextsExpanded = expandAll;
+        if (_settings.ShowReaderLicenses)
+        {
+            readerState.IsLicensesExpanded = expandAll;
+        }
+
+        if (_isDictionaryDocked)
+        {
+            _isDictionaryToolsExpanded = expandAll;
+        }
+
+        var linksWereExpanded = readerState.IsLinksExpanded;
+        readerState.IsLinksExpanded = expandAll;
+        SaveLinksPreferences(readerState);
+
+        if (!expandAll)
+        {
+            if (linksWereExpanded)
+            {
+                readerState.LinksLoadCts?.Cancel();
+                readerState.LinksLoadCts = null;
+            }
+
+            return;
+        }
+
+        if (!linksWereExpanded)
+        {
+            EnsureLinksLoadedForCurrentSelection(readerState);
+        }
     }
 
     private static Expander CreateReaderToolsGroup(

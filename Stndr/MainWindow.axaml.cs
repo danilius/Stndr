@@ -69,6 +69,7 @@ public partial class MainWindow : Window
     private IReadOnlyList<SefariaDictionaryEntry> _dictionaryDisplayedEntries = Array.Empty<SefariaDictionaryEntry>();
     private StackPanel? _dictionaryCataloguePanel;
     private TextBlock? _dictionaryCatalogueStatus;
+    private Expander? _dictionaryCatalogueExpander;
     private ComboBox? _dictionarySearchScopeBox;
     private long? _dictionarySelectedLexiconId;
     private string _dictionaryRequestedLexiconName = string.Empty;
@@ -251,6 +252,15 @@ public partial class MainWindow : Window
         this.Closing += (_, _) => SaveLayoutState();
         this.Closed += (_, _) => SaveLayoutState();
         this.SizeChanged += (_, _) => ConstrainDictionaryPopupPosition();
+        AddHandler(KeyDownEvent, OnWindowKeyDown, RoutingStrategies.Tunnel | RoutingStrategies.Bubble);
+    }
+
+    private void OnWindowKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (TryHandleCenterTabShortcut(e))
+        {
+            e.Handled = true;
+        }
     }
 
     private async Task CompleteStartupAsync()

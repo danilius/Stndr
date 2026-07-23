@@ -137,17 +137,19 @@ public partial class MainWindow
             PlaceholderText = "Enter a Hebrew or Aramaic word...",
             MinWidth = 280,
             VerticalAlignment = VerticalAlignment.Center,
+            AcceptsReturn = false,
             Text = _dictionaryCurrentWord
         };
+        // On Windows Avalonia maps the physical Enter key to Key.Return, not Key.Enter.
         _dictionaryLookupBox.KeyDown += async (_, e) =>
         {
-            if (e.Key != Key.Enter)
+            if (e.Key is not (Key.Enter or Key.Return))
             {
                 return;
             }
 
             e.Handled = true;
-            await RunOfflineDictionarySearchAsync(_dictionaryLookupBox.Text);
+            await SubmitDictionarySearchAsync();
         };
 
         var searchButton = new Button
@@ -156,7 +158,7 @@ public partial class MainWindow
             MinWidth = 90
         };
         ToolTip.SetTip(searchButton, "Search headwords, word forms, transliterations, identifiers and definitions");
-        searchButton.Click += async (_, _) => await RunOfflineDictionarySearchAsync(_dictionaryLookupBox.Text);
+        searchButton.Click += async (_, _) => await SubmitDictionarySearchAsync();
 
         _dictionarySearchScopeBox = new ComboBox
         {
@@ -169,7 +171,7 @@ public partial class MainWindow
             if (_dictionarySearchScopeBox.SelectedItem is not DictionarySearchScopeOption option) return;
             _dictionarySelectedLexiconId = option.LexiconId;
             _dictionaryStatusText = $"Search scope: {option.Label}.";
-            ApplyDictionaryTabHeaderState();
+            ApplyDictionaryTabHeaderState(syncLookupBox: false);
         };
 
         _dictionaryLookupReference = new TextBlock
@@ -267,7 +269,7 @@ public partial class MainWindow
             TextWrapping = TextWrapping.Wrap
         };
         _dictionaryCataloguePanel = new StackPanel { Spacing = 8, Children = { _dictionaryCatalogueStatus } };
-        var expander = new Expander
+        _dictionaryCatalogueExpander = new Expander
         {
             Header = "Navigation — browse installed dictionaries",
             IsExpanded = true,
@@ -282,7 +284,7 @@ public partial class MainWindow
             }
         };
         _ = LoadDictionaryCatalogueAsync();
-        return expander;
+        return _dictionaryCatalogueExpander;
     }
 
     private async Task LoadDictionaryCatalogueAsync()
@@ -401,32 +403,73 @@ public partial class MainWindow
         }
     }
 
+    private Task SubmitDictionarySearchAsync() =>
+        RunOfflineDictionarySearchAsync(_dictionaryLookupBox?.Text);
+
     private async Task RunOfflineDictionarySearchAsync(string? query)
     {
-        var value = query?.Trim() ?? "";
+        // Prefer the live textbox so a typed query wins over a previous right-click lookup word.
+        var value = (_dictionaryLookupBox?.Text ?? query)?.Trim() ?? "";
         if (value.Length == 0)
         {
             _dictionaryStatusText = "Enter a headword, word form, identifier, transliteration, or definition term.";
-            ApplyDictionaryTabHeaderState();
+            ApplyDictionaryTabHeaderState(syncLookupBox: false);
             return;
         }
+
+        // Cancel any in-flight reader/right-click lookup so it cannot overwrite this search.
+        CancelDictionaryLookupInFlight();
+        CollapseDictionaryCatalogue();
+
+        _dictionaryCurrentWord = value;
+        _dictionaryCurrentReference = string.Empty;
+        _dictionaryPrimaryGloss = string.Empty;
         _dictionaryStatusText = $"Searching installed dictionaries for {value}...";
         ClearDictionaryTabResults();
         ApplyDictionaryTabHeaderState();
+        RefreshDictionarySurface();
         try
         {
             var entries = await _sefariaLibrary.SearchOfflineDictionaryAsync(value, _dictionarySelectedLexiconId, 100);
+            // Ignore stale completions if the user started another search/lookup.
+            if (!string.Equals(_dictionaryCurrentWord, value, StringComparison.Ordinal))
+            {
+                return;
+            }
+
             _dictionaryStatusText = entries.Count == 0
                 ? "No installed dictionary entries matched this search."
                 : $"{entries.Count:N0} matching entr{(entries.Count == 1 ? "y" : "ies")} in {(_dictionarySelectedLexiconId is null ? "all dictionaries" : "the selected dictionary")}.";
             ApplyDictionaryTabHeaderState();
             RenderDictionaryTabResults(entries);
+            RefreshDictionarySurface();
         }
         catch (Exception ex)
         {
+            if (!string.Equals(_dictionaryCurrentWord, value, StringComparison.Ordinal))
+            {
+                return;
+            }
+
             _dictionaryStatusText = $"Dictionary search failed: {ex.Message}";
             ApplyDictionaryTabHeaderState();
+            RefreshDictionarySurface();
         }
+    }
+
+    private void CollapseDictionaryCatalogue()
+    {
+        if (_dictionaryCatalogueExpander is not null)
+        {
+            _dictionaryCatalogueExpander.IsExpanded = false;
+        }
+    }
+
+    private void CancelDictionaryLookupInFlight()
+    {
+        _dictionaryLookupCts.Cancel();
+        _dictionaryLookupCts.Dispose();
+        _dictionaryLookupCts = new CancellationTokenSource();
     }
 
     private bool TryOpenDictionaryWork(string workTitle)
@@ -644,9 +687,12 @@ public partial class MainWindow
         SaveLayoutState();
     }
 
-    private void ApplyDictionaryTabHeaderState()
+    private void ApplyDictionaryTabHeaderState(bool syncLookupBox = true)
     {
-        if (_dictionaryLookupBox is not null)
+        // Only push the canonical word into the textbox when the caller intentionally
+        // updated _dictionaryCurrentWord. Status-only updates pass syncLookupBox: false
+        // so typing a new term is not overwritten by a previous right-click lookup.
+        if (syncLookupBox && _dictionaryLookupBox is not null)
         {
             _dictionaryLookupBox.Text = _dictionaryCurrentWord;
         }
@@ -668,7 +714,7 @@ public partial class MainWindow
         var lookupWord = NormalizeDictionaryLookupWord(word);
         var displayQuery = string.IsNullOrWhiteSpace(word) ? lookupWord : word.Trim();
         _dictionaryCurrentWord = NormalizeDictionaryWord(displayQuery, reference);
-        _dictionaryCurrentReference = reference?.Trim() ?? _dictionaryCurrentReference;
+        _dictionaryCurrentReference = reference?.Trim() ?? string.Empty;
         _dictionaryPrimaryGloss = string.Empty;
 
         if (string.IsNullOrWhiteSpace(lookupWord))
@@ -685,15 +731,15 @@ public partial class MainWindow
         ApplyDictionaryTabHeaderState();
         RefreshDictionarySurface();
 
-        _dictionaryLookupCts.Cancel();
-        _dictionaryLookupCts.Dispose();
-        _dictionaryLookupCts = new CancellationTokenSource();
+        CancelDictionaryLookupInFlight();
         var cts = _dictionaryLookupCts;
+        var lookupGeneration = _dictionaryCurrentWord;
 
         try
         {
             var entries = await LookupDictionaryEntriesWithFallbacksAsync(lookupWord, _dictionaryCurrentReference, cts.Token);
-            if (cts.IsCancellationRequested)
+            if (cts.IsCancellationRequested ||
+                !string.Equals(_dictionaryCurrentWord, lookupGeneration, StringComparison.Ordinal))
             {
                 return;
             }
@@ -720,6 +766,11 @@ public partial class MainWindow
         }
         catch (HttpRequestException)
         {
+            if (!string.Equals(_dictionaryCurrentWord, lookupGeneration, StringComparison.Ordinal))
+            {
+                return;
+            }
+
             _dictionaryPrimaryGloss = string.Empty;
             _dictionaryStatusText = "Dictionary lookup failed. Check your internet connection and try again.";
             ApplyDictionaryTabHeaderState();
@@ -727,6 +778,11 @@ public partial class MainWindow
         }
         catch (System.Text.Json.JsonException)
         {
+            if (!string.Equals(_dictionaryCurrentWord, lookupGeneration, StringComparison.Ordinal))
+            {
+                return;
+            }
+
             _dictionaryPrimaryGloss = string.Empty;
             _dictionaryStatusText = "Dictionary lookup failed due to an unexpected response.";
             ApplyDictionaryTabHeaderState();

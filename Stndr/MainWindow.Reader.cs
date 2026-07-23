@@ -1513,6 +1513,12 @@ public partial class MainWindow
 
     private void HandleReaderPageKeyDown(ReaderTabState state, KeyEventArgs e)
     {
+        // Ctrl+PageUp/PageDown switches center tabs; plain PageUp/PageDown moves chapters.
+        if (e.KeyModifiers != KeyModifiers.None)
+        {
+            return;
+        }
+
         var direction = e.Key switch
         {
             Key.PageDown => 1,

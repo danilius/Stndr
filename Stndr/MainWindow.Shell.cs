@@ -433,6 +433,62 @@ public partial class MainWindow
         _centerTabs.SelectedItem = tab;
     }
 
+    /// <summary>
+    /// Ctrl+PageDown / Ctrl+PageUp cycle open center tabs (same convention as browsers and many editors).
+    /// </summary>
+    private bool TryHandleCenterTabShortcut(KeyEventArgs e)
+    {
+        if (!e.KeyModifiers.HasFlag(KeyModifiers.Control) ||
+            e.KeyModifiers.HasFlag(KeyModifiers.Alt) ||
+            e.KeyModifiers.HasFlag(KeyModifiers.Shift))
+        {
+            return false;
+        }
+
+        var direction = e.Key switch
+        {
+            Key.PageDown => 1,
+            Key.PageUp => -1,
+            _ => 0
+        };
+        if (direction == 0)
+        {
+            return false;
+        }
+
+        return SelectAdjacentCenterTab(direction);
+    }
+
+    private bool SelectAdjacentCenterTab(int direction)
+    {
+        if (_tabs is null || _centerTabs is null || _tabs.Count < 2)
+        {
+            return false;
+        }
+
+        var currentIndex = _centerTabs.SelectedItem is TabItem selected
+            ? _tabs.IndexOf(selected)
+            : _centerTabs.SelectedIndex;
+        if (currentIndex < 0)
+        {
+            currentIndex = 0;
+        }
+
+        var nextIndex = (currentIndex + direction) % _tabs.Count;
+        if (nextIndex < 0)
+        {
+            nextIndex += _tabs.Count;
+        }
+
+        if (nextIndex == currentIndex)
+        {
+            return false;
+        }
+
+        _centerTabs.SelectedItem = _tabs[nextIndex];
+        return true;
+    }
+
     private void CloseTab(TabItem tab)
     {
         if (_tabs is null)

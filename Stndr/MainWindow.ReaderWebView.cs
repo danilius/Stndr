@@ -145,6 +145,17 @@ public partial class MainWindow
                         : string.Empty;
                     _ = CopyReaderWebSelectionAsync(copyText);
                     break;
+
+                case "switchTab":
+                    var switchDirection = root.TryGetProperty("direction", out var directionElement) &&
+                        directionElement.TryGetInt32(out var parsedDirection)
+                        ? parsedDirection
+                        : 0;
+                    if (switchDirection != 0)
+                    {
+                        SelectAdjacentCenterTab(switchDirection);
+                    }
+                    break;
             }
         }
         catch (JsonException)
@@ -835,6 +846,16 @@ public partial class MainWindow
                 document.addEventListener('keydown', (event) => {
                     if (event.key === 'Escape') {
                         hideMenu();
+                    }
+
+                    // Native WebView focus does not bubble keys to Avalonia; forward tab shortcuts.
+                    if (event.ctrlKey && !event.altKey && !event.shiftKey &&
+                        (event.key === 'PageDown' || event.key === 'PageUp')) {
+                        event.preventDefault();
+                        send({
+                            type: 'switchTab',
+                            direction: event.key === 'PageDown' ? 1 : -1
+                        });
                     }
                 });
 
