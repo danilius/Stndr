@@ -65,46 +65,81 @@ public sealed class SefariaOfflineLibraryInstaller
         var active = SefariaOfflineLibraryPaths.ActiveDatabase(dataFolder);
         var previous = SefariaOfflineLibraryPaths.PreviousDatabase(dataFolder);
 
-        var result = await _importer.ImportAsync(archivePath, staging, progress, cancellationToken);
-        progress?.Report(new(SefariaOfflineLibraryStage.Validating, "Checking the completed offline library"));
-        await ValidateAsync(staging, result, cancellationToken);
-
-        var archiveHash = await HashFileAsync(archivePath, cancellationToken);
-        var metadata = new SefariaOfflineLibraryInstallMetadata
+        try
         {
-            SchemaVersion = SefariaOfflineLibraryImporter.SchemaVersion,
-            InstalledAtUtc = DateTime.UtcNow,
-            SourceArchive = Path.GetFullPath(archivePath),
-            SourceArchiveBytes = new FileInfo(archivePath).Length,
-            SourceArchiveSha256 = Convert.ToHexString(archiveHash).ToLowerInvariant(),
-            SourceRemoteUrl = snapshot?.SourceUri.ToString() ?? string.Empty,
-            SourceRemoteETag = snapshot?.ETag ?? string.Empty,
-            SourceRemoteLastModifiedUtc = snapshot?.LastModifiedUtc,
-            SourceRemoteBytes = snapshot?.ContentLength ?? 0,
-            Works = result.Works,
-            Versions = result.Versions,
-            Links = result.Links,
-            LinkEndpoints = result.LinkEndpoints,
-            UniqueReferences = result.UniqueReferences,
-            Segments = result.Segments,
-            Lexicons = result.Lexicons,
-            LexiconEntries = result.LexiconEntries,
-            DictionaryWordForms = result.DictionaryWordForms,
-            DatabaseBytes = result.DatabaseBytes
-        };
+            var result = await _importer.ImportAsync(archivePath, staging, progress, cancellationToken);
+            progress?.Report(new(SefariaOfflineLibraryStage.Validating, "Checking the completed offline library"));
+            await ValidateAsync(staging, result, cancellationToken);
 
-        progress?.Report(new(SefariaOfflineLibraryStage.Installing, "Activating the new offline library"));
-        await ActivateDatabaseAsync(staging, active, previous, cancellationToken);
+            var archiveHash = await HashFileAsync(archivePath, cancellationToken);
+            var metadata = new SefariaOfflineLibraryInstallMetadata
+            {
+                SchemaVersion = SefariaOfflineLibraryImporter.SchemaVersion,
+                InstalledAtUtc = DateTime.UtcNow,
+                SourceArchive = Path.GetFullPath(archivePath),
+                SourceArchiveBytes = new FileInfo(archivePath).Length,
+                SourceArchiveSha256 = Convert.ToHexString(archiveHash).ToLowerInvariant(),
+                SourceRemoteUrl = snapshot?.SourceUri.ToString() ?? string.Empty,
+                SourceRemoteETag = snapshot?.ETag ?? string.Empty,
+                SourceRemoteLastModifiedUtc = snapshot?.LastModifiedUtc,
+                SourceRemoteBytes = snapshot?.ContentLength ?? new FileInfo(archivePath).Length,
+                Works = result.Works,
+                Versions = result.Versions,
+                Links = result.Links,
+                LinkEndpoints = result.LinkEndpoints,
+                UniqueReferences = result.UniqueReferences,
+                Segments = result.Segments,
+                Lexicons = result.Lexicons,
+                LexiconEntries = result.LexiconEntries,
+                DictionaryWordForms = result.DictionaryWordForms,
+                DatabaseBytes = result.DatabaseBytes
+            };
 
-        var metadataPath = SefariaOfflineLibraryPaths.InstallMetadata(dataFolder);
-        var temporaryMetadata = metadataPath + ".tmp";
-        await using (var output = File.Create(temporaryMetadata))
-            await JsonSerializer.SerializeAsync(output, metadata, new JsonSerializerOptions { WriteIndented = true }, cancellationToken);
-        File.Move(temporaryMetadata, metadataPath, true);
-        progress?.Report(new(SefariaOfflineLibraryStage.Complete,
-            $"Offline library installed: {result.Works:N0} books, {result.Versions:N0} versions, " +
-            $"{result.Links:N0} links and {result.LexiconEntries:N0} dictionary entries"));
-        return result;
+            // Activation is intentionally non-cancellable so a half-swapped library is never left behind.
+            progress?.Report(new(SefariaOfflineLibraryStage.Installing, "Activating the new offline library"));
+            await ActivateDatabaseAsync(staging, active, previous, CancellationToken.None);
+
+            var metadataPath = SefariaOfflineLibraryPaths.InstallMetadata(dataFolder);
+            var temporaryMetadata = metadataPath + ".tmp";
+            await using (var output = File.Create(temporaryMetadata))
+            {
+                await JsonSerializer.SerializeAsync(
+                    output,
+                    metadata,
+                    new JsonSerializerOptions { WriteIndented = true },
+                    CancellationToken.None);
+            }
+
+            File.Move(temporaryMetadata, metadataPath, true);
+            progress?.Report(new(SefariaOfflineLibraryStage.Complete,
+                $"Offline library installed: {result.Works:N0} books, {result.Versions:N0} versions, " +
+                $"{result.Links:N0} links and {result.LexiconEntries:N0} dictionary entries"));
+            return result;
+        }
+        catch (OperationCanceledException)
+        {
+            TryDeleteStaging(staging);
+            throw;
+        }
+        catch
+        {
+            TryDeleteStaging(staging);
+            throw;
+        }
+    }
+
+    private static void TryDeleteStaging(string staging)
+    {
+        try
+        {
+            SefariaOfflineLibraryImporter.DeleteDatabaseFiles(staging);
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
     }
 
     private static async Task ActivateDatabaseAsync(

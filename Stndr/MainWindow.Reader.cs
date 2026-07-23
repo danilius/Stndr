@@ -350,7 +350,7 @@ public partial class MainWindow
         out TextBlock chapterBlock,
         out TextBlock versionBlock)
     {
-        titleBlock = new TextBlock
+        titleBlock = new SelectableTextBlock
         {
             FontSize = 24,
             FontWeight = FontWeight.SemiBold,
@@ -365,7 +365,7 @@ public partial class MainWindow
             TextAlignment = TextAlignment.Center
         };
 
-        chapterBlock = new TextBlock
+        chapterBlock = new SelectableTextBlock
         {
             Foreground = new SolidColorBrush(Color.Parse("#344054")),
             FontSize = 15,

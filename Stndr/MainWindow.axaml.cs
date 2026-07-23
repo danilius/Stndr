@@ -66,6 +66,7 @@ public partial class MainWindow : Window
     private TextBlock? _dictionaryLookupReference;
     private TextBlock? _dictionaryLookupStatus;
     private StackPanel? _dictionaryLookupResultsPanel;
+    private IReadOnlyList<SefariaDictionaryEntry> _dictionaryDisplayedEntries = Array.Empty<SefariaDictionaryEntry>();
     private StackPanel? _dictionaryCataloguePanel;
     private TextBlock? _dictionaryCatalogueStatus;
     private ComboBox? _dictionarySearchScopeBox;

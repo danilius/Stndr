@@ -344,6 +344,11 @@ public sealed class AppSettings
     public bool OfflineLibrarySetupDeferred { get; set; }
     public bool ShowReaderLicenses { get; set; } = true;
     public bool CheckForLibraryUpdatesAutomatically { get; set; } = true;
+    /// <summary>Days to hide a dismissed library-update offer for the same remote dump.</summary>
+    public int LibraryUpdateSnoozeDays { get; set; } = 14;
+    public string LibraryUpdateSnoozedRemoteKey { get; set; } = string.Empty;
+    public DateTime? LibraryUpdateSnoozedUntilUtc { get; set; }
+    public bool LibraryUpdateLaterTipAcknowledged { get; set; }
 }
 
 public sealed class ReaderLinksPreferences

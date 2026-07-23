@@ -192,15 +192,37 @@
                 BorderBrush="#22000000"
                 Padding="8,6">
             <DockPanel LastChildFill="True">
-                <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" Spacing="8">
-                    <Button x:Name="LibraryUpdateBannerActionButton" Content="Review" MinWidth="96"
+                <StackPanel Orientation="Horizontal"
+                            DockPanel.Dock="Right"
+                            Spacing="8"
+                            VerticalAlignment="Center">
+                    <Button x:Name="LibraryUpdateBannerActionButton"
+                            Content="Update"
+                            MinWidth="96"
                             Click="LibraryUpdateBannerActionClicked" />
-                    <Button x:Name="LibraryUpdateBannerDismissButton" Content="Later" MinWidth="64"
+                    <Button x:Name="LibraryUpdateBannerDismissButton"
+                            Content="Later"
+                            MinWidth="64"
                             Click="LibraryUpdateBannerDismissClicked" />
+                    <Button x:Name="LibraryUpdateBannerCancelButton"
+                            Content="Cancel"
+                            MinWidth="80"
+                            IsVisible="False"
+                            Click="LibraryUpdateBannerCancelClicked" />
                 </StackPanel>
-                <TextBlock x:Name="LibraryUpdateBannerMessage"
-                           Text="A Sefaria library update is available."
-                           VerticalAlignment="Center" TextWrapping="Wrap" />
+                <StackPanel Spacing="4"
+                            VerticalAlignment="Center">
+                    <TextBlock x:Name="LibraryUpdateBannerMessage"
+                               Text="A Sefaria library update is available."
+                               VerticalAlignment="Center"
+                               TextWrapping="Wrap" />
+                    <ProgressBar x:Name="LibraryUpdateBannerProgress"
+                                 Minimum="0"
+                                 Maximum="1"
+                                 Height="6"
+                                 IsVisible="False"
+                                 IsIndeterminate="True" />
+                </StackPanel>
             </DockPanel>
         </Border>
 

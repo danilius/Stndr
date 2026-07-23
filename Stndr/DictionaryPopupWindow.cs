@@ -158,6 +158,14 @@ public sealed class DictionaryPopupWindow : Window
         _statusText.Text = status;
     }
 
+    public void ApplyFontSize(double fontSize)
+    {
+        _wordText.FontSize = fontSize;
+        _referenceText.FontSize = Math.Max(11, fontSize - 3);
+        _primaryGlossText.FontSize = fontSize;
+        _statusText.FontSize = fontSize;
+    }
+
     private void OnDragHandlePointerPressed(object? sender, PointerPressedEventArgs e)
     {
         if (!e.GetCurrentPoint(_dragHandle).Properties.IsLeftButtonPressed)

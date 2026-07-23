@@ -25,6 +25,16 @@ public sealed partial class SefariaLibraryService
     public bool HasOfflineLibrary => !string.IsNullOrWhiteSpace(OfflineLibraryDatabasePath) &&
         File.Exists(OfflineLibraryDatabasePath);
 
+    /// <summary>
+    /// Call after the active offline database file has been replaced. Releases pooled SQLite
+    /// handles and drops in-memory offline caches. Open reader content is left as-is.
+    /// </summary>
+    public void NotifyOfflineLibraryReplaced()
+    {
+        SqliteConnection.ClearAllPools();
+        InvalidateOfflineLibraryCaches();
+    }
+
     private void InvalidateOfflineLibraryCaches()
     {
         lock (_offlineCacheGate)

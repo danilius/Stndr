@@ -139,6 +139,7 @@ public partial class MainWindow
                                 _settings.EnglishReaderFontSize = size;
                                 _settingsService.Save(_settings);
                                 RefreshOpenReaderTabs();
+                                RefreshDictionaryPresentation();
                             }),
                         CreateFontSizeSettingRow(
                             "Hebrew commentary font size",
@@ -411,23 +412,56 @@ public partial class MainWindow
         var action = new Button
         {
             Content = _libraryUpdateService.CurrentState.Mode == SefariaLibraryUpdateMode.UpdateAvailable
-                ? "Update now..."
+                ? "Update now"
                 : "Check now",
             MinWidth = 120,
-            IsEnabled = _sefariaLibrary.HasOfflineLibrary
+            IsEnabled = _sefariaLibrary.HasOfflineLibrary && !_libraryUpdateService.IsBusy
         };
         action.Click += async (_, _) =>
         {
             action.IsEnabled = false;
-            if (_libraryUpdateService.CurrentState.Mode == SefariaLibraryUpdateMode.UpdateAvailable)
+            if (_libraryUpdateService.CurrentState.Mode == SefariaLibraryUpdateMode.UpdateAvailable ||
+                _libraryUpdateService.CurrentState.Mode is SefariaLibraryUpdateMode.Cancelled or SefariaLibraryUpdateMode.Error)
+            {
                 await InstallAvailableLibraryUpdateAsync();
-            else
+            }
+            else if (!_libraryUpdateService.IsBusy)
+            {
                 await CheckLibraryUpdatesAsync();
+            }
+
             var state = _libraryUpdateService.CurrentState;
-            status.Text = state.Message;
-            action.Content = state.Mode == SefariaLibraryUpdateMode.UpdateAvailable ? "Update now..." : "Check now";
-            action.IsEnabled = _sefariaLibrary.HasOfflineLibrary;
+            status.Text = string.IsNullOrWhiteSpace(state.Message)
+                ? status.Text
+                : state.Message;
+            action.Content = state.Mode is SefariaLibraryUpdateMode.UpdateAvailable or
+                SefariaLibraryUpdateMode.Cancelled or
+                SefariaLibraryUpdateMode.Error
+                ? "Update now"
+                : "Check now";
+            action.IsEnabled = _sefariaLibrary.HasOfflineLibrary && !_libraryUpdateService.IsBusy;
         };
+
+        _libraryUpdateService.StateChanged += state =>
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (!string.IsNullOrWhiteSpace(state.Message) &&
+                    state.Mode is not SefariaLibraryUpdateMode.Hidden and not SefariaLibraryUpdateMode.Checking)
+                {
+                    status.Text = state.Message;
+                }
+
+                action.Content = state.Mode is SefariaLibraryUpdateMode.UpdateAvailable or
+                    SefariaLibraryUpdateMode.Cancelled or
+                    SefariaLibraryUpdateMode.Error
+                    ? "Update now"
+                    : state.Mode is SefariaLibraryUpdateMode.Downloading or
+                        SefariaLibraryUpdateMode.Importing or
+                        SefariaLibraryUpdateMode.Activating
+                        ? "Updating..."
+                        : "Check now";
+                action.IsEnabled = _sefariaLibrary.HasOfflineLibrary && !_libraryUpdateService.IsBusy;
+            }, DispatcherPriority.Background);
 
         var automatic = new CheckBox
         {
@@ -440,6 +474,25 @@ public partial class MainWindow
             _settingsService.Save(_settings);
         };
 
+        var snoozeDays = NormalizeLibraryUpdateSnoozeDays(_settings.LibraryUpdateSnoozeDays);
+        _settings.LibraryUpdateSnoozeDays = snoozeDays;
+        var snoozePicker = new ComboBox
+        {
+            MinWidth = 160,
+            ItemsSource = new[] { 1, 3, 7, 14, 30, 90 },
+            SelectedItem = snoozeDays
+        };
+        snoozePicker.SelectionChanged += (_, _) =>
+        {
+            if (snoozePicker.SelectedItem is not int days)
+            {
+                return;
+            }
+
+            _settings.LibraryUpdateSnoozeDays = NormalizeLibraryUpdateSnoozeDays(days);
+            _settingsService.Save(_settings);
+        };
+
         return new StackPanel
         {
             Spacing = 6,
@@ -449,11 +502,31 @@ public partial class MainWindow
                 new TextBlock { Text = "Sefaria library updates", FontWeight = FontWeight.SemiBold },
                 new TextBlock
                 {
-                    Text = "Update the complete library as one verified snapshot. Downloads are only started when you approve them.",
+                    Text = "Update the complete library as one verified snapshot. Downloads run in the background and only start when you approve them. Open books keep their place until you navigate again.",
                     Foreground = new SolidColorBrush(Color.Parse("#475467")),
                     TextWrapping = TextWrapping.Wrap
                 },
                 automatic,
+                new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 8,
+                    Children =
+                    {
+                        new TextBlock
+                        {
+                            Text = "After I dismiss an update, remind me in:",
+                            VerticalAlignment = VerticalAlignment.Center
+                        },
+                        snoozePicker,
+                        new TextBlock
+                        {
+                            Text = "days",
+                            VerticalAlignment = VerticalAlignment.Center,
+                            Foreground = new SolidColorBrush(Color.Parse("#475467"))
+                        }
+                    }
+                },
                 action,
                 status
             }

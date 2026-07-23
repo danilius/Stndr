@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Layout;
 using Avalonia.Media;
 
@@ -466,21 +467,23 @@ public partial class MainWindow
 
     private Control CreateDockedDictionaryToolsControl()
     {
-        _dictionaryToolsWord = new TextBlock
+        var dictionaryFontSize = GetDictionaryFontSize();
+        _dictionaryToolsWord = new SelectableTextBlock
         {
-            FontSize = 16,
+            FontSize = dictionaryFontSize,
             FontWeight = FontWeight.SemiBold,
             TextWrapping = TextWrapping.Wrap
         };
         _dictionaryToolsReference = new TextBlock
         {
-            FontSize = 11,
+            FontSize = Math.Max(11, dictionaryFontSize - 3),
             Foreground = new SolidColorBrush(Color.Parse("#667085")),
             TextWrapping = TextWrapping.Wrap,
             IsVisible = false
         };
         _dictionaryToolsPrimaryGloss = new TextBlock
         {
+            FontSize = dictionaryFontSize,
             FontWeight = FontWeight.SemiBold,
             Foreground = new SolidColorBrush(Color.Parse("#1D2939")),
             TextWrapping = TextWrapping.Wrap,
@@ -488,6 +491,7 @@ public partial class MainWindow
         };
         _dictionaryToolsStatus = new TextBlock
         {
+            FontSize = dictionaryFontSize,
             Foreground = new SolidColorBrush(Color.Parse("#475467")),
             TextWrapping = TextWrapping.Wrap
         };
@@ -732,6 +736,7 @@ public partial class MainWindow
 
     private void ClearDictionaryTabResults()
     {
+        _dictionaryDisplayedEntries = Array.Empty<SefariaDictionaryEntry>();
         _dictionaryLookupResultsPanel?.Children.Clear();
     }
 
@@ -742,6 +747,7 @@ public partial class MainWindow
             return;
         }
 
+        _dictionaryDisplayedEntries = entries;
         _dictionaryLookupResultsPanel.Children.Clear();
         foreach (var entry in entries)
         {
@@ -749,9 +755,63 @@ public partial class MainWindow
         }
     }
 
+    private void RefreshDictionaryPresentation()
+    {
+        var dictionaryFontSize = GetDictionaryFontSize();
+
+        if (_dictionaryToolsWord is not null)
+        {
+            _dictionaryToolsWord.FontSize = dictionaryFontSize;
+        }
+
+        if (_dictionaryToolsReference is not null)
+        {
+            _dictionaryToolsReference.FontSize = Math.Max(11, dictionaryFontSize - 3);
+        }
+
+        if (_dictionaryToolsPrimaryGloss is not null)
+        {
+            _dictionaryToolsPrimaryGloss.FontSize = dictionaryFontSize;
+        }
+
+        if (_dictionaryToolsStatus is not null)
+        {
+            _dictionaryToolsStatus.FontSize = dictionaryFontSize;
+        }
+
+        if (_dictionaryLookupResultsPanel is not null && _dictionaryDisplayedEntries.Count > 0)
+        {
+            var expandedByKey = new Dictionary<string, bool>(StringComparer.Ordinal);
+            foreach (var child in _dictionaryLookupResultsPanel.Children.OfType<Expander>())
+            {
+                if (child.Tag is string key)
+                {
+                    expandedByKey[key] = child.IsExpanded;
+                }
+            }
+
+            _dictionaryLookupResultsPanel.Children.Clear();
+            foreach (var entry in _dictionaryDisplayedEntries)
+            {
+                var key = GetDictionaryEntryKey(entry);
+                var expanded = !expandedByKey.TryGetValue(key, out var wasExpanded) || wasExpanded;
+                _dictionaryLookupResultsPanel.Children.Add(CreateDictionaryResultExpander(entry, expanded));
+            }
+        }
+
+        _dictionaryPopupWindow?.ApplyFontSize(dictionaryFontSize);
+        RefreshDictionarySurface();
+    }
+
+    private double GetDictionaryFontSize() => GetSelectedEnglishFontSize();
+
+    private static string GetDictionaryEntryKey(SefariaDictionaryEntry entry) =>
+        $"{entry.LexiconName}\u001f{entry.Headword}\u001f{entry.EntryId}\u001f{entry.StrongNumber}";
+
     private Control CreateDictionaryResultExpander(SefariaDictionaryEntry entry, bool expanded = true)
     {
-        var header = string.IsNullOrWhiteSpace(entry.LexiconName)
+        var dictionaryFontSize = GetDictionaryFontSize();
+        var titleText = string.IsNullOrWhiteSpace(entry.LexiconName)
             ? entry.Headword
             : $"{entry.Headword} - {entry.LexiconName}";
         var panel = new StackPanel
@@ -776,6 +836,7 @@ public partial class MainWindow
             panel.Children.Add(new TextBlock
             {
                 Text = string.Join(" | ", metaParts),
+                FontSize = dictionaryFontSize,
                 Foreground = new SolidColorBrush(Color.Parse("#667085")),
                 TextWrapping = TextWrapping.Wrap
             });
@@ -789,7 +850,15 @@ public partial class MainWindow
             string.IsNullOrWhiteSpace(entry.Root) ? "" : $"Root {entry.Root}"
         }.Where(value => value.Length > 0).ToArray();
         if (identifiers.Length > 0)
-            panel.Children.Add(new TextBlock { Text = string.Join(" · ", identifiers), Foreground = new SolidColorBrush(Color.Parse("#667085")), TextWrapping = TextWrapping.Wrap });
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = string.Join(" · ", identifiers),
+                FontSize = dictionaryFontSize,
+                Foreground = new SolidColorBrush(Color.Parse("#667085")),
+                TextWrapping = TextWrapping.Wrap
+            });
+        }
 
         var definition = NormalizeDictionaryText(
             string.IsNullOrWhiteSpace(entry.ContentText) ? entry.Definition : entry.ContentText);
@@ -803,6 +872,7 @@ public partial class MainWindow
             panel.Children.Add(new TextBlock
             {
                 Text = "References",
+                FontSize = dictionaryFontSize,
                 FontWeight = FontWeight.SemiBold,
                 Margin = new Thickness(0, 6, 0, 0)
             });
@@ -825,22 +895,62 @@ public partial class MainWindow
             var navigation = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 6, 0, 0) };
             if (!string.IsNullOrWhiteSpace(entry.PreviousHeadword))
             {
-                var previous = new Button { Content = $"← {entry.PreviousHeadword}" };
+                var previous = new Button { Content = $"← {entry.PreviousHeadword}", FontSize = dictionaryFontSize };
                 previous.Click += (_, _) => _ = RunDictionaryTabLookupAsync(entry.PreviousHeadword, null);
                 navigation.Children.Add(previous);
             }
             if (!string.IsNullOrWhiteSpace(entry.NextHeadword))
             {
-                var next = new Button { Content = $"{entry.NextHeadword} →" };
+                var next = new Button { Content = $"{entry.NextHeadword} →", FontSize = dictionaryFontSize };
                 next.Click += (_, _) => _ = RunDictionaryTabLookupAsync(entry.NextHeadword, null);
                 navigation.Children.Add(next);
             }
             panel.Children.Add(navigation);
         }
 
+        var titleBlock = new SelectableTextBlock
+        {
+            Text = titleText,
+            FontSize = dictionaryFontSize,
+            FontWeight = FontWeight.SemiBold,
+            TextWrapping = TextWrapping.Wrap,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        var copyButton = new Button
+        {
+            Content = "Copy",
+            Padding = new Thickness(8, 2),
+            MinHeight = 26,
+            FontSize = Math.Max(11, dictionaryFontSize - 2),
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Right
+        };
+        ToolTip.SetTip(copyButton, "Copy headword");
+        copyButton.Click += async (_, e) =>
+        {
+            e.Handled = true;
+            await CopyDictionaryHeadwordAsync(entry.Headword);
+        };
+        copyButton.PointerPressed += (_, e) => e.Handled = true;
+
+        var header = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            ColumnSpacing = 8,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Children =
+            {
+                titleBlock,
+                copyButton
+            }
+        };
+        Grid.SetColumn(copyButton, 1);
+
         return new Expander
         {
             Header = header,
+            Tag = GetDictionaryEntryKey(entry),
             HorizontalAlignment = HorizontalAlignment.Stretch,
             IsExpanded = expanded,
             Content = new Border
@@ -851,6 +961,20 @@ public partial class MainWindow
                 Child = panel
             }
         };
+    }
+
+    private async Task CopyDictionaryHeadwordAsync(string? headword)
+    {
+        var text = headword?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return;
+        }
+
+        if (TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)
+        {
+            await clipboard.SetTextAsync(text);
+        }
     }
 
     private Control CreateDictionaryReferenceExpander(string reference)
@@ -989,6 +1113,7 @@ public partial class MainWindow
             panel.Children.Add(new SelectableTextBlock
             {
                 Text = text,
+                FontSize = GetDictionaryFontSize(),
                 FlowDirection = flowDirection,
                 TextAlignment = flowDirection == FlowDirection.RightToLeft ? TextAlignment.Right : TextAlignment.Left,
                 TextWrapping = TextWrapping.Wrap
@@ -1005,7 +1130,10 @@ public partial class MainWindow
                 citation.FullReference,
                 citation.WorkTitle)),
             flowDirection,
-            citation => _ = OpenDictionaryCitationAsync(citation.FullReference, citation.WorkTitle)));
+            citation => _ = OpenDictionaryCitationAsync(citation.FullReference, citation.WorkTitle))
+        {
+            FontSize = GetDictionaryFontSize()
+        });
     }
 
     private async Task OpenDictionaryCitationAsync(string fullReference, string workTitle)
@@ -1735,6 +1863,7 @@ public partial class MainWindow
 
         if (_dictionaryPopupWindow is not null)
         {
+            _dictionaryPopupWindow.ApplyFontSize(GetDictionaryFontSize());
             _dictionaryPopupWindow.UpdateEntry(displayWord, _dictionaryCurrentReference, _dictionaryPrimaryGloss, status);
             if (!_isDictionaryDocked && _dictionaryPopupWindow.IsVisible && !_dictionaryPopupUserPositioned)
             {
