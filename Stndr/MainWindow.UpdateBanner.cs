@@ -25,6 +25,7 @@ public partial class MainWindow
 
         _appUpdateService.StateChanged += OnAppUpdateStateChanged;
         ApplyAppUpdateState(_appUpdateService.CurrentState);
+        InitializeLibraryUpdateBanner();
 
         this.Closed += (_, _) =>
         {
@@ -37,6 +38,7 @@ public partial class MainWindow
     private void StartUpdateChecks()
     {
         _appUpdateService.StartBackgroundChecks();
+        StartLibraryUpdateChecks();
     }
 
     private void OnAppUpdateStateChanged(AppUpdateState state)

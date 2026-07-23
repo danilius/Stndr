@@ -69,6 +69,7 @@ public partial class MainWindow
         public bool IsCommentariesExpanded { get; set; } = true;
         public bool IsLinksExpanded { get; set; }
         public bool IsTextsExpanded { get; set; } = true;
+        public bool IsLicensesExpanded { get; set; }
         public bool ShowAliyot { get; set; }
         public bool IsSedraContentOpen { get; set; }
         public string SelectedSedraKey { get; set; } = string.Empty;
@@ -109,6 +110,7 @@ public partial class MainWindow
         public bool IsCommentariesExpanded { get; set; } = true;
         public bool IsLinksExpanded { get; set; }
         public bool IsTextsExpanded { get; set; } = true;
+        public bool IsLicensesExpanded { get; set; }
         public bool ShowAliyot { get; set; }
         public bool IsSedraContentOpen { get; set; }
         public string SelectedSedraKey { get; set; } = string.Empty;

@@ -237,6 +237,11 @@ public sealed class SefariaIndexJsonNode
 
 public sealed class InstalledSefariaBook
 {
+    public long OfflineVersionId { get; set; }
+    public bool OfflineIsPrimary { get; set; }
+    public bool OfflineIsSource { get; set; }
+    public double OfflinePriority { get; set; }
+    public long SegmentCount { get; set; }
     public string Title { get; set; } = string.Empty;
     public string? HebrewTitle { get; set; }
     public List<string> Categories { get; set; } = new();
@@ -249,6 +254,11 @@ public sealed class InstalledSefariaBook
     public long FileLength { get; set; }
     public DateTime FileLastWriteTimeUtc { get; set; }
     public double LastScrollOffset { get; set; }
+    public string License { get; set; } = string.Empty;
+    public string VersionSource { get; set; } = string.Empty;
+
+    [JsonIgnore]
+    public bool IsOfflineLibraryVersion => OfflineVersionId > 0;
 
     [JsonIgnore]
     public string DisplayTitle => string.IsNullOrWhiteSpace(Title) ? "Untitled" : Title;
@@ -331,6 +341,9 @@ public sealed class AppSettings
     public double HebrewDisplayFontSize { get; set; } = 18;
     public double SingleLanguageReaderColumnLetters { get; set; } = 80;
     public double DualLanguageReaderColumnLetters { get; set; } = 120;
+    public bool OfflineLibrarySetupDeferred { get; set; }
+    public bool ShowReaderLicenses { get; set; } = true;
+    public bool CheckForLibraryUpdatesAutomatically { get; set; } = true;
 }
 
 public sealed class ReaderLinksPreferences

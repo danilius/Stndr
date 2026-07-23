@@ -51,6 +51,11 @@ public partial class MainWindow
             return;
         }
 
+        if (savedState is null && TryOpenDictionaryWork(book.Title))
+        {
+            return;
+        }
+
         var installedVersions = _sefariaLibrary.GetInstalledVersionsForTitle(book.Title);
         if (installedVersions.Count == 0)
         {
@@ -269,6 +274,7 @@ public partial class MainWindow
         state.IsSedrotExpanded = savedState.IsSedrotExpanded;
         state.IsCommentariesExpanded = savedState.IsCommentariesExpanded;
         state.IsLinksExpanded = savedState.IsLinksExpanded;
+        state.IsLicensesExpanded = savedState.IsLicensesExpanded;
         state.IsTextsExpanded = savedState.IsTextsExpanded;
         state.ShowAliyot = savedState.ShowAliyot;
         state.IsSedraContentOpen = savedState.IsSedraContentOpen;

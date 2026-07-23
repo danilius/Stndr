@@ -22,6 +22,11 @@ public sealed partial class SefariaLibraryService
             return new List<SefariaCommentaryItem>();
         }
 
+        if (HasOfflineLibrary)
+        {
+            return await GetOfflineCommentariesAsync(anchorRef, cancellationToken);
+        }
+
         await CommentaryCacheGate.WaitAsync(cancellationToken);
         try
         {

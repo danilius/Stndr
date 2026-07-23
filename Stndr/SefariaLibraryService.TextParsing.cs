@@ -16,7 +16,7 @@ public sealed partial class SefariaLibraryService
 {
     public string ReadInstalledBookText(InstalledSefariaBook book)
     {
-        var json = ReadJsonTextFile(book.FilePath);
+        var json = ReadBookJson(book);
         using var document = JsonDocument.Parse(json);
         if (!TryGetPrimaryTextElement(document.RootElement, out var textElement))
         {
@@ -36,7 +36,7 @@ public sealed partial class SefariaLibraryService
     public List<ReaderTextUnit> ReadInstalledBookUnits(InstalledSefariaBook book, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var json = ReadJsonTextFile(book.FilePath);
+        var json = ReadBookJson(book);
         cancellationToken.ThrowIfCancellationRequested();
         using var document = JsonDocument.Parse(json);
         cancellationToken.ThrowIfCancellationRequested();
@@ -72,7 +72,7 @@ public sealed partial class SefariaLibraryService
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var json = ReadJsonTextFile(book.FilePath);
+        var json = ReadBookJson(book);
         cancellationToken.ThrowIfCancellationRequested();
         using var document = JsonDocument.Parse(json);
         cancellationToken.ThrowIfCancellationRequested();
@@ -107,7 +107,7 @@ public sealed partial class SefariaLibraryService
 
     public List<ReaderNavigationPage> ReadInstalledBookNavigationPages(InstalledSefariaBook book)
     {
-        var json = ReadJsonTextFile(book.FilePath);
+        var json = ReadBookJson(book);
         using var document = JsonDocument.Parse(json);
         var root = document.RootElement;
 

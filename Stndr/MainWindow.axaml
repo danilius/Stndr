@@ -139,7 +139,7 @@
     </Window.Styles>
 
     <Grid x:Name="LayoutRoot"
-          RowDefinitions="Auto,Auto,*"
+          RowDefinitions="Auto,Auto,Auto,*"
           ColumnDefinitions="280,5,*,5,280">
 
         <Border Grid.Row="0"
@@ -183,7 +183,28 @@
             </DockPanel>
         </Border>
 
-        <Border Grid.Row="2"
+        <Border x:Name="LibraryUpdateBanner"
+                Grid.Row="2"
+                Grid.ColumnSpan="5"
+                IsVisible="False"
+                Background="#ECFDF3"
+                BorderThickness="0,0,0,1"
+                BorderBrush="#22000000"
+                Padding="8,6">
+            <DockPanel LastChildFill="True">
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" Spacing="8">
+                    <Button x:Name="LibraryUpdateBannerActionButton" Content="Review" MinWidth="96"
+                            Click="LibraryUpdateBannerActionClicked" />
+                    <Button x:Name="LibraryUpdateBannerDismissButton" Content="Later" MinWidth="64"
+                            Click="LibraryUpdateBannerDismissClicked" />
+                </StackPanel>
+                <TextBlock x:Name="LibraryUpdateBannerMessage"
+                           Text="A Sefaria library update is available."
+                           VerticalAlignment="Center" TextWrapping="Wrap" />
+            </DockPanel>
+        </Border>
+
+        <Border Grid.Row="3"
                 Grid.Column="0"
                 BorderThickness="0,0,1,0"
                 BorderBrush="#22000000">
@@ -269,14 +290,14 @@
         </Border>
 
         <GridSplitter x:Name="LeftSplitter"
-                      Grid.Row="2"
+                      Grid.Row="3"
                       Grid.Column="1"
                       Background="Transparent"
                       Width="5"
                       ResizeDirection="Columns"
                       ResizeBehavior="PreviousAndNext" />
 
-        <Grid Grid.Row="2"
+        <Grid Grid.Row="3"
               Grid.Column="2"
               Margin="8"
               RowDefinitions="Auto,*">
@@ -288,14 +309,14 @@
         </Grid>
 
         <GridSplitter x:Name="RightSplitter"
-                      Grid.Row="2"
+                      Grid.Row="3"
                       Grid.Column="3"
                       Background="Transparent"
                       Width="5"
                       ResizeDirection="Columns"
                       ResizeBehavior="PreviousAndNext" />
 
-        <Border Grid.Row="2"
+        <Border Grid.Row="3"
                 Grid.Column="4"
                 BorderThickness="1,0,0,0"
                 BorderBrush="#22000000">
@@ -326,7 +347,7 @@
         </Border>
 
         <Canvas x:Name="FloatingOverlayCanvas"
-                Grid.Row="2"
+                Grid.Row="3"
                 Grid.ColumnSpan="5"
                 ZIndex="200">
             <Border x:Name="DictionaryPopup"

@@ -25,6 +25,11 @@ public partial class MainWindow
         Rabbinic
     }
 
+    private sealed record DictionarySearchScopeOption(long? LexiconId, string Label)
+    {
+        public override string ToString() => Label;
+    }
+
     private static readonly Regex DictionaryHtmlTagRegex = new("<.*?>", RegexOptions.Compiled);
     private static readonly Regex DictionaryCitationRegex = new(
         @"(?<![\p{L}\p{N}])(?<abbr>B\.?\s*Kam\.?|Gen\.?|Ge\.?|Ex\.?|Exod\.?|Lev\.?|Num\.?|Deut\.?|Josh\.?|Judg\.?|I\s+Sam\.?|II\s+Sam\.?|I\s+Kings?|II\s+Kings?|Isa\.?|Jer\.?|Ezek\.?|Ps\.?|Prov\.?|Job|Ruth|Lam\.?|Eccl\.?|Esth\.?|Dan\.?|Ezra|Neh\.?)\s+(?<loc>\d{1,4}(?::\d{1,4})?(?:[abABᵃᵇ])?)",
@@ -141,16 +146,30 @@ public partial class MainWindow
             }
 
             e.Handled = true;
-            await RunDictionaryTabLookupAsync(_dictionaryLookupBox.Text, _dictionaryCurrentReference);
+            await RunOfflineDictionarySearchAsync(_dictionaryLookupBox.Text);
         };
 
-        var lookupButton = new Button
+        var searchButton = new Button
         {
-            Content = "Lookup",
+            Content = "Search",
             MinWidth = 90
         };
-        lookupButton.Click += async (_, _) =>
-            await RunDictionaryTabLookupAsync(_dictionaryLookupBox.Text, _dictionaryCurrentReference);
+        ToolTip.SetTip(searchButton, "Search headwords, word forms, transliterations, identifiers and definitions");
+        searchButton.Click += async (_, _) => await RunOfflineDictionarySearchAsync(_dictionaryLookupBox.Text);
+
+        _dictionarySearchScopeBox = new ComboBox
+        {
+            MinWidth = 260,
+            ItemsSource = new[] { new DictionarySearchScopeOption(null, "All dictionaries") },
+            SelectedIndex = 0
+        };
+        _dictionarySearchScopeBox.SelectionChanged += (_, _) =>
+        {
+            if (_dictionarySearchScopeBox.SelectedItem is not DictionarySearchScopeOption option) return;
+            _dictionarySelectedLexiconId = option.LexiconId;
+            _dictionaryStatusText = $"Search scope: {option.Label}.";
+            ApplyDictionaryTabHeaderState();
+        };
 
         _dictionaryLookupReference = new TextBlock
         {
@@ -188,7 +207,7 @@ public partial class MainWindow
                 },
                 new TextBlock
                 {
-                    Text = "Look up Sefaria lexicon entries across available dictionaries.",
+                    Text = "Search headwords, word forms, transliterations, identifiers and definitions.",
                     Foreground = new SolidColorBrush(Color.Parse("#475467")),
                     TextWrapping = TextWrapping.Wrap
                 },
@@ -199,7 +218,17 @@ public partial class MainWindow
                     Children =
                     {
                         _dictionaryLookupBox,
-                        lookupButton
+                        searchButton
+                    }
+                },
+                new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 8,
+                    Children =
+                    {
+                        new TextBlock { Text = "Dictionary:", VerticalAlignment = VerticalAlignment.Center },
+                        _dictionarySearchScopeBox
                     }
                 },
                 _dictionaryLookupReference,
@@ -214,6 +243,7 @@ public partial class MainWindow
             Children =
             {
                 header,
+                CreateDictionaryCatalogueControl(),
                 _dictionaryLookupResultsPanel
             }
         };
@@ -225,6 +255,213 @@ public partial class MainWindow
             VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
             Content = content
         };
+    }
+
+    private Control CreateDictionaryCatalogueControl()
+    {
+        _dictionaryCatalogueStatus = new TextBlock
+        {
+            Text = "Loading installed dictionaries...",
+            Foreground = new SolidColorBrush(Color.Parse("#667085")),
+            TextWrapping = TextWrapping.Wrap
+        };
+        _dictionaryCataloguePanel = new StackPanel { Spacing = 8, Children = { _dictionaryCatalogueStatus } };
+        var expander = new Expander
+        {
+            Header = "Navigation — browse installed dictionaries",
+            IsExpanded = true,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Content = new Border
+            {
+                BorderBrush = new SolidColorBrush(Color.Parse("#EAECF0")),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(12),
+                Child = _dictionaryCataloguePanel
+            }
+        };
+        _ = LoadDictionaryCatalogueAsync();
+        return expander;
+    }
+
+    private async Task LoadDictionaryCatalogueAsync()
+    {
+        if (_dictionaryCataloguePanel is null) return;
+        try
+        {
+            var lexicons = await _sefariaLibrary.GetOfflineLexiconsAsync();
+            _dictionaryCataloguePanel.Children.Clear();
+            _dictionaryLexiconExpanders.Clear();
+            if (lexicons.Count == 0)
+            {
+                _dictionaryCataloguePanel.Children.Add(new TextBlock
+                {
+                    Text = _sefariaLibrary.HasOfflineLibrary
+                        ? "The installed library predates offline dictionaries. Install the latest Sefaria snapshot to add them."
+                        : "Install the Sefaria offline library to browse dictionaries without an internet connection.",
+                    Foreground = new SolidColorBrush(Color.Parse("#667085")), TextWrapping = TextWrapping.Wrap
+                });
+                return;
+            }
+
+            _dictionaryCataloguePanel.Children.Add(new TextBlock
+            {
+                Text = $"{lexicons.Count} dictionaries · {lexicons.Sum(item => item.EntryCount):N0} entries. Expand a dictionary, then drill down by initial letters.",
+                Foreground = new SolidColorBrush(Color.Parse("#475467")), TextWrapping = TextWrapping.Wrap
+            });
+            if (_dictionarySearchScopeBox is not null)
+            {
+                var options = new List<DictionarySearchScopeOption> { new(null, "All dictionaries") };
+                options.AddRange(lexicons.Select(item => new DictionarySearchScopeOption(item.Id, item.Name)));
+                _dictionarySearchScopeBox.ItemsSource = options;
+                _dictionarySearchScopeBox.SelectedItem = options.FirstOrDefault(option => option.LexiconId == _dictionarySelectedLexiconId) ?? options[0];
+            }
+            foreach (var lexicon in lexicons)
+            {
+                var expander = CreateLexiconNavigationExpander(lexicon);
+                _dictionaryLexiconExpanders[lexicon.Name] = expander;
+                _dictionaryCataloguePanel.Children.Add(expander);
+            }
+            ApplyRequestedDictionarySelection();
+        }
+        catch (Exception ex)
+        {
+            _dictionaryCataloguePanel.Children.Clear();
+            _dictionaryCataloguePanel.Children.Add(new TextBlock { Text = $"Could not load dictionaries: {ex.Message}", TextWrapping = TextWrapping.Wrap });
+        }
+    }
+
+    private Expander CreateLexiconNavigationExpander(SefariaLexiconInfo lexicon)
+    {
+        var panel = new StackPanel { Spacing = 8, Margin = new Thickness(8) };
+        var loaded = false;
+        var language = string.Join(" → ", new[] { lexicon.Language, lexicon.ToLanguage }.Where(value => !string.IsNullOrWhiteSpace(value)));
+        var expander = new Expander
+        {
+            Header = $"{lexicon.Name}  ({lexicon.EntryCount:N0} entries{(language.Length > 0 ? $", {language}" : "")})",
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Content = panel
+        };
+        expander.PropertyChanged += (_, e) =>
+        {
+            if (e.Property != Expander.IsExpandedProperty || !expander.IsExpanded || loaded) return;
+            loaded = true;
+            _ = LoadDictionaryPrefixLevelAsync(lexicon, "", panel);
+        };
+        return expander;
+    }
+
+    private async Task LoadDictionaryPrefixLevelAsync(SefariaLexiconInfo lexicon, string prefix, StackPanel panel)
+    {
+        panel.Children.Clear();
+        panel.Children.Add(new TextBlock { Text = "Loading headwords...", Foreground = new SolidColorBrush(Color.Parse("#667085")) });
+        try
+        {
+            var prefixes = await _sefariaLibrary.GetOfflineDictionaryPrefixesAsync(lexicon.Id, prefix, prefix.Length + 1);
+            var entries = await _sefariaLibrary.BrowseOfflineDictionaryAsync(lexicon.Id, prefix, 0, 60);
+            panel.Children.Clear();
+            var heading = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            if (prefix.Length > 0)
+            {
+                var back = new Button { Content = "← Back" };
+                back.Click += (_, _) => _ = LoadDictionaryPrefixLevelAsync(lexicon, prefix[..^1], panel);
+                heading.Children.Add(back);
+            }
+            heading.Children.Add(new TextBlock
+            {
+                Text = prefix.Length == 0 ? "Initial letter" : $"Prefix: {prefix}",
+                FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center
+            });
+            panel.Children.Add(heading);
+
+            if (prefixes.Count > 1 || (prefixes.Count == 1 && prefixes[0].Prefix.Length > prefix.Length))
+            {
+                var buttons = new WrapPanel { Orientation = Orientation.Horizontal };
+                foreach (var item in prefixes)
+                {
+                    var button = new Button { Content = $"{item.Prefix}  {item.EntryCount:N0}", Margin = new Thickness(0, 0, 6, 6) };
+                    button.Click += (_, _) => _ = LoadDictionaryPrefixLevelAsync(lexicon, item.Prefix, panel);
+                    buttons.Children.Add(button);
+                }
+                panel.Children.Add(buttons);
+            }
+
+            panel.Children.Add(new TextBlock
+            {
+                Text = entries.Count == 60 ? "First 60 matching headwords (refine the prefix to narrow the list)" : $"{entries.Count:N0} matching headwords",
+                Foreground = new SolidColorBrush(Color.Parse("#667085"))
+            });
+            foreach (var entry in entries) panel.Children.Add(CreateDictionaryResultExpander(entry, false));
+        }
+        catch (Exception ex)
+        {
+            panel.Children.Clear();
+            panel.Children.Add(new TextBlock { Text = $"Could not browse this dictionary: {ex.Message}", TextWrapping = TextWrapping.Wrap });
+        }
+    }
+
+    private async Task RunOfflineDictionarySearchAsync(string? query)
+    {
+        var value = query?.Trim() ?? "";
+        if (value.Length == 0)
+        {
+            _dictionaryStatusText = "Enter a headword, word form, identifier, transliteration, or definition term.";
+            ApplyDictionaryTabHeaderState();
+            return;
+        }
+        _dictionaryStatusText = $"Searching installed dictionaries for {value}...";
+        ClearDictionaryTabResults();
+        ApplyDictionaryTabHeaderState();
+        try
+        {
+            var entries = await _sefariaLibrary.SearchOfflineDictionaryAsync(value, _dictionarySelectedLexiconId, 100);
+            _dictionaryStatusText = entries.Count == 0
+                ? "No installed dictionary entries matched this search."
+                : $"{entries.Count:N0} matching entr{(entries.Count == 1 ? "y" : "ies")} in {(_dictionarySelectedLexiconId is null ? "all dictionaries" : "the selected dictionary")}.";
+            ApplyDictionaryTabHeaderState();
+            RenderDictionaryTabResults(entries);
+        }
+        catch (Exception ex)
+        {
+            _dictionaryStatusText = $"Dictionary search failed: {ex.Message}";
+            ApplyDictionaryTabHeaderState();
+        }
+    }
+
+    private bool TryOpenDictionaryWork(string workTitle)
+    {
+        if (!_sefariaLibrary.HasOfflineLibrary) return false;
+        var lexiconName = workTitle switch
+        {
+            "Jastrow" => "Jastrow Dictionary",
+            "BDB" => "BDB Dictionary",
+            "BDB Aramaic" => "BDB Aramaic Dictionary",
+            "Klein Dictionary" => "Klein Dictionary",
+            "Sefer HaShorashim" => "Sefer HaShorashim",
+            "Animadversions by Elias Levita on Sefer HaShorashim" => "Animadversions by Elias Levita on Sefer HaShorashim",
+            _ => ""
+        };
+        if (lexiconName.Length == 0) return false;
+
+        _dictionaryRequestedLexiconName = lexiconName;
+        OpenOrSelectTab(DictionaryTabTitle);
+        ApplyRequestedDictionarySelection();
+        return true;
+    }
+
+    private void ApplyRequestedDictionarySelection()
+    {
+        if (string.IsNullOrWhiteSpace(_dictionaryRequestedLexiconName)) return;
+        if (_dictionarySearchScopeBox?.ItemsSource is IEnumerable<DictionarySearchScopeOption> options &&
+            options.FirstOrDefault(option => string.Equals(option.Label, _dictionaryRequestedLexiconName, StringComparison.Ordinal)) is { } selected)
+        {
+            _dictionarySearchScopeBox.SelectedItem = selected;
+        }
+        if (_dictionaryLexiconExpanders.TryGetValue(_dictionaryRequestedLexiconName, out var expander))
+        {
+            expander.IsExpanded = true;
+            _dictionaryRequestedLexiconName = string.Empty;
+        }
     }
 
     private Control CreateDockedDictionaryToolsControl()
@@ -512,7 +749,7 @@ public partial class MainWindow
         }
     }
 
-    private Control CreateDictionaryResultExpander(SefariaDictionaryEntry entry)
+    private Control CreateDictionaryResultExpander(SefariaDictionaryEntry entry, bool expanded = true)
     {
         var header = string.IsNullOrWhiteSpace(entry.LexiconName)
             ? entry.Headword
@@ -544,6 +781,16 @@ public partial class MainWindow
             });
         }
 
+        var identifiers = new[]
+        {
+            string.IsNullOrWhiteSpace(entry.StrongNumber) ? "" : $"Strong {entry.StrongNumber}",
+            string.IsNullOrWhiteSpace(entry.GkNumber) ? "" : $"GK {entry.GkNumber}",
+            string.IsNullOrWhiteSpace(entry.TwotNumber) ? "" : $"TWOT {entry.TwotNumber}",
+            string.IsNullOrWhiteSpace(entry.Root) ? "" : $"Root {entry.Root}"
+        }.Where(value => value.Length > 0).ToArray();
+        if (identifiers.Length > 0)
+            panel.Children.Add(new TextBlock { Text = string.Join(" · ", identifiers), Foreground = new SolidColorBrush(Color.Parse("#667085")), TextWrapping = TextWrapping.Wrap });
+
         var definition = NormalizeDictionaryText(
             string.IsNullOrWhiteSpace(entry.ContentText) ? entry.Definition : entry.ContentText);
         AddDictionaryLinkedTextBlock(
@@ -573,11 +820,29 @@ public partial class MainWindow
             panel.Children.Add(refsPanel);
         }
 
+        if (!string.IsNullOrWhiteSpace(entry.PreviousHeadword) || !string.IsNullOrWhiteSpace(entry.NextHeadword))
+        {
+            var navigation = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 6, 0, 0) };
+            if (!string.IsNullOrWhiteSpace(entry.PreviousHeadword))
+            {
+                var previous = new Button { Content = $"← {entry.PreviousHeadword}" };
+                previous.Click += (_, _) => _ = RunDictionaryTabLookupAsync(entry.PreviousHeadword, null);
+                navigation.Children.Add(previous);
+            }
+            if (!string.IsNullOrWhiteSpace(entry.NextHeadword))
+            {
+                var next = new Button { Content = $"{entry.NextHeadword} →" };
+                next.Click += (_, _) => _ = RunDictionaryTabLookupAsync(entry.NextHeadword, null);
+                navigation.Children.Add(next);
+            }
+            panel.Children.Add(navigation);
+        }
+
         return new Expander
         {
             Header = header,
             HorizontalAlignment = HorizontalAlignment.Stretch,
-            IsExpanded = true,
+            IsExpanded = expanded,
             Content = new Border
             {
                 HorizontalAlignment = HorizontalAlignment.Stretch,

@@ -90,6 +90,12 @@ public sealed partial class SefariaLibraryService
                 return;
             }
 
+            if (HasOfflineLibrary)
+            {
+                _workShortDescriptionsCache = LoadOfflineWorkDescriptions();
+                return;
+            }
+
             if (!IsConfigured || !File.Exists(IndexFilePath))
             {
                 _workShortDescriptionsCache = new Dictionary<string, WorkShortDescription>(StringComparer.OrdinalIgnoreCase);

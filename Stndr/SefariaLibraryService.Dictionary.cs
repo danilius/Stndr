@@ -10,6 +10,7 @@ namespace Stndr;
 
 public sealed class SefariaDictionaryEntry
 {
+    public long EntryId { get; init; }
     public string Headword { get; init; } = string.Empty;
     public string Transliteration { get; init; } = string.Empty;
     public string Pronunciation { get; init; } = string.Empty;
@@ -17,7 +18,17 @@ public sealed class SefariaDictionaryEntry
     public string Definition { get; init; } = string.Empty;
     public string ContentText { get; init; } = string.Empty;
     public IReadOnlyList<string> Refs { get; init; } = Array.Empty<string>();
+    public string StrongNumber { get; init; } = string.Empty;
+    public string GkNumber { get; init; } = string.Empty;
+    public string TwotNumber { get; init; } = string.Empty;
+    public string Root { get; init; } = string.Empty;
+    public string PreviousHeadword { get; init; } = string.Empty;
+    public string NextHeadword { get; init; } = string.Empty;
+    public bool IsOffline { get; init; }
 }
+
+public sealed record SefariaLexiconInfo(long Id, string Name, string Language, string ToLanguage, int EntryCount);
+public sealed record SefariaDictionaryPrefix(string Prefix, int EntryCount);
 
 public sealed partial class SefariaLibraryService
 {
@@ -32,6 +43,9 @@ public sealed partial class SefariaLibraryService
         {
             return Array.Empty<SefariaDictionaryEntry>();
         }
+
+        var offline = await LookupOfflineDictionaryEntriesAsync(word.Trim(), lookupRef, 40, cancellationToken);
+        if (offline.Count > 0) return offline;
 
         var url = BuildWordsApiUrl(word.Trim(), lookupRef);
         using var response = await HttpClient.GetAsync(url, cancellationToken);

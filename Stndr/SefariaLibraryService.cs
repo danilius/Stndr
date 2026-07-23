@@ -89,12 +89,12 @@ public sealed partial class SefariaLibraryService
         return Path.Combine(SchemasFolder, $"{safe}.json");
     }
 
-    public bool HasSchema(string title) => File.Exists(GetSchemaFilePath(title));
+    public bool HasSchema(string title) => File.Exists(GetSchemaFilePath(title)) || GetOfflineBookSchema(title) is not null;
 
     public BookSchema? GetBookSchema(string title)
     {
         var path = GetSchemaFilePath(title);
-        return BookSchema.Load(path);
+        return BookSchema.Load(path) ?? GetOfflineBookSchema(title);
     }
 
     public void SetStorageRootFolder(string? storageRootFolder)
@@ -102,6 +102,7 @@ public sealed partial class SefariaLibraryService
         _booksManifestCache = null;
         _workShortDescriptionsCache = null;
         InvalidateInstalledBooksCaches();
+        InvalidateOfflineLibraryCaches();
         _installedBooksDatabase = null;
 
         if (string.IsNullOrWhiteSpace(storageRootFolder))
@@ -141,6 +142,11 @@ public sealed partial class SefariaLibraryService
 
     public async Task<SefariaCategoryNode> LoadLibraryAsync(CancellationToken cancellationToken)
     {
+        if (HasOfflineLibrary)
+        {
+            return await Task.Run(() => BuildOfflineLibraryTree(cancellationToken), cancellationToken);
+        }
+
         var indexText = await EnsureIndexAvailableAsync(cancellationToken);
         WarmWorkShortDescriptionsCache(indexText);
         var indexNodes = JsonSerializer.Deserialize<List<SefariaIndexJsonNode>>(indexText) ?? new List<SefariaIndexJsonNode>();

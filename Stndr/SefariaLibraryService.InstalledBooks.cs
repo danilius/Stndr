@@ -74,7 +74,10 @@ public sealed partial class SefariaLibraryService
             SaveInstalledBooks(installed);
         }
 
-        var result = SortInstalledBooksForDisplay(installed);
+        var result = SortInstalledBooksForDisplay(installed
+            .Concat(GetOfflineLibraryBooks())
+            .GroupBy(book => book.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First()));
 
         lock (_installedBooksCacheGate)
         {
@@ -236,9 +239,9 @@ public sealed partial class SefariaLibraryService
         var orderLookup = BuildIndexOrderLookup();
         var installedBooks = GetInstalledBooks()
             .Select(book => ApplyIndexOrder(book, orderLookup))
-            .OrderBy(book => book.CategoryOrders.ElementAtOrDefault(0))
-            .ThenBy(book => book.CategoryOrders.ElementAtOrDefault(1))
-            .ThenBy(book => book.CategoryOrders.ElementAtOrDefault(2))
+            .OrderBy(book => GetInstalledCategoryOrder(book, 0))
+            .ThenBy(book => GetInstalledCategoryOrder(book, 1))
+            .ThenBy(book => GetInstalledCategoryOrder(book, 2))
             .ThenBy(book => book.Order)
             .ThenBy(book => book.Title, StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -256,7 +259,7 @@ public sealed partial class SefariaLibraryService
                 }
 
                 categoryPath.Add(categoryName);
-                var categoryOrder = book.CategoryOrders.ElementAtOrDefault(i);
+                var categoryOrder = GetInstalledCategoryOrder(book, i);
                 var hebrewCategoryName = book.HebrewCategories.ElementAtOrDefault(i);
                 var category = current.OfType<InstalledSefariaCategory>()
                     .FirstOrDefault(c => string.Equals(c.Title, categoryName, StringComparison.OrdinalIgnoreCase));
@@ -289,7 +292,7 @@ public sealed partial class SefariaLibraryService
                     HebrewTitle = book.HebrewTitle,
                     CategoryPath = string.Join("/", categoryPath.Append(book.Title)),
                     IsBookTitle = true,
-                    Order = book.Order
+                    Order = book.CategoryOrders.Count > 0 ? book.Order : float.MaxValue
                 };
                 current.Add(bookCategory);
             }
@@ -327,6 +330,10 @@ public sealed partial class SefariaLibraryService
             .GroupBy(book => book.Key, StringComparer.OrdinalIgnoreCase)
             .Select(group => group.First())
             .OrderByDescending(IsHebrew)
+            .ThenByDescending(book => book.OfflineIsPrimary)
+            .ThenByDescending(book => book.OfflineIsSource)
+            .ThenByDescending(book => book.SegmentCount > 0)
+            .ThenByDescending(book => book.OfflinePriority)
             .ThenBy(book => book.VersionTitle, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
@@ -343,6 +350,10 @@ public sealed partial class SefariaLibraryService
                     .GroupBy(book => book.Key, StringComparer.OrdinalIgnoreCase)
                     .Select(versionGroup => versionGroup.First())
                     .OrderByDescending(IsHebrew)
+                    .ThenByDescending(book => book.OfflineIsPrimary)
+                    .ThenByDescending(book => book.OfflineIsSource)
+                    .ThenByDescending(book => book.SegmentCount > 0)
+                    .ThenByDescending(book => book.OfflinePriority)
                     .ThenBy(book => book.VersionTitle, StringComparer.OrdinalIgnoreCase)
                     .ToList(),
                 StringComparer.Ordinal);
@@ -350,11 +361,15 @@ public sealed partial class SefariaLibraryService
 
     public List<InstalledSefariaBook> GetInstalledVersionSummariesForTitle(string title)
     {
-        return LoadInstalledBooks()
+        return LoadInstalledBooks().Concat(GetOfflineLibraryBooks())
             .Where(book => string.Equals(book.Title, title, StringComparison.Ordinal))
             .GroupBy(book => book.Key, StringComparer.OrdinalIgnoreCase)
             .Select(group => group.First())
             .OrderByDescending(IsHebrew)
+            .ThenByDescending(book => book.OfflineIsPrimary)
+            .ThenByDescending(book => book.OfflineIsSource)
+            .ThenByDescending(book => book.SegmentCount > 0)
+            .ThenByDescending(book => book.OfflinePriority)
             .ThenBy(book => book.VersionTitle, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
@@ -556,7 +571,10 @@ public sealed partial class SefariaLibraryService
         InstalledSefariaBook book,
         Dictionary<string, InstalledIndexOrder> orderLookup)
     {
-        if (!orderLookup.TryGetValue(book.Title, out var order))
+        var lookupTitle = string.Equals(book.Title, "On the Account of Creation", StringComparison.Ordinal)
+            ? "On the Account of the World's Creation"
+            : book.Title;
+        if (!orderLookup.TryGetValue(lookupTitle, out var order))
         {
             return book;
         }
@@ -567,6 +585,11 @@ public sealed partial class SefariaLibraryService
         book.Order = order.Order;
         return book;
     }
+
+    private static float GetInstalledCategoryOrder(InstalledSefariaBook book, int level) =>
+        level >= 0 && level < book.CategoryOrders.Count
+            ? book.CategoryOrders[level]
+            : float.MaxValue;
 
     private static bool InstalledBookMetadataMatches(InstalledSefariaBook current, InstalledSefariaBook refreshed)
     {
@@ -1152,6 +1175,11 @@ public sealed partial class SefariaLibraryService
     {
         return new InstalledSefariaBook
         {
+            OfflineVersionId = book.OfflineVersionId,
+            OfflineIsPrimary = book.OfflineIsPrimary,
+            OfflineIsSource = book.OfflineIsSource,
+            OfflinePriority = book.OfflinePriority,
+            SegmentCount = book.SegmentCount,
             Title = book.Title,
             HebrewTitle = book.HebrewTitle,
             Categories = new List<string>(book.Categories),
@@ -1163,7 +1191,9 @@ public sealed partial class SefariaLibraryService
             FilePath = book.FilePath,
             FileLength = book.FileLength,
             FileLastWriteTimeUtc = book.FileLastWriteTimeUtc,
-            LastScrollOffset = book.LastScrollOffset
+            LastScrollOffset = book.LastScrollOffset,
+            License = book.License,
+            VersionSource = book.VersionSource
         };
     }
 

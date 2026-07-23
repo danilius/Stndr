@@ -48,6 +48,9 @@ public partial class MainWindow
                             FontWeight = FontWeight.SemiBold
                         },
                         CreateDataStorageFolderSettingRow(),
+                        CreateOfflineLibrarySettingRow(),
+                        CreateLibraryUpdateSettingRow(),
+                        CreateReaderLicenseSettingRow(),
                         CreateCrashLogFolderSettingRow(),
                         new TextBlock
                         {
@@ -306,6 +309,153 @@ public partial class MainWindow
                 pathText,
                 chooseButton,
                 statusText
+            }
+        };
+    }
+
+    private Control CreateOfflineLibrarySettingRow()
+    {
+        var statusText = new TextBlock
+        {
+            Foreground = new SolidColorBrush(Color.Parse("#475467")),
+            TextWrapping = TextWrapping.Wrap
+        };
+        var actionButton = new Button { MinWidth = 170 };
+
+        void RefreshDisplay()
+        {
+            var folder = _sefariaLibrary.StorageRootFolder;
+            var installed = !string.IsNullOrWhiteSpace(folder) && SefariaOfflineLibraryInstaller.IsInstalled(folder);
+            actionButton.Content = installed ? "Reinstall from archive..." : "Install offline library...";
+            actionButton.IsEnabled = !string.IsNullOrWhiteSpace(folder);
+            statusText.Text = installed
+                ? "The complete Sefaria books, metadata, links and dictionaries database is installed and available throughout Stndr."
+                : "Not installed. Existing per-book downloads remain available.";
+        }
+
+        actionButton.Click += async (_, _) =>
+        {
+            var folder = _sefariaLibrary.StorageRootFolder;
+            if (string.IsNullOrWhiteSpace(folder)) return;
+            var installed = await SefariaOfflineLibrarySetupDialog.ShowAsync(this, folder);
+            if (installed)
+            {
+                _settings.OfflineLibrarySetupDeferred = false;
+                _settingsService.Save(_settings);
+                ApplyDataFolder(folder);
+            }
+            RefreshDisplay();
+        };
+        RefreshDisplay();
+
+        return new StackPanel
+        {
+            Spacing = 6,
+            Margin = new Thickness(0, 0, 0, 8),
+            Children =
+            {
+                new TextBlock { Text = "Complete offline Sefaria library", FontWeight = FontWeight.SemiBold },
+                new TextBlock
+                {
+                    Text = "Installs all text versions and link metadata from Sefaria's compressed MongoDB snapshot into one local database.",
+                    Foreground = new SolidColorBrush(Color.Parse("#475467")),
+                    TextWrapping = TextWrapping.Wrap
+                },
+                actionButton,
+                statusText
+            }
+        };
+    }
+
+    private Control CreateReaderLicenseSettingRow()
+    {
+        var option = new CheckBox
+        {
+            Content = "Show license information in Reader Tools",
+            IsChecked = _settings.ShowReaderLicenses
+        };
+        option.IsCheckedChanged += (_, _) =>
+        {
+            _settings.ShowReaderLicenses = option.IsChecked == true;
+            _settingsService.Save(_settings);
+            UpdateReaderTools();
+        };
+        return new StackPanel
+        {
+            Spacing = 6,
+            Margin = new Thickness(0, 0, 0, 8),
+            Children =
+            {
+                new TextBlock { Text = "Reader license information", FontWeight = FontWeight.SemiBold },
+                option,
+                new TextBlock
+                {
+                    Text = "Enabled by default. When shown, the Reader lists the license and source for each selected text version.",
+                    Foreground = new SolidColorBrush(Color.Parse("#475467")),
+                    TextWrapping = TextWrapping.Wrap
+                }
+            }
+        };
+    }
+
+    private Control CreateLibraryUpdateSettingRow()
+    {
+        var status = new TextBlock
+        {
+            Text = _sefariaLibrary.HasOfflineLibrary
+                ? "Stndr can check Sefaria's published snapshot without downloading it."
+                : "Install the complete offline library before checking for updates.",
+            Foreground = new SolidColorBrush(Color.Parse("#475467")),
+            TextWrapping = TextWrapping.Wrap
+        };
+        var action = new Button
+        {
+            Content = _libraryUpdateService.CurrentState.Mode == SefariaLibraryUpdateMode.UpdateAvailable
+                ? "Update now..."
+                : "Check now",
+            MinWidth = 120,
+            IsEnabled = _sefariaLibrary.HasOfflineLibrary
+        };
+        action.Click += async (_, _) =>
+        {
+            action.IsEnabled = false;
+            if (_libraryUpdateService.CurrentState.Mode == SefariaLibraryUpdateMode.UpdateAvailable)
+                await InstallAvailableLibraryUpdateAsync();
+            else
+                await CheckLibraryUpdatesAsync();
+            var state = _libraryUpdateService.CurrentState;
+            status.Text = state.Message;
+            action.Content = state.Mode == SefariaLibraryUpdateMode.UpdateAvailable ? "Update now..." : "Check now";
+            action.IsEnabled = _sefariaLibrary.HasOfflineLibrary;
+        };
+
+        var automatic = new CheckBox
+        {
+            Content = "Check automatically",
+            IsChecked = _settings.CheckForLibraryUpdatesAutomatically
+        };
+        automatic.IsCheckedChanged += (_, _) =>
+        {
+            _settings.CheckForLibraryUpdatesAutomatically = automatic.IsChecked == true;
+            _settingsService.Save(_settings);
+        };
+
+        return new StackPanel
+        {
+            Spacing = 6,
+            Margin = new Thickness(0, 0, 0, 8),
+            Children =
+            {
+                new TextBlock { Text = "Sefaria library updates", FontWeight = FontWeight.SemiBold },
+                new TextBlock
+                {
+                    Text = "Update the complete library as one verified snapshot. Downloads are only started when you approve them.",
+                    Foreground = new SolidColorBrush(Color.Parse("#475467")),
+                    TextWrapping = TextWrapping.Wrap
+                },
+                automatic,
+                action,
+                status
             }
         };
     }

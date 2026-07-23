@@ -243,6 +243,7 @@ public partial class MainWindow
                     readerState.SelectedTranslation = selectedTranslation;
                     SaveSelectedTranslation(readerState);
                     RenderReaderContent(readerState);
+                    Dispatcher.UIThread.Post(UpdateReaderTools, DispatcherPriority.Background);
                     SaveLayoutState();
                 };
 
@@ -289,6 +290,63 @@ public partial class MainWindow
                 readerState.IsTextsExpanded = value;
                 SaveLayoutState();
             }));
+
+        if (_settings.ShowReaderLicenses)
+        {
+            _rightPanelBody.Children.Add(CreateReaderToolsGroup(
+                "Licenses",
+                CreateReaderLicenceTools(readerState),
+                readerState.IsLicensesExpanded,
+                value =>
+                {
+                    readerState.IsLicensesExpanded = value;
+                    SaveLayoutState();
+                }));
+        }
+    }
+
+    private static Control CreateReaderLicenceTools(ReaderTabState readerState)
+    {
+        var panel = new StackPanel { Spacing = 10 };
+        var selected = new[] { readerState.Primary, readerState.SelectedTranslation }
+            .Where(book => book is not null)
+            .Cast<InstalledSefariaBook>()
+            .GroupBy(book => book.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First());
+        foreach (var book in selected)
+        {
+            var details = new StackPanel { Spacing = 3 };
+            details.Children.Add(new TextBlock
+            {
+                Text = book.VersionTitle,
+                FontWeight = FontWeight.SemiBold,
+                TextWrapping = TextWrapping.Wrap
+            });
+            details.Children.Add(new TextBlock
+            {
+                Text = $"Language: {book.LanguageCode}",
+                Foreground = new SolidColorBrush(Color.Parse("#475467")),
+                TextWrapping = TextWrapping.Wrap
+            });
+            details.Children.Add(new TextBlock
+            {
+                Text = $"License: {(string.IsNullOrWhiteSpace(book.License) ? "Not specified" : book.License)}",
+                TextWrapping = TextWrapping.Wrap
+            });
+            if (!string.IsNullOrWhiteSpace(book.VersionSource))
+            {
+                details.Children.Add(new TextBlock
+                {
+                    Text = $"Source: {book.VersionSource}",
+                    Foreground = new SolidColorBrush(Color.Parse("#475467")),
+                    TextWrapping = TextWrapping.Wrap
+                });
+            }
+            panel.Children.Add(details);
+        }
+        if (panel.Children.Count == 0)
+            panel.Children.Add(new TextBlock { Text = "No version information is available.", TextWrapping = TextWrapping.Wrap });
+        return panel;
     }
 
     private Control CreateCommentaryGroupHeader(ReaderTabState readerState)

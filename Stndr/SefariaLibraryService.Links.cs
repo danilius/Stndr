@@ -21,6 +21,11 @@ public sealed partial class SefariaLibraryService
             return new List<SefariaLinkItem>();
         }
 
+        if (HasOfflineLibrary)
+        {
+            return await GetOfflineLinksAsync(anchorRef, cancellationToken);
+        }
+
         await LinksCacheGate.WaitAsync(cancellationToken);
         try
         {

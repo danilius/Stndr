@@ -201,6 +201,16 @@ public partial class MainWindow
         };
         _libraryDownloadAllButton.Click += async (_, _) => await DownloadAllLibraryAsync();
 
+        _librarySnapshotUpdateButton = new Button
+        {
+            Content = _libraryUpdateService.CurrentState.Mode == SefariaLibraryUpdateMode.UpdateAvailable
+                ? "Update library"
+                : "Check for updates",
+            MinWidth = 120,
+            IsEnabled = _sefariaLibrary.HasOfflineLibrary
+        };
+        _librarySnapshotUpdateButton.Click += async (_, _) => await CheckOrInstallLibraryUpdateAsync();
+
         var leftPane = new Grid
         {
             RowDefinitions = new RowDefinitions("Auto,*"),
@@ -220,6 +230,7 @@ public partial class MainWindow
                             VerticalAlignment = VerticalAlignment.Center
                         },
                         _libraryDownloadAllButton,
+                        _librarySnapshotUpdateButton,
                         libraryManagerSearchButton,
                         _libraryManagerSearchBox
                     }
@@ -485,7 +496,7 @@ public partial class MainWindow
                 .ToList();
             if (_libraryDownloadAllButton is not null)
             {
-                _libraryDownloadAllButton.IsEnabled = !_isSefariaDownloading;
+                _libraryDownloadAllButton.IsEnabled = !_isSefariaDownloading && !_sefariaLibrary.HasOfflineLibrary;
             }
             _libraryStatus.Text = $"Loaded from {_sefariaLibrary.StorageRootFolder}";
         }
@@ -2245,7 +2256,7 @@ public partial class MainWindow
             return;
         }
 
-        _libraryDownloadAllButton.IsEnabled = _sefariaRoot is not null && !_isSefariaDownloading;
+        _libraryDownloadAllButton.IsEnabled = _sefariaRoot is not null && !_isSefariaDownloading && !_sefariaLibrary.HasOfflineLibrary;
 
         if (_selectedSefariaBook is not null)
         {
@@ -2298,10 +2309,11 @@ public partial class MainWindow
             var selectedTranslationVersion = GetSelectedSingleBookTranslationVersion();
             var hasHebrewInstalled = selectedHebrewVersion is not null && HasInstalledExactVersion(_selectedSefariaBook.Title, selectedHebrewVersion);
             var hasTranslationInstalled = selectedTranslationVersion is not null && HasInstalledExactVersion(_selectedSefariaBook.Title, selectedTranslationVersion);
-            _librarySingleHebrewActionButton.Content = hasHebrewInstalled ? "Delete" : "Download";
-            _librarySingleHebrewActionButton.IsEnabled = !_isSefariaDownloading && !_selectedSefariaBook.IsLoadingVersions && selectedHebrewVersion is not null;
-            _librarySingleTranslationActionButton.Content = hasTranslationInstalled ? "Delete" : "Download";
-            _librarySingleTranslationActionButton.IsEnabled = !_isSefariaDownloading && !_selectedSefariaBook.IsLoadingVersions && selectedTranslationVersion is not null;
+            var snapshotInstalled = _sefariaLibrary.HasOfflineLibrary;
+            _librarySingleHebrewActionButton.Content = snapshotInstalled ? "Included" : hasHebrewInstalled ? "Delete" : "Download";
+            _librarySingleHebrewActionButton.IsEnabled = !snapshotInstalled && !_isSefariaDownloading && !_selectedSefariaBook.IsLoadingVersions && selectedHebrewVersion is not null;
+            _librarySingleTranslationActionButton.Content = snapshotInstalled ? "Included" : hasTranslationInstalled ? "Delete" : "Download";
+            _librarySingleTranslationActionButton.IsEnabled = !snapshotInstalled && !_isSefariaDownloading && !_selectedSefariaBook.IsLoadingVersions && selectedTranslationVersion is not null;
             _libraryCancelButton.IsEnabled = _selectedSefariaBook.IsDownloading;
             return;
         }
@@ -2329,10 +2341,11 @@ public partial class MainWindow
             _libraryProgress.IsVisible = _isSefariaDownloading;
             var hebrewFullyInstalled = installProgress is not null && installProgress.TotalBooks > 0 && installProgress.HebrewInstalledBooks == installProgress.TotalBooks;
             var translationFullyInstalled = installProgress is not null && installProgress.TotalBooks > 0 && installProgress.TranslationInstalledBooks == installProgress.TotalBooks;
-            _libraryCategoryHebrewActionButton.Content = hebrewFullyInstalled ? "Delete" : "Download";
-            _libraryCategoryHebrewActionButton.IsEnabled = !_isSefariaDownloading && categoryTarget.Books.Count > 0 && (hasHebrewVersion || hebrewFullyInstalled);
-            _libraryCategoryTranslationActionButton.Content = translationFullyInstalled ? "Delete" : "Download";
-            _libraryCategoryTranslationActionButton.IsEnabled = !_isSefariaDownloading && categoryTarget.Books.Count > 0 && (hasTranslationVersion || translationFullyInstalled);
+            var snapshotInstalled = _sefariaLibrary.HasOfflineLibrary;
+            _libraryCategoryHebrewActionButton.Content = snapshotInstalled ? "Included" : hebrewFullyInstalled ? "Delete" : "Download";
+            _libraryCategoryHebrewActionButton.IsEnabled = !snapshotInstalled && !_isSefariaDownloading && categoryTarget.Books.Count > 0 && (hasHebrewVersion || hebrewFullyInstalled);
+            _libraryCategoryTranslationActionButton.Content = snapshotInstalled ? "Included" : translationFullyInstalled ? "Delete" : "Download";
+            _libraryCategoryTranslationActionButton.IsEnabled = !snapshotInstalled && !_isSefariaDownloading && categoryTarget.Books.Count > 0 && (hasTranslationVersion || translationFullyInstalled);
             _libraryCancelButton.IsEnabled = _isSefariaDownloading;
             SetComboBoxSelectionToolTip(_libraryCategoryHebrewVersionBox);
             SetComboBoxSelectionToolTip(_libraryCategoryEnglishVersionBox);

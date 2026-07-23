@@ -37,6 +37,11 @@ public sealed partial class SefariaLibraryService
 
     public async Task<List<SefariaVersionOption>> GetAvailableVersionsAsync(string title, CancellationToken cancellationToken)
     {
+        if (HasOfflineLibrary)
+        {
+            return GetOfflineVersionOptions(title);
+        }
+
         var manifest = await GetBooksManifestLookupAsync(cancellationToken);
         return manifest.TryGetValue(title, out var versions)
             ? versions.Select(CloneVersionOption).ToList()
@@ -45,11 +50,23 @@ public sealed partial class SefariaLibraryService
 
     public async Task WarmBooksManifestCacheAsync(CancellationToken cancellationToken)
     {
+        if (HasOfflineLibrary)
+        {
+            _ = GetOfflineLibraryBooks();
+            return;
+        }
         _ = await GetBooksManifestLookupAsync(cancellationToken);
     }
 
     public async Task<Dictionary<string, List<SefariaVersionOption>>> GetAllAvailableVersionsLookupAsync(CancellationToken cancellationToken)
     {
+        if (HasOfflineLibrary)
+        {
+            return GetOfflineLibraryBooks()
+                .GroupBy(book => book.Title, StringComparer.Ordinal)
+                .ToDictionary(group => group.Key, group => GetOfflineVersionOptions(group.Key), StringComparer.Ordinal);
+        }
+
         var manifest = await GetBooksManifestLookupAsync(cancellationToken);
         return manifest.ToDictionary(
             pair => pair.Key,
@@ -59,6 +76,12 @@ public sealed partial class SefariaLibraryService
 
     public bool TryGetCachedAvailableVersions(string title, out List<SefariaVersionOption> versions)
     {
+        if (HasOfflineLibrary)
+        {
+            versions = GetOfflineVersionOptions(title);
+            return versions.Count > 0;
+        }
+
         if (_booksManifestCache is not null &&
             _booksManifestCache.TryGetValue(title, out var cachedVersions))
         {

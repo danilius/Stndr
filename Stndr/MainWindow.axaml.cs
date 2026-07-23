@@ -66,6 +66,12 @@ public partial class MainWindow : Window
     private TextBlock? _dictionaryLookupReference;
     private TextBlock? _dictionaryLookupStatus;
     private StackPanel? _dictionaryLookupResultsPanel;
+    private StackPanel? _dictionaryCataloguePanel;
+    private TextBlock? _dictionaryCatalogueStatus;
+    private ComboBox? _dictionarySearchScopeBox;
+    private long? _dictionarySelectedLexiconId;
+    private string _dictionaryRequestedLexiconName = string.Empty;
+    private readonly Dictionary<string, Expander> _dictionaryLexiconExpanders = new(StringComparer.Ordinal);
     private bool _isDictionaryToolsExpanded = true;
     private TextBlock? _rightPanelTitle;
     private StackPanel? _rightPanelBody;
@@ -278,6 +284,24 @@ public partial class MainWindow : Window
             // first, so the modal dialog isn't hidden behind the topmost splash window.
             await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
             await PromptForDataFolderAsync(isStartup: true);
+        }
+
+        if (_sefariaLibrary.IsConfigured &&
+            !string.IsNullOrWhiteSpace(_sefariaLibrary.StorageRootFolder) &&
+            !SefariaOfflineLibraryInstaller.IsInstalled(_sefariaLibrary.StorageRootFolder) &&
+            !_settings.OfflineLibrarySetupDeferred)
+        {
+            await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+            var installed = await SefariaOfflineLibrarySetupDialog.ShowAsync(this, _sefariaLibrary.StorageRootFolder);
+            if (installed)
+            {
+                ApplyDataFolder(_sefariaLibrary.StorageRootFolder);
+            }
+            else
+            {
+                _settings.OfflineLibrarySetupDeferred = true;
+                _settingsService.Save(_settings);
+            }
         }
     }
 

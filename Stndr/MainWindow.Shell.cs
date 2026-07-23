@@ -661,6 +661,7 @@ public partial class MainWindow
                 IsSedrotExpanded = readerState.IsSedrotExpanded,
                 IsCommentariesExpanded = readerState.IsCommentariesExpanded,
                 IsLinksExpanded = readerState.IsLinksExpanded,
+                IsLicensesExpanded = readerState.IsLicensesExpanded,
                 IsTextsExpanded = readerState.IsTextsExpanded,
                 ShowAliyot = readerState.ShowAliyot,
                 IsSedraContentOpen = readerState.IsSedraContentOpen,
