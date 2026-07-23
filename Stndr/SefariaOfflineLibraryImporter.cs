@@ -199,7 +199,7 @@ public sealed class SefariaOfflineLibraryImporter
 
     private async Task ImportWorksAsync(SqliteConnection connection, Stream stream, IProgress<SefariaOfflineLibraryProgress>? progress, CancellationToken token)
     {
-        progress?.Report(new(SefariaOfflineLibraryStage.ImportingMetadata, "Importing books and schemas"));
+        progress?.Report(new(SefariaOfflineLibraryStage.ImportingMetadata, "Importing books and schemas..."));
         using var transaction = connection.BeginTransaction();
         using var insert = new PreparedInsert(connection, transaction,
             "INSERT INTO works VALUES($p0,$p1,$p2,$p3,$p4,$p5,$p6,$p7,$p8,$p9,$p10,$p11,$p12,$p13)", 14);
@@ -214,14 +214,34 @@ public sealed class SefariaOfflineLibraryImporter
                 Json(schema), Json(Value(document, "alt_structs", new BsonDocument())), String(document, "dependence"),
                 String(document, "collective_title"), Json(Value(document, "authors", new BsonArray())), String(document, "enDesc"),
                 String(document, "heDesc"), String(document, "enShortDesc"), String(document, "heShortDesc"));
+            if (_nextWorkId % 500 == 0)
+            {
+                progress?.Report(new(
+                    SefariaOfflineLibraryStage.ImportingMetadata,
+                    $"Importing books and schemas... ({_nextWorkId:N0})",
+                    _nextWorkId));
+                await Task.Yield();
+            }
         }
+
+        progress?.Report(new(
+            SefariaOfflineLibraryStage.ImportingMetadata,
+            $"Imported {_nextWorkId:N0} books and schemas",
+            _nextWorkId));
         transaction.Commit();
     }
 
     private static async Task ImportGenericMetadataAsync(SqliteConnection connection, Stream stream, string table,
         IProgress<SefariaOfflineLibraryProgress>? progress, CancellationToken token)
     {
-        progress?.Report(new(SefariaOfflineLibraryStage.ImportingMetadata, $"Importing {table}"));
+        var label = table switch
+        {
+            "categories" => "library categories",
+            "people" => "author records",
+            "terms" => "titles and terms",
+            _ => table
+        };
+        progress?.Report(new(SefariaOfflineLibraryStage.ImportingMetadata, $"Importing {label}..."));
         using var transaction = connection.BeginTransaction();
         using var insert = new PreparedInsert(connection, transaction, $"INSERT INTO {table} VALUES($p0,$p1)", 2);
         long id = 0;
@@ -229,7 +249,21 @@ public sealed class SefariaOfflineLibraryImporter
         {
             document.Remove("_id");
             await insert.ExecuteAsync(token, ++id, Json(document));
+            // Report often enough that long metadata stages (especially terms) keep the UI alive.
+            if (id % 2_000 == 0)
+            {
+                progress?.Report(new(
+                    SefariaOfflineLibraryStage.ImportingMetadata,
+                    $"Importing {label}... ({id:N0})",
+                    id));
+                await Task.Yield();
+            }
         }
+
+        progress?.Report(new(
+            SefariaOfflineLibraryStage.ImportingMetadata,
+            $"Imported {id:N0} {label}",
+            id));
         transaction.Commit();
     }
 

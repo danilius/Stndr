@@ -2363,11 +2363,6 @@ public partial class MainWindow
 
     private async Task ShowAdvancedSearchRemoteResultDialogAsync(AdvancedSearchResult result)
     {
-        if (_isSefariaDownloading)
-        {
-            return;
-        }
-
         var workTitle = FirstNonEmptyAdvancedSearchValue(
             result.WorkTitle,
             ExtractAdvancedSearchReferenceTitle(result.Reference));
@@ -2377,37 +2372,21 @@ public partial class MainWindow
             return;
         }
 
-        var status = new TextBlock
+        var installed = _sefariaLibrary.GetInstalledVersionsForTitle(workTitle);
+        if (installed.Count > 0)
         {
-            Text = "Loading available versions...",
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = new SolidColorBrush(Color.Parse("#667085"))
-        };
-        var hebrewVersionBox = new ComboBox
-        {
-            Width = LibraryVersionDropdownWidth,
-            IsEnabled = false
-        };
-        var translationVersionBox = new ComboBox
-        {
-            Width = LibraryVersionDropdownWidth,
-            IsEnabled = false
-        };
-        ApplyVersionDropdownItemTooltips(hebrewVersionBox);
-        ApplyVersionDropdownItemTooltips(translationVersionBox);
-        var previewButton = new Button { Content = "Preview Passage", MinWidth = 118 };
-        var downloadButton = new Button
-        {
-            Content = "Download",
-            MinWidth = 118,
-            IsEnabled = false
-        };
-        var cancelButton = new Button { Content = "Cancel", MinWidth = 76 };
-        CancellationTokenSource? dialogDownloadCts = null;
+            result.BookKey = installed[0].Key;
+            result.VersionTitle = "Installed";
+            OpenAdvancedSearchResult(result);
+            return;
+        }
+
+        var previewButton = new Button { Content = "Preview Passage", MinWidth = 118, IsDefault = true };
+        var closeButton = new Button { Content = "Close", MinWidth = 76, IsCancel = true };
         var dialog = new Window
         {
-            Title = "Sefaria Result",
-            Width = 620,
+            Title = "Search result",
+            Width = 520,
             SizeToContent = SizeToContent.Height,
             WindowStartupLocation = WindowStartupLocation.CenterOwner
         };
@@ -2417,143 +2396,7 @@ public partial class MainWindow
             OpenAdvancedSearchPreviewTab(result);
             dialog.Close();
         };
-        cancelButton.Click += (_, _) =>
-        {
-            if (dialogDownloadCts is not null)
-            {
-                dialogDownloadCts.Cancel();
-                return;
-            }
-
-            dialog.Close();
-        };
-
-        var book = new SefariaBookNode { Title = workTitle };
-        var versions = new List<SefariaVersionOption>();
-        var hebrewChoices = new List<SingleBookVersionChoice>();
-        var translationChoices = new List<SingleBookVersionChoice>();
-
-        void RefreshVersionChoices()
-        {
-            hebrewVersionBox.ItemsSource = hebrewChoices;
-            translationVersionBox.ItemsSource = translationChoices;
-            hebrewVersionBox.SelectedItem = hebrewChoices.FirstOrDefault(choice => choice.Version is not null);
-            translationVersionBox.SelectedItem = translationChoices.FirstOrDefault(choice => choice.Version is not null)
-                ?? translationChoices.FirstOrDefault();
-            hebrewVersionBox.IsEnabled = hebrewChoices.Any(choice => choice.Version is not null);
-            translationVersionBox.IsEnabled = translationChoices.Count > 0;
-            downloadButton.IsEnabled = hebrewVersionBox.SelectedItem is SingleBookVersionChoice { Version: not null } ||
-                translationVersionBox.SelectedItem is SingleBookVersionChoice { IsNone: false, Version: not null };
-            SetComboBoxSelectionToolTip(hebrewVersionBox);
-            SetComboBoxSelectionToolTip(translationVersionBox);
-            if (versions.Count == 0)
-            {
-                status.Text = $"No downloadable versions were found for {workTitle}.";
-            }
-            else if (!downloadButton.IsEnabled)
-            {
-                status.Text = $"No Hebrew or translation versions are available for {workTitle}.";
-            }
-            else
-            {
-                status.Text = "Choose Hebrew and, optionally, a translation to download.";
-            }
-        }
-
-        hebrewVersionBox.SelectionChanged += (_, _) =>
-        {
-            SetComboBoxSelectionToolTip(hebrewVersionBox);
-            downloadButton.IsEnabled = hebrewVersionBox.SelectedItem is SingleBookVersionChoice { Version: not null } ||
-                translationVersionBox.SelectedItem is SingleBookVersionChoice { IsNone: false, Version: not null };
-        };
-        translationVersionBox.SelectionChanged += (_, _) =>
-        {
-            SetComboBoxSelectionToolTip(translationVersionBox);
-            downloadButton.IsEnabled = hebrewVersionBox.SelectedItem is SingleBookVersionChoice { Version: not null } ||
-                translationVersionBox.SelectedItem is SingleBookVersionChoice { IsNone: false, Version: not null };
-        };
-
-        async Task DownloadSelectedVersionsAsync()
-        {
-            var selectedHebrew = hebrewVersionBox.SelectedItem is SingleBookVersionChoice { Version: not null } hebrewChoice
-                ? hebrewChoice.Version
-                : null;
-            var selectedTranslation = translationVersionBox.SelectedItem is SingleBookVersionChoice { IsNone: false, Version: not null } translationChoice
-                ? translationChoice.Version
-                : null;
-            var selectedVersions = new[] { selectedHebrew, selectedTranslation }
-                .Where(version => version is not null)
-                .Select(version => version!)
-                .DistinctBy(version => $"{version.LanguageCode}|{version.VersionTitle}")
-                .ToList();
-            if (selectedVersions.Count == 0)
-            {
-                status.Text = $"Choose a version to download for {workTitle}.";
-                return;
-            }
-
-            hebrewVersionBox.IsEnabled = false;
-            translationVersionBox.IsEnabled = false;
-            previewButton.IsEnabled = false;
-            downloadButton.IsEnabled = false;
-            cancelButton.Content = "Cancel Download";
-            status.Text = $"Downloading {workTitle}...";
-
-            _isSefariaDownloading = true;
-            dialogDownloadCts = new CancellationTokenSource();
-            _sefariaDownloadCts = dialogDownloadCts;
-            try
-            {
-                for (var index = 0; index < selectedVersions.Count; index++)
-                {
-                    var version = selectedVersions[index];
-                    var languageLabel = IsHebrewCategoryVersion(version) ? "Hebrew" : "translation";
-                    status.Text = selectedVersions.Count == 1
-                        ? $"Downloading {workTitle} {languageLabel}..."
-                        : $"Downloading {workTitle} {languageLabel} ({index + 1}/{selectedVersions.Count})...";
-                    await DownloadBookVersionAsync(book, version, dialogDownloadCts.Token);
-                }
-
-                RefreshInstalledBooksTree();
-                status.Text = $"{workTitle} downloaded.";
-                dialog.Close();
-
-                var installed = _sefariaLibrary.GetInstalledVersionsForTitle(workTitle)
-                    .FirstOrDefault(installedBook => selectedVersions.Any(version =>
-                        string.Equals(installedBook.LanguageCode, version.LanguageCode, StringComparison.OrdinalIgnoreCase) &&
-                        string.Equals(installedBook.VersionTitle, version.VersionTitle, StringComparison.Ordinal)));
-                if (installed is not null)
-                {
-                    result.BookKey = installed.Key;
-                    result.VersionTitle = "Installed";
-                    OpenAdvancedSearchResult(result);
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                status.Text = $"Cancelled download of {workTitle}.";
-                previewButton.IsEnabled = true;
-                cancelButton.Content = "Cancel";
-                RefreshVersionChoices();
-            }
-            catch (Exception ex)
-            {
-                status.Text = $"Download failed: {ex.Message}";
-                previewButton.IsEnabled = true;
-                cancelButton.IsEnabled = true;
-                RefreshVersionChoices();
-            }
-            finally
-            {
-                _isSefariaDownloading = false;
-                dialogDownloadCts?.Dispose();
-                dialogDownloadCts = null;
-                _sefariaDownloadCts = null;
-                cancelButton.Content = "Cancel";
-            }
-        }
-
-        downloadButton.Click += async (_, _) => await DownloadSelectedVersionsAsync();
+        closeButton.Click += (_, _) => dialog.Close();
 
         dialog.Content = new StackPanel
         {
@@ -2570,68 +2413,20 @@ public partial class MainWindow
                 },
                 new TextBlock
                 {
-                    Text = "This result is from Sefaria and is not downloaded. Preview the passage, or choose a version to download into Stndr.",
+                    Text = $"“{workTitle}” is not available in the offline library. You can preview this passage, " +
+                           "or update the library from Settings if this title should be included.",
                     TextWrapping = TextWrapping.Wrap,
                     Foreground = new SolidColorBrush(Color.Parse("#344054"))
                 },
                 new StackPanel
                 {
-                    Spacing = 8,
-                    Children =
-                    {
-                        CreateAdvancedSearchDialogLabel("Hebrew version"),
-                        hebrewVersionBox,
-                        CreateAdvancedSearchDialogLabel("Translation"),
-                        translationVersionBox
-                    }
-                },
-                status,
-                new StackPanel
-                {
                     Orientation = Orientation.Horizontal,
                     HorizontalAlignment = HorizontalAlignment.Right,
                     Spacing = 8,
-                    Children =
-                    {
-                        previewButton,
-                        downloadButton,
-                        cancelButton
-                    }
+                    Children = { previewButton, closeButton }
                 }
             }
         };
-
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                return await _sefariaLibrary.GetAvailableVersionsAsync(workTitle, CancellationToken.None);
-            }
-            catch
-            {
-                return new List<SefariaVersionOption>();
-            }
-        }).ContinueWith(task =>
-        {
-            versions = task.Result
-                .Where(version => !string.IsNullOrWhiteSpace(version.DownloadUrl))
-                .ToList();
-            book.Versions = versions;
-            hebrewChoices = BuildSingleBookVersionChoices(versions, true, false);
-            if (hebrewChoices.Count == 0)
-            {
-                hebrewChoices = versions
-                    .Select(version => new SingleBookVersionChoice
-                    {
-                        Version = version,
-                        DisplayText = string.IsNullOrWhiteSpace(version.DisplayText) ? version.VersionTitle : version.DisplayText
-                    })
-                    .ToList();
-            }
-
-            translationChoices = BuildSingleBookVersionChoices(versions, false, true);
-            RefreshVersionChoices();
-        }, TaskScheduler.FromCurrentSynchronizationContext());
 
         await dialog.ShowDialog(this);
     }

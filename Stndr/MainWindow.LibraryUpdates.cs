@@ -23,7 +23,6 @@ public partial class MainWindow
     private Button? _libraryUpdateBannerDismissButton;
     private Button? _libraryUpdateBannerCancelButton;
     private ProgressBar? _libraryUpdateBannerProgress;
-    private Button? _librarySnapshotUpdateButton;
     private DateTime _libraryUpdateLastUiPublishUtc;
 
     private void InitializeLibraryUpdateBanner()
@@ -142,35 +141,6 @@ public partial class MainWindow
             }
         }
 
-        if (_librarySnapshotUpdateButton is not null)
-        {
-            var actionState = _libraryUpdateService.CurrentState;
-            _librarySnapshotUpdateButton.Content = actionState.Mode switch
-            {
-                SefariaLibraryUpdateMode.UpdateAvailable => "Update library",
-                SefariaLibraryUpdateMode.Downloading or
-                    SefariaLibraryUpdateMode.Importing or
-                    SefariaLibraryUpdateMode.Activating => "Updating...",
-                SefariaLibraryUpdateMode.Checking => "Checking...",
-                _ => "Check for updates"
-            };
-            _librarySnapshotUpdateButton.IsEnabled =
-                actionState.Mode is not (
-                    SefariaLibraryUpdateMode.Checking or
-                    SefariaLibraryUpdateMode.Downloading or
-                    SefariaLibraryUpdateMode.Importing or
-                    SefariaLibraryUpdateMode.Activating) &&
-                _sefariaLibrary.HasOfflineLibrary;
-        }
-
-        if (_libraryStatus is not null &&
-            state.Mode is SefariaLibraryUpdateMode.UpToDate or
-                SefariaLibraryUpdateMode.Error or
-                SefariaLibraryUpdateMode.Complete or
-                SefariaLibraryUpdateMode.Cancelled)
-        {
-            _libraryStatus.Text = state.Message;
-        }
     }
 
     private async Task CheckLibraryUpdatesAsync()
@@ -286,8 +256,8 @@ public partial class MainWindow
         }
 
         RefreshInstalledBooksTree();
-        UpdateLibraryDetails();
         UpdateReaderTools();
+        _ = LoadDictionaryCatalogueAsync();
         _libraryLoadTask = LoadSefariaLibraryAsync();
     }
 
@@ -422,8 +392,7 @@ public partial class MainWindow
                 new TextBlock
                 {
                     Text =
-                        "When you are ready, open Settings → Sefaria library updates and choose Update now, " +
-                        "or use Library Manager → Update library. " +
+                        "When you are ready, open Settings → Sefaria library updates and choose Update now. " +
                         $"This update offer will stay quiet for about {snoozeDays} day{(snoozeDays == 1 ? "" : "s")} " +
                         "(configurable in Settings).",
                     TextWrapping = TextWrapping.Wrap,

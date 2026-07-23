@@ -339,11 +339,6 @@ public partial class MainWindow
 
     private Control CreateTabContent(string title)
     {
-        if (string.Equals(title, LibraryManagerTabTitle, StringComparison.Ordinal))
-        {
-            return CreateLibraryManagerView();
-        }
-
         if (string.Equals(title, SettingsTabTitle, StringComparison.Ordinal))
         {
             return CreateSettingsView();
@@ -362,11 +357,6 @@ public partial class MainWindow
         throw new InvalidOperationException($"Unknown utility tab: {title}");
     }
 
-    private void OpenLibraryManagerClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        OpenOrSelectTab(LibraryManagerTabTitle);
-    }
-
     private void OpenSettingsClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         OpenOrSelectTab(SettingsTabTitle);
@@ -377,13 +367,6 @@ public partial class MainWindow
         ToggleSearchBox(_leftPanelSearchBox);
         if (_leftPanelSearchBox?.IsVisible == false && _leftPanelSearchSuggestionsContainer is not null)
             _leftPanelSearchSuggestionsContainer.IsVisible = false;
-    }
-
-    private void ToggleLibraryManagerSearchClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        ToggleSearchBox(_libraryManagerSearchBox);
-        if (_libraryManagerSearchBox?.IsVisible == false && _librarySearchSuggestionsContainer is not null)
-            _librarySearchSuggestionsContainer.IsVisible = false;
     }
 
     private static void ToggleSearchBox(TextBox? searchBox)
@@ -753,8 +736,7 @@ public partial class MainWindow
 
     private static bool IsKnownUtilityTabTitle(string? title)
     {
-        return string.Equals(title, LibraryManagerTabTitle, StringComparison.Ordinal) ||
-            string.Equals(title, AdvancedSearchTabTitle, StringComparison.Ordinal) ||
+        return string.Equals(title, AdvancedSearchTabTitle, StringComparison.Ordinal) ||
             string.Equals(title, DictionaryTabTitle, StringComparison.Ordinal) ||
             string.Equals(title, SettingsTabTitle, StringComparison.Ordinal);
     }

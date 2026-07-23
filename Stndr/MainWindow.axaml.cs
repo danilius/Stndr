@@ -38,7 +38,6 @@ public partial class MainWindow : Window
     private const double MaxReaderColumnLetters = 220;
     private const double AverageReaderCharacterWidthFactor = 0.62;
     private const double ReaderSegmentLabelWidth = 28;
-    private const string LibraryManagerTabTitle = "Library Manager";
     private const string SettingsTabTitle = "Settings";
     private const string AdvancedSearchTabTitle = "Advanced Search";
     private const string DictionaryTabTitle = "Dictionary";
@@ -87,31 +86,6 @@ public partial class MainWindow : Window
     private TextBlock? _dictionaryPopupStatus;
     private Button? _dictionaryPopupDockButton;
     private Button? _dictionaryPopupCloseButton;
-    private TreeView? _libraryTree;
-    private ScrollViewer? _libraryTreeScrollViewer;
-    private TreeViewItem? _selectedLibraryTreeItem;
-    private TextBlock? _libraryTitle;
-    private TextBlock? _libraryHebrewTitle;
-    private TextBlock? _libraryDescription;
-    private TextBlock? _libraryStatus;
-    private TextBlock? _libraryBookVersionLabel;
-    private ComboBox? _libraryVersionBox;
-    private ComboBox? _libraryTranslationVersionBox;
-    private StackPanel? _libraryBookVersionPanel;
-    private StackPanel? _libraryCategoryVersionPanel;
-    private ComboBox? _libraryCategoryHebrewVersionBox;
-    private ComboBox? _libraryCategoryEnglishVersionBox;
-    private ProgressBar? _libraryProgress;
-    private Button? _librarySingleHebrewActionButton;
-    private Button? _librarySingleTranslationActionButton;
-    private Button? _libraryCategoryHebrewActionButton;
-    private Button? _libraryCategoryTranslationActionButton;
-    private Button? _libraryCancelButton;
-    private Button? _libraryDownloadAllButton;
-    private TextBox? _libraryManagerSearchBox;
-    private Border? _librarySearchSuggestionsContainer;
-    private ListBox? _librarySearchSuggestions;
-
     private ObservableCollection<TabItem>? _tabs;
     private readonly AppSettingsService _settingsService = new();
     private readonly SefariaLibraryService _sefariaLibrary;
@@ -121,21 +95,12 @@ public partial class MainWindow : Window
 
     private bool _leftCollapsed;
     private bool _rightCollapsed;
-    private bool _isSefariaDownloading;
-    private bool _suppressLibraryVersionChangeEvents;
     private bool _hasLoadedLayoutState;
     private double _leftExpandedWidth = DefaultExpandedPanelWidth;
     private double _rightExpandedWidth = DefaultExpandedPanelWidth;
     private SefariaCategoryNode? _sefariaRoot;
-    private SefariaBookNode? _selectedSefariaBook;
-    private SefariaBookNode? _libraryVersionBoxesBook;
-    private SefariaCategoryNode? _selectedSefariaCategory;
     private Task? _libraryLoadTask;
-    private int _librarySelectionVersion;
-    private CancellationTokenSource? _sefariaDownloadCts;
-    private CancellationTokenSource? _categoryInstallProgressCts;
     private CommentaryReorderDragState? _activeCommentaryReorder;
-    private MainWindow.CategorySelectionProgress? _cachedCategoryProgress;
     private List<FontOption>? _allFontOptions;
     private List<FontOption>? _hebrewFontOptions;
     private readonly ObservableCollection<SavedAdvancedSearch> _savedAdvancedSearches = new();
@@ -348,9 +313,9 @@ public partial class MainWindow : Window
         _sefariaLibrary.SetStorageRootFolder(dataFolder);
         ApplyUiFontSetting();
         RefreshInstalledBooksTree();
-        UpdateLibraryDetails();
         RefreshOpenReaderTabs();
         UpdateReaderTools();
+        _ = LoadDictionaryCatalogueAsync();
         _libraryLoadTask = LoadSefariaLibraryAsync();
     }
 

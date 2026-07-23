@@ -152,7 +152,7 @@ public partial class MainWindow
             Background = Brushes.White,
             Child = new TextBlock
             {
-                Text = "Downloading schema...",
+                Text = "Opening book...",
                 HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
                 VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
                 FontSize = 16

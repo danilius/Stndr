@@ -270,17 +270,14 @@ public partial class MainWindow
             FontFamily = new FontFamily(GetSelectedUiFontFamily())
         });
 
-        var manageVersionsButton = new Button
+        textTools.Children.Add(new TextBlock
         {
-            Content = "Manage Versions",
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            Margin = new Thickness(0, 2, 0, 0),
-            Padding = new Thickness(8, 6)
-        };
-        ToolTip.SetTip(manageVersionsButton, "Open this book in Library Manager to download or delete versions.");
-        manageVersionsButton.Click += async (_, _) => await OpenLibraryManagerForWorkAsync(readerState.WorkTitle);
-        textTools.Children.Add(manageVersionsButton);
+            Text = "All installed versions come from the offline Sefaria library. Choose Hebrew and translation versions above.",
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = new SolidColorBrush(Color.Parse("#667085")),
+            FontFamily = new FontFamily(GetSelectedUiFontFamily()),
+            Margin = new Thickness(0, 2, 0, 0)
+        });
 
         _rightPanelBody.Children.Add(CreateReaderToolsGroup(
             "Versions",

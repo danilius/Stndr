@@ -289,10 +289,27 @@ public partial class MainWindow
 
     private async Task LoadDictionaryCatalogueAsync()
     {
-        if (_dictionaryCataloguePanel is null) return;
+        // Dictionary tab may not be open yet (created lazily). Opening it later loads itself.
+        if (_dictionaryCataloguePanel is null)
+        {
+            return;
+        }
+
         try
         {
+            if (_dictionaryCatalogueStatus is not null)
+            {
+                _dictionaryCataloguePanel.Children.Clear();
+                _dictionaryCatalogueStatus.Text = "Loading installed dictionaries...";
+                _dictionaryCataloguePanel.Children.Add(_dictionaryCatalogueStatus);
+            }
+
             var lexicons = await _sefariaLibrary.GetOfflineLexiconsAsync();
+            if (_dictionaryCataloguePanel is null)
+            {
+                return;
+            }
+
             _dictionaryCataloguePanel.Children.Clear();
             _dictionaryLexiconExpanders.Clear();
             if (lexicons.Count == 0)
@@ -300,9 +317,10 @@ public partial class MainWindow
                 _dictionaryCataloguePanel.Children.Add(new TextBlock
                 {
                     Text = _sefariaLibrary.HasOfflineLibrary
-                        ? "The installed library predates offline dictionaries. Install the latest Sefaria snapshot to add them."
-                        : "Install the Sefaria offline library to browse dictionaries without an internet connection.",
-                    Foreground = new SolidColorBrush(Color.Parse("#667085")), TextWrapping = TextWrapping.Wrap
+                        ? "No dictionaries were found in the offline library."
+                        : "Install the Sefaria library to browse dictionaries.",
+                    Foreground = new SolidColorBrush(Color.Parse("#667085")),
+                    TextWrapping = TextWrapping.Wrap
                 });
                 return;
             }
@@ -310,27 +328,40 @@ public partial class MainWindow
             _dictionaryCataloguePanel.Children.Add(new TextBlock
             {
                 Text = $"{lexicons.Count} dictionaries · {lexicons.Sum(item => item.EntryCount):N0} entries. Expand a dictionary, then drill down by initial letters.",
-                Foreground = new SolidColorBrush(Color.Parse("#475467")), TextWrapping = TextWrapping.Wrap
+                Foreground = new SolidColorBrush(Color.Parse("#475467")),
+                TextWrapping = TextWrapping.Wrap
             });
             if (_dictionarySearchScopeBox is not null)
             {
                 var options = new List<DictionarySearchScopeOption> { new(null, "All dictionaries") };
                 options.AddRange(lexicons.Select(item => new DictionarySearchScopeOption(item.Id, item.Name)));
                 _dictionarySearchScopeBox.ItemsSource = options;
-                _dictionarySearchScopeBox.SelectedItem = options.FirstOrDefault(option => option.LexiconId == _dictionarySelectedLexiconId) ?? options[0];
+                _dictionarySearchScopeBox.SelectedItem =
+                    options.FirstOrDefault(option => option.LexiconId == _dictionarySelectedLexiconId) ?? options[0];
             }
+
             foreach (var lexicon in lexicons)
             {
                 var expander = CreateLexiconNavigationExpander(lexicon);
                 _dictionaryLexiconExpanders[lexicon.Name] = expander;
                 _dictionaryCataloguePanel.Children.Add(expander);
             }
+
             ApplyRequestedDictionarySelection();
         }
         catch (Exception ex)
         {
+            if (_dictionaryCataloguePanel is null)
+            {
+                return;
+            }
+
             _dictionaryCataloguePanel.Children.Clear();
-            _dictionaryCataloguePanel.Children.Add(new TextBlock { Text = $"Could not load dictionaries: {ex.Message}", TextWrapping = TextWrapping.Wrap });
+            _dictionaryCataloguePanel.Children.Add(new TextBlock
+            {
+                Text = $"Could not load dictionaries: {ex.Message}",
+                TextWrapping = TextWrapping.Wrap
+            });
         }
     }
 

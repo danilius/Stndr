@@ -61,34 +61,22 @@ public sealed partial class SefariaLibraryService
         return downloadedPreview;
     }
 
-    public async Task DownloadLinkWorkAsync(
+    public Task DownloadLinkWorkAsync(
         string workTitle,
         CommentaryLanguage preferredLanguage,
         IProgress<double> progress,
         CancellationToken cancellationToken)
     {
-        var versions = await GetAvailableVersionsAsync(workTitle, cancellationToken);
-        var selectedVersion = SelectPreferredVersion(versions, preferredLanguage);
-        if (selectedVersion is null)
+        // Per-book downloads are retired. Linked works must already be present in the offline library.
+        cancellationToken.ThrowIfCancellationRequested();
+        progress.Report(1);
+        if (GetFullInstalledVersionsForTitle(workTitle).Count > 0)
         {
-            throw new InvalidOperationException($"No downloadable versions are available for {workTitle}.");
+            return Task.CompletedTask;
         }
 
-        var book = new SefariaBookNode
-        {
-            Title = workTitle,
-            SelectedVersion = selectedVersion
-        };
-        try
-        {
-            await DownloadBookAsync(book, progress, cancellationToken);
-        }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("did not return downloadable JSON", StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException(
-                $"Sefaria does not currently expose a full downloadable source for {workTitle}. You can still use the inline preview or split view for the linked reference.",
-                ex);
-        }
+        throw new InvalidOperationException(
+            $"“{workTitle}” is not available in the offline library. Update the library from Settings if this title should be present.");
     }
 
     public List<InstalledSefariaBook> GetFullInstalledVersionsForTitle(string title)

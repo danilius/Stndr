@@ -29,6 +29,28 @@ public partial class MainWindow
     // Cancels the previous search's debounce + API call when the user types a new character.
     private CancellationTokenSource _installedBooksSearchCts = new();
 
+    /// <summary>
+    /// Loads the offline library tree for Advanced Search scope and similar catalogue uses.
+    /// Replaces the old Library Manager catalogue load.
+    /// </summary>
+    private async Task LoadSefariaLibraryAsync()
+    {
+        try
+        {
+            if (!_sefariaLibrary.IsConfigured || !_sefariaLibrary.HasOfflineLibrary)
+            {
+                _sefariaRoot = null;
+                return;
+            }
+
+            _sefariaRoot = await _sefariaLibrary.LoadLibraryAsync(CancellationToken.None);
+        }
+        catch
+        {
+            _sefariaRoot = null;
+        }
+    }
+
     private void RefreshInstalledBooksTree()
     {
         _ = RefreshInstalledBooksTreeAsync();

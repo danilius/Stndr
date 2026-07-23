@@ -53,7 +53,13 @@ public sealed partial class SefariaLibraryService
 
     public List<InstalledSefariaBook> GetInstalledBooks()
     {
-        if (!IsConfigured || string.IsNullOrEmpty(SourcesFolder) || !Directory.Exists(SourcesFolder))
+        if (!IsConfigured)
+        {
+            return new List<InstalledSefariaBook>();
+        }
+
+        // Offline SQLite dump is the sole library source. Per-book JSON installs are retired.
+        if (!HasOfflineLibrary)
         {
             return new List<InstalledSefariaBook>();
         }
@@ -66,19 +72,7 @@ public sealed partial class SefariaLibraryService
             }
         }
 
-        var installed = LoadInstalledBooks();
-        var changed = NormalizeInstalledBookManifest(installed, refreshChangedMetadata: false, CancellationToken.None);
-
-        if (changed)
-        {
-            SaveInstalledBooks(installed);
-        }
-
-        var result = SortInstalledBooksForDisplay(installed
-            .Concat(GetOfflineLibraryBooks())
-            .GroupBy(book => book.Key, StringComparer.OrdinalIgnoreCase)
-            .Select(group => group.First()));
-
+        var result = SortInstalledBooksForDisplay(GetOfflineLibraryBooks());
         lock (_installedBooksCacheGate)
         {
             _getInstalledBooksResultCache = CloneInstalledBooks(result);
@@ -88,42 +82,12 @@ public sealed partial class SefariaLibraryService
         return result;
     }
 
-    public async Task<InstalledBooksReconciliationResult> ReconcileInstalledBooksAsync(
+    public Task<InstalledBooksReconciliationResult> ReconcileInstalledBooksAsync(
         CancellationToken cancellationToken = default)
     {
-        if (!IsConfigured || string.IsNullOrEmpty(SourcesFolder) || !Directory.Exists(SourcesFolder))
-        {
-            return new InstalledBooksReconciliationResult(0, 0, 0, 0);
-        }
-
-        return await Task.Run(() =>
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var installed = LoadInstalledBooks();
-            var beforeKeys = installed.Select(book => book.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var beforeByPath = installed
-                .Where(book => !string.IsNullOrWhiteSpace(book.FilePath))
-                .GroupBy(book => Path.GetFullPath(book.FilePath), StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
-
-            var changed = NormalizeInstalledBookManifest(installed, refreshChangedMetadata: true, cancellationToken);
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var afterKeys = installed.Select(book => book.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var removed = beforeKeys.Count(key => !afterKeys.Contains(key));
-            var added = afterKeys.Count(key => !beforeKeys.Contains(key));
-            var refreshed = installed.Count(book =>
-                !string.IsNullOrWhiteSpace(book.FilePath) &&
-                beforeByPath.TryGetValue(Path.GetFullPath(book.FilePath), out var previous) &&
-                !InstalledBookMetadataMatches(previous, book));
-
-            if (changed)
-            {
-                SaveInstalledBooks(installed);
-            }
-
-            return new InstalledBooksReconciliationResult(added, refreshed, removed, 0);
-        }, cancellationToken);
+        // No per-book JSON manifest to reconcile under the offline-library model.
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(new InstalledBooksReconciliationResult(0, 0, 0, 0));
     }
 
     private bool NormalizeInstalledBookManifest(

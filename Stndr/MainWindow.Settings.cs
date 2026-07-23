@@ -330,8 +330,8 @@ public partial class MainWindow
             actionButton.Content = installed ? "Reinstall from archive..." : "Install offline library...";
             actionButton.IsEnabled = !string.IsNullOrWhiteSpace(folder);
             statusText.Text = installed
-                ? "The complete Sefaria books, metadata, links and dictionaries database is installed and available throughout Stndr."
-                : "Not installed. Existing per-book downloads remain available.";
+                ? "The complete Sefaria library is installed and available throughout Stndr."
+                : "Not installed. Install the library to open books, links, and dictionaries.";
         }
 
         actionButton.Click += async (_, _) =>
@@ -355,10 +355,10 @@ public partial class MainWindow
             Margin = new Thickness(0, 0, 0, 8),
             Children =
             {
-                new TextBlock { Text = "Complete offline Sefaria library", FontWeight = FontWeight.SemiBold },
+                new TextBlock { Text = "Sefaria library", FontWeight = FontWeight.SemiBold },
                 new TextBlock
                 {
-                    Text = "Installs all text versions and link metadata from Sefaria's compressed MongoDB snapshot into one local database.",
+                    Text = "Stndr uses one complete offline library for books, translations, links, and dictionaries.",
                     Foreground = new SolidColorBrush(Color.Parse("#475467")),
                     TextWrapping = TextWrapping.Wrap
                 },
@@ -632,8 +632,6 @@ public partial class MainWindow
             _settings.InstalledBookTitleDisplay = selected;
             _settingsService.Save(_settings);
             RefreshInstalledBooksTree();
-            RefreshLibraryManagerHeaders();
-            UpdateLibraryDetails();
             RefreshOpenReaderTabs();
             RefreshDisplayFlyouts();
             UpdateReaderTools();
