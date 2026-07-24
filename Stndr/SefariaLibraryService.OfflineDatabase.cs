@@ -260,11 +260,23 @@ public sealed partial class SefariaLibraryService
         return result;
     }
 
-    private static void SortOfflineLibraryCategories(SefariaCategoryNode category)
+    private static void SortOfflineLibraryCategories(SefariaCategoryNode category, bool isRoot = true)
     {
-        foreach (var child in category.Contents.OfType<SefariaCategoryNode>()) SortOfflineLibraryCategories(child);
+        foreach (var child in category.Contents.OfType<SefariaCategoryNode>())
+        {
+            SortOfflineLibraryCategories(child, isRoot: false);
+        }
+
         category.Contents = new System.Collections.ObjectModel.ObservableCollection<SefariaNode>(category.Contents
             .OrderBy(node => node is SefariaCategoryNode ? 0 : 1)
+            .ThenBy(node => node switch
+            {
+                SefariaCategoryNode child when isRoot => GetTopLevelCategoryOrder(child.Category),
+                SefariaCategoryNode child => child.Order,
+                SefariaBookNode book when isRoot => GetTopLevelCategoryOrder(book.PrimaryCategory),
+                SefariaBookNode book => book.Order,
+                _ => float.MaxValue
+            })
             .ThenBy(node => node switch
             {
                 SefariaCategoryNode child => child.Category,

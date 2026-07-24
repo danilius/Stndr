@@ -197,12 +197,37 @@ public sealed partial class SefariaLibraryService
             .ToList();
     }
 
+    /// <summary>
+    /// House order for top-level Installed Books (not plain A–Z).
+    /// Responsa sits after Halakhah; Kabbalah is last among the main corpora.
+    /// </summary>
+    private static readonly string[] TopLevelCategoryOrder =
+    [
+        "Tanakh",
+        "Mishnah",
+        "Talmud",
+        "Tosefta",
+        "Midrash",
+        "Halakhah",
+        "Responsa",
+        "Liturgy",
+        "Jewish Thought",
+        "Musar",
+        "Chasidut",
+        "Second Temple",
+        "Reference",
+        "Kabbalah"
+    ];
+
+    private const float TopLevelOtherOrder = 9000f;
+    private const float TopLevelUnknownOrder = 8000f;
+
     public ObservableCollection<object> BuildInstalledTree()
     {
         var roots = new ObservableCollection<object>();
         var orderLookup = BuildIndexOrderLookup();
         var installedBooks = GetInstalledBooks()
-            .Select(book => ApplyIndexOrder(book, orderLookup))
+            .Select(book => NormalizeInstalledBookPlacement(ApplyIndexOrder(book, orderLookup)))
             .OrderBy(book => GetInstalledCategoryOrder(book, 0))
             .ThenBy(book => GetInstalledCategoryOrder(book, 1))
             .ThenBy(book => GetInstalledCategoryOrder(book, 2))
@@ -242,6 +267,10 @@ public sealed partial class SefariaLibraryService
                 {
                     category.CategoryPath = string.Join("/", categoryPath);
                 }
+                else if (categoryOrder < category.Order)
+                {
+                    category.Order = categoryOrder;
+                }
 
                 current = category.Children;
             }
@@ -262,7 +291,7 @@ public sealed partial class SefariaLibraryService
             }
         }
 
-        SortInstalledTree(roots);
+        SortInstalledTree(roots, isRoot: true);
         return roots;
     }
 
@@ -550,10 +579,87 @@ public sealed partial class SefariaLibraryService
         return book;
     }
 
-    private static float GetInstalledCategoryOrder(InstalledSefariaBook book, int level) =>
-        level >= 0 && level < book.CategoryOrders.Count
+    /// <summary>
+    /// Dump-only installs often lack sefaria_toc.json, so apply house top-level order and
+    /// place orphan titles (empty categories) under a sensible corpus.
+    /// </summary>
+    private static InstalledSefariaBook NormalizeInstalledBookPlacement(InstalledSefariaBook book)
+    {
+        var categories = book.Categories
+            .Where(category => !string.IsNullOrWhiteSpace(category))
+            .ToList();
+
+        if (categories.Count == 0)
+        {
+            categories = GetDefaultCategoriesForOrphanTitle(book.Title);
+            book.Categories = categories;
+        }
+
+        // Prefer house top-level rank; keep deeper TOC ranks when present.
+        var orders = new List<float>(categories.Count);
+        for (var i = 0; i < categories.Count; i++)
+        {
+            if (i == 0)
+            {
+                orders.Add(GetTopLevelCategoryOrder(categories[i]));
+                continue;
+            }
+
+            orders.Add(i < book.CategoryOrders.Count ? book.CategoryOrders[i] : i);
+        }
+
+        book.CategoryOrders = orders;
+        return book;
+    }
+
+    private static List<string> GetDefaultCategoriesForOrphanTitle(string title)
+    {
+        // Known dump orphans / title mismatches that should not appear as root "categories".
+        if (string.Equals(title, "On the Account of Creation", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(title, "On the Account of the World's Creation", StringComparison.OrdinalIgnoreCase) ||
+            title.Contains("Philo", StringComparison.OrdinalIgnoreCase))
+        {
+            return ["Jewish Thought"];
+        }
+
+        return ["Other"];
+    }
+
+    private static float GetTopLevelCategoryOrder(string? categoryName)
+    {
+        if (string.IsNullOrWhiteSpace(categoryName))
+        {
+            return TopLevelOtherOrder;
+        }
+
+        for (var i = 0; i < TopLevelCategoryOrder.Length; i++)
+        {
+            if (string.Equals(TopLevelCategoryOrder[i], categoryName, StringComparison.OrdinalIgnoreCase))
+            {
+                return i;
+            }
+        }
+
+        if (string.Equals(categoryName, "Other", StringComparison.OrdinalIgnoreCase))
+        {
+            return TopLevelOtherOrder;
+        }
+
+        return TopLevelUnknownOrder;
+    }
+
+    private static float GetInstalledCategoryOrder(InstalledSefariaBook book, int level)
+    {
+        if (level == 0)
+        {
+            var top = book.Categories.FirstOrDefault(category => !string.IsNullOrWhiteSpace(category));
+            return GetTopLevelCategoryOrder(top);
+        }
+
+        return level >= 0 && level < book.CategoryOrders.Count
             ? book.CategoryOrders[level]
             : float.MaxValue;
+    }
 
     private static bool InstalledBookMetadataMatches(InstalledSefariaBook current, InstalledSefariaBook refreshed)
     {
@@ -567,10 +673,10 @@ public sealed partial class SefariaLibraryService
             Math.Abs(current.Order - refreshed.Order) < 0.001;
     }
 
-    private static void SortInstalledTree(ObservableCollection<object> nodes)
+    private static void SortInstalledTree(ObservableCollection<object> nodes, bool isRoot = false)
     {
         var sorted = nodes
-            .OrderBy(GetInstalledTreeOrder)
+            .OrderBy(node => isRoot ? GetRootInstalledTreeOrder(node) : GetInstalledTreeOrder(node))
             .ThenBy(GetInstalledTreeTitle, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
@@ -579,11 +685,22 @@ public sealed partial class SefariaLibraryService
         {
             if (node is InstalledSefariaCategory category)
             {
-                SortInstalledTree(category.Children);
+                SortInstalledTree(category.Children, isRoot: false);
             }
 
             nodes.Add(node);
         }
+    }
+
+    private static float GetRootInstalledTreeOrder(object node)
+    {
+        return node switch
+        {
+            InstalledSefariaCategory { IsBookTitle: true } => TopLevelOtherOrder + 1,
+            InstalledSefariaCategory category => GetTopLevelCategoryOrder(category.Title),
+            InstalledSefariaBook => TopLevelOtherOrder + 1,
+            _ => TopLevelOtherOrder + 1
+        };
     }
 
     private static float GetInstalledTreeOrder(object node)
