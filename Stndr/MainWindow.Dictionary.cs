@@ -768,7 +768,7 @@ public partial class MainWindow
 
         try
         {
-            var entries = await LookupDictionaryEntriesWithFallbacksAsync(lookupWord, _dictionaryCurrentReference, cts.Token);
+            var entries = await LookupDictionaryEntriesRoutedAsync(lookupWord, _dictionaryCurrentReference, cts.Token);
             if (cts.IsCancellationRequested ||
                 !string.Equals(_dictionaryCurrentWord, lookupGeneration, StringComparison.Ordinal))
             {
