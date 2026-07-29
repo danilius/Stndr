@@ -149,10 +149,13 @@ public partial class MainWindow
                     .Take(30)
                     .ToList();
 
+                var headword = entry.CrossReferenceTo is null
+                    ? entry.LemmaForm
+                    : $"{entry.LemmaForm} → {entry.CrossReferenceTo}";
                 entries.Add(new SefariaDictionaryEntry
                 {
                     EntryId = entry.LemmaId,
-                    Headword = entry.LemmaForm,
+                    Headword = headword,
                     LexiconName = label,
                     Definition = definition,
                     ContentText = definition,
