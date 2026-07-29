@@ -555,14 +555,7 @@ public partial class MainWindow
             TextWrapping = TextWrapping.Wrap,
             IsVisible = false
         };
-        _dictionaryToolsPrimaryGloss = new TextBlock
-        {
-            FontSize = dictionaryFontSize,
-            FontWeight = FontWeight.SemiBold,
-            Foreground = new SolidColorBrush(Color.Parse("#1D2939")),
-            TextWrapping = TextWrapping.Wrap,
-            IsVisible = false
-        };
+        _dictionaryToolsResultsPanel = new StackPanel { Spacing = 4 };
         _dictionaryToolsStatus = new TextBlock
         {
             FontSize = dictionaryFontSize,
@@ -631,7 +624,13 @@ public partial class MainWindow
                     header,
                     _dictionaryToolsWord,
                     _dictionaryToolsReference,
-                    _dictionaryToolsPrimaryGloss,
+                    new ScrollViewer
+                    {
+                        MaxHeight = 360,
+                        HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+                        VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+                        Content = _dictionaryToolsResultsPanel
+                    },
                     _dictionaryToolsStatus
                 }
             }
@@ -668,10 +667,9 @@ public partial class MainWindow
             _dictionaryToolsReference.IsVisible = !string.IsNullOrWhiteSpace(_dictionaryCurrentReference);
         }
 
-        if (_dictionaryToolsPrimaryGloss is not null)
+        if (_dictionaryToolsResultsPanel is not null)
         {
-            _dictionaryToolsPrimaryGloss.Text = _dictionaryPrimaryGloss;
-            _dictionaryToolsPrimaryGloss.IsVisible = !string.IsNullOrWhiteSpace(_dictionaryPrimaryGloss);
+            PopulateDictionaryEntriesPanel(_dictionaryToolsResultsPanel, GetDictionaryFontSize());
         }
 
         if (_dictionaryToolsStatus is not null)
@@ -684,7 +682,7 @@ public partial class MainWindow
     {
         _dictionaryToolsWord = null;
         _dictionaryToolsReference = null;
-        _dictionaryToolsPrimaryGloss = null;
+        _dictionaryToolsResultsPanel = null;
         _dictionaryToolsStatus = null;
     }
 
@@ -834,12 +832,15 @@ public partial class MainWindow
 
     private void RenderDictionaryTabResults(IReadOnlyList<SefariaDictionaryEntry> entries)
     {
+        // Set first so the dock/popup surfaces can render the full list even when the Dictionary tab
+        // (and thus its results panel) was never created.
+        _dictionaryDisplayedEntries = entries;
+
         if (_dictionaryLookupResultsPanel is null)
         {
             return;
         }
 
-        _dictionaryDisplayedEntries = entries;
         _dictionaryLookupResultsPanel.Children.Clear();
         foreach (var entry in entries)
         {
@@ -861,9 +862,9 @@ public partial class MainWindow
             _dictionaryToolsReference.FontSize = Math.Max(11, dictionaryFontSize - 3);
         }
 
-        if (_dictionaryToolsPrimaryGloss is not null)
+        if (_dictionaryToolsResultsPanel is not null)
         {
-            _dictionaryToolsPrimaryGloss.FontSize = dictionaryFontSize;
+            PopulateDictionaryEntriesPanel(_dictionaryToolsResultsPanel, dictionaryFontSize);
         }
 
         if (_dictionaryToolsStatus is not null)
@@ -896,6 +897,73 @@ public partial class MainWindow
     }
 
     private double GetDictionaryFontSize() => GetSelectedEnglishFontSize();
+
+    /// <summary>
+    /// Builds a fresh, scroll-friendly list of all currently displayed dictionary entries for the
+    /// dock/popup surfaces, or null when there are none. Each entry shows its headword, its source/
+    /// rank label (e.g. "Concordance · #2 · Inferred · 41%"), and its definition — so the full ranked
+    /// set is visible, not just the top guess.
+    /// </summary>
+    private StackPanel? BuildDictionaryEntriesPanel(double fontSize)
+    {
+        if (_dictionaryDisplayedEntries.Count == 0)
+        {
+            return null;
+        }
+
+        var panel = new StackPanel { Spacing = 4 };
+        PopulateDictionaryEntriesPanel(panel, fontSize);
+        return panel;
+    }
+
+    private void PopulateDictionaryEntriesPanel(StackPanel panel, double fontSize)
+    {
+        panel.Children.Clear();
+        foreach (var entry in _dictionaryDisplayedEntries)
+        {
+            panel.Children.Add(BuildCompactDictionaryEntryCard(entry, fontSize));
+        }
+    }
+
+    private Control BuildCompactDictionaryEntryCard(SefariaDictionaryEntry entry, double fontSize)
+    {
+        var stack = new StackPanel { Spacing = 2 };
+        stack.Children.Add(new SelectableTextBlock
+        {
+            Text = entry.Headword,
+            FontSize = fontSize,
+            FontWeight = FontWeight.SemiBold,
+            TextWrapping = TextWrapping.Wrap
+        });
+
+        if (!string.IsNullOrWhiteSpace(entry.LexiconName))
+        {
+            stack.Children.Add(new TextBlock
+            {
+                Text = entry.LexiconName,
+                FontSize = Math.Max(10, fontSize - 4),
+                Foreground = new SolidColorBrush(Color.Parse("#667085")),
+                TextWrapping = TextWrapping.Wrap
+            });
+        }
+
+        var gloss = NormalizeDictionaryText(
+            string.IsNullOrWhiteSpace(entry.ContentText) ? entry.Definition : entry.ContentText);
+        stack.Children.Add(new SelectableTextBlock
+        {
+            Text = string.IsNullOrWhiteSpace(gloss) ? "(no definition)" : gloss,
+            FontSize = fontSize,
+            TextWrapping = TextWrapping.Wrap
+        });
+
+        return new Border
+        {
+            BorderBrush = new SolidColorBrush(Color.Parse("#EAECF0")),
+            BorderThickness = new Thickness(0, 0, 0, 1),
+            Padding = new Thickness(0, 4, 0, 6),
+            Child = stack
+        };
+    }
 
     private static string GetDictionaryEntryKey(SefariaDictionaryEntry entry) =>
         $"{entry.LexiconName}\u001f{entry.Headword}\u001f{entry.EntryId}\u001f{entry.StrongNumber}";
@@ -1956,7 +2024,8 @@ public partial class MainWindow
         if (_dictionaryPopupWindow is not null)
         {
             _dictionaryPopupWindow.ApplyFontSize(GetDictionaryFontSize());
-            _dictionaryPopupWindow.UpdateEntry(displayWord, _dictionaryCurrentReference, _dictionaryPrimaryGloss, status);
+            _dictionaryPopupWindow.UpdateEntry(displayWord, _dictionaryCurrentReference, status);
+            _dictionaryPopupWindow.SetResultsContent(BuildDictionaryEntriesPanel(GetDictionaryFontSize()));
             if (!_isDictionaryDocked && _dictionaryPopupWindow.IsVisible && !_dictionaryPopupUserPositioned)
             {
                 ScheduleDictionaryPopupReposition(_dictionaryPopupWindow);
@@ -1985,8 +2054,8 @@ public partial class MainWindow
         popup.UpdateEntry(
             string.IsNullOrWhiteSpace(_dictionaryCurrentWord) ? "Dictionary selection" : _dictionaryCurrentWord,
             _dictionaryCurrentReference,
-            _dictionaryPrimaryGloss,
             _dictionaryStatusText);
+        popup.SetResultsContent(BuildDictionaryEntriesPanel(GetDictionaryFontSize()));
         ApplyDictionaryPopupPosition(popup);
         if (!popup.IsVisible)
         {
