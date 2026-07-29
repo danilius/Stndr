@@ -712,7 +712,12 @@ public partial class MainWindow
             : "Looking up dictionary entry...";
 
         RefreshDictionarySurface();
-        OpenOrSelectTab(DictionaryTabTitle);
+        // Right-click looks up into the floating popup window (anchored at the click) rather than
+        // yanking the user to the full Dictionary tab. When docked, ShowDictionaryPopupWindow no-ops
+        // and the docked reader-tools surface updates via RefreshDictionarySurface above. The tab's
+        // result panel is still populated by RunDictionaryTabLookupAsync, so opening the Dictionary
+        // tab manually shows the full ranked list.
+        ShowDictionaryPopupWindow(repositionToAnchor: true);
         ApplyDictionaryTabHeaderState();
         _ = RunDictionaryTabLookupAsync(lookupWord, _dictionaryCurrentReference);
         SaveLayoutState();
