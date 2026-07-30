@@ -40,15 +40,180 @@ public partial class MainWindow
             if (!_sefariaLibrary.IsConfigured || !_sefariaLibrary.HasOfflineLibrary)
             {
                 _sefariaRoot = null;
+                InvalidateScopeCatalogues();
                 return;
             }
 
             _sefariaRoot = await _sefariaLibrary.LoadLibraryAsync(CancellationToken.None);
+            await BuildSefariaScopeCatalogueFromRootAsync(_sefariaRoot);
         }
         catch
         {
             _sefariaRoot = null;
         }
+    }
+
+    private void InvalidateScopeCatalogues()
+    {
+        Interlocked.Increment(ref _scopeCatalogueGeneration);
+        _sefariaScopeCatalogue = null;
+        _installedScopeCatalogue = null;
+        _sefariaScopeCatalogueKey = null;
+        _installedScopeCatalogueKey = null;
+        _scopeCatalogueLoadTask = null;
+    }
+
+    private string GetOfflineLibraryCacheKey()
+    {
+        if (!_sefariaLibrary.HasOfflineLibrary)
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            var path = _sefariaLibrary.OfflineLibraryDatabasePath;
+            var info = new FileInfo(path);
+            return info.Exists
+                ? $"{path}|{info.Length}|{info.LastWriteTimeUtc.Ticks}"
+                : string.Empty;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private string GetInstalledBooksCacheKey()
+    {
+        try
+        {
+            var path = _sefariaLibrary.InstalledBooksFilePath;
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            {
+                return "installed:empty";
+            }
+
+            var info = new FileInfo(path);
+            return $"installed|{path}|{info.Length}|{info.LastWriteTimeUtc.Ticks}";
+        }
+        catch
+        {
+            return "installed:unknown";
+        }
+    }
+
+    /// <summary>
+    /// Ensures Sefaria + installed Advanced Search scope catalogues are built off the UI thread.
+    /// Safe to call repeatedly; concurrent callers share one in-flight task.
+    /// </summary>
+    private Task EnsureScopeCataloguesLoadedAsync(CancellationToken cancellationToken = default)
+    {
+        if (_sefariaScopeCatalogue is not null && _installedScopeCatalogue is not null)
+        {
+            var sefariaKey = GetOfflineLibraryCacheKey();
+            var installedKey = GetInstalledBooksCacheKey();
+            if (string.Equals(_sefariaScopeCatalogueKey, sefariaKey, StringComparison.Ordinal) &&
+                string.Equals(_installedScopeCatalogueKey, installedKey, StringComparison.Ordinal))
+            {
+                return Task.CompletedTask;
+            }
+        }
+
+        if (_scopeCatalogueLoadTask is { IsCompleted: false })
+        {
+            return _scopeCatalogueLoadTask;
+        }
+
+        _scopeCatalogueLoadTask = LoadScopeCataloguesCoreAsync(cancellationToken);
+        return _scopeCatalogueLoadTask;
+    }
+
+    private async Task LoadScopeCataloguesCoreAsync(CancellationToken cancellationToken)
+    {
+        var generation = _scopeCatalogueGeneration;
+        var sefariaKey = GetOfflineLibraryCacheKey();
+        var installedKey = GetInstalledBooksCacheKey();
+
+        if (_libraryLoadTask is not null)
+        {
+            try
+            {
+                await _libraryLoadTask;
+            }
+            catch
+            {
+                // LoadSefariaLibraryAsync already swallows; continue with best effort.
+            }
+        }
+        else if (_sefariaLibrary.IsConfigured && _sefariaLibrary.HasOfflineLibrary && _sefariaRoot is null)
+        {
+            _libraryLoadTask = LoadSefariaLibraryAsync();
+            try
+            {
+                await _libraryLoadTask;
+            }
+            catch
+            {
+            }
+        }
+
+        if (generation != _scopeCatalogueGeneration)
+        {
+            return;
+        }
+
+        if (_sefariaRoot is not null &&
+            !string.Equals(_sefariaScopeCatalogueKey, sefariaKey, StringComparison.Ordinal))
+        {
+            await BuildSefariaScopeCatalogueFromRootAsync(_sefariaRoot);
+        }
+
+        if (!string.Equals(_installedScopeCatalogueKey, installedKey, StringComparison.Ordinal))
+        {
+            try
+            {
+                var installedRoots = await Task.Run(() => _sefariaLibrary.BuildInstalledTree(), cancellationToken);
+                if (generation != _scopeCatalogueGeneration)
+                {
+                    return;
+                }
+
+                var catalogue = await Task.Run(
+                    () => AdvancedSearchScopeCatalogue.FromInstalledRoots(installedRoots),
+                    cancellationToken);
+                if (generation != _scopeCatalogueGeneration)
+                {
+                    return;
+                }
+
+                _installedScopeCatalogue = catalogue;
+                _installedScopeCatalogueKey = installedKey;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch
+            {
+                _installedScopeCatalogue ??= Array.Empty<AdvancedSearchScopeCatalogueNode>();
+                _installedScopeCatalogueKey = installedKey;
+            }
+        }
+    }
+
+    private async Task BuildSefariaScopeCatalogueFromRootAsync(SefariaCategoryNode root)
+    {
+        var generation = _scopeCatalogueGeneration;
+        var key = GetOfflineLibraryCacheKey();
+        var catalogue = await Task.Run(() => AdvancedSearchScopeCatalogue.FromSefariaRoot(root));
+        if (generation != _scopeCatalogueGeneration)
+        {
+            return;
+        }
+
+        _sefariaScopeCatalogue = catalogue;
+        _sefariaScopeCatalogueKey = key;
     }
 
     private void RefreshInstalledBooksTree()
@@ -98,7 +263,9 @@ public partial class MainWindow
                 return;
             }
 
+            InvalidateScopeCatalogues();
             await RefreshInstalledBooksTreeAsync();
+            _ = EnsureScopeCataloguesLoadedAsync();
         }
         catch
         {
@@ -165,16 +332,69 @@ public partial class MainWindow
     private string FormatTitle(string? englishTitle, string? hebrewTitle)
     {
         var english = string.IsNullOrWhiteSpace(englishTitle) ? "Untitled" : englishTitle;
+        var hebrew = string.IsNullOrWhiteSpace(hebrewTitle)
+            ? GetKnownCategoryHebrewTitle(english)
+            : hebrewTitle;
 
         return _settings.InstalledBookTitleDisplay switch
         {
-            InstalledBookTitleDisplay.Hebrew => string.IsNullOrWhiteSpace(hebrewTitle)
+            InstalledBookTitleDisplay.Hebrew => string.IsNullOrWhiteSpace(hebrew)
                 ? english
-                : hebrewTitle,
+                : hebrew,
             InstalledBookTitleDisplay.English => english,
-            _ => string.IsNullOrWhiteSpace(hebrewTitle)
+            _ => string.IsNullOrWhiteSpace(hebrew)
                 ? english
-                : $"{hebrewTitle} / {english}"
+                : $"{hebrew} / {english}"
+        };
+    }
+
+    /// <summary>
+    /// Offline dump categories often lack Hebrew labels. Map common Sefaria category names
+    /// so the title-language setting still applies in the library tree.
+    /// </summary>
+    private static string? GetKnownCategoryHebrewTitle(string? englishTitle)
+    {
+        if (string.IsNullOrWhiteSpace(englishTitle))
+        {
+            return null;
+        }
+
+        return englishTitle switch
+        {
+            "Tanakh" => "תנ״ך",
+            "Torah" => "תורה",
+            "Prophets" => "נביאים",
+            "Writings" => "כתובים",
+            "Targum" => "תרגום",
+            "Rishonim on Tanakh" => "ראשונים על תנ״ך",
+            "Acharonim on Tanakh" => "אחרונים על תנ״ך",
+            "Modern Commentary on Tanakh" => "פרשנות מודרנית על תנ״ך",
+            "Mishnah" => "משנה",
+            "Talmud" => "תלמוד",
+            "Bavli" => "בבלי",
+            "Yerushalmi" => "ירושלמי",
+            "Seder Zeraim" => "סדר זרעים",
+            "Seder Moed" => "סדר מועד",
+            "Seder Nashim" => "סדר נשים",
+            "Seder Nezikin" => "סדר נזיקין",
+            "Seder Kodashim" => "סדר קדשים",
+            "Seder Tahorot" => "סדר טהרות",
+            "Guides" => "מבואות",
+            "Tosefta" => "תוספתא",
+            "Midrash" => "מדרש",
+            "Halakhah" => "הלכה",
+            "Responsa" => "שו״ת",
+            "Liturgy" => "תפילה",
+            "Jewish Thought" => "מחשבת ישראל",
+            "Musar" => "מוסר",
+            "Chasidut" => "חסידות",
+            "Kabbalah" => "קבלה",
+            "Reference" => "עיון",
+            "Second Temple" => "בית שני",
+            "Rishonim" => "ראשונים",
+            "Acharonim" => "אחרונים",
+            "Commentary" => "פירוש",
+            _ => null
         };
     }
 

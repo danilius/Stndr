@@ -60,6 +60,7 @@ public partial class MainWindow
                         hebrewOption,
                         englishOption,
                         bothOption,
+                        CreateLinkOpenedTabPlacementSettingRow(),
                         CreateFontSettingRow(
                             "Display font",
                             GetAllFontOptions(),
@@ -409,19 +410,31 @@ public partial class MainWindow
             Foreground = new SolidColorBrush(Color.Parse("#475467")),
             TextWrapping = TextWrapping.Wrap
         };
+        static string LibraryUpdateActionLabel(SefariaLibraryUpdateMode mode) => mode switch
+        {
+            SefariaLibraryUpdateMode.UpdateAvailable => "Update now",
+            SefariaLibraryUpdateMode.Interrupted => "Resume",
+            SefariaLibraryUpdateMode.Cancelled or SefariaLibraryUpdateMode.Error => "Update now",
+            SefariaLibraryUpdateMode.Downloading or
+                SefariaLibraryUpdateMode.Importing or
+                SefariaLibraryUpdateMode.Activating => "Updating...",
+            _ => "Check now"
+        };
+
         var action = new Button
         {
-            Content = _libraryUpdateService.CurrentState.Mode == SefariaLibraryUpdateMode.UpdateAvailable
-                ? "Update now"
-                : "Check now",
+            Content = LibraryUpdateActionLabel(_libraryUpdateService.CurrentState.Mode),
             MinWidth = 120,
             IsEnabled = _sefariaLibrary.HasOfflineLibrary && !_libraryUpdateService.IsBusy
         };
         action.Click += async (_, _) =>
         {
             action.IsEnabled = false;
-            if (_libraryUpdateService.CurrentState.Mode == SefariaLibraryUpdateMode.UpdateAvailable ||
-                _libraryUpdateService.CurrentState.Mode is SefariaLibraryUpdateMode.Cancelled or SefariaLibraryUpdateMode.Error)
+            if (_libraryUpdateService.CurrentState.Mode is
+                SefariaLibraryUpdateMode.UpdateAvailable or
+                SefariaLibraryUpdateMode.Interrupted or
+                SefariaLibraryUpdateMode.Cancelled or
+                SefariaLibraryUpdateMode.Error)
             {
                 await InstallAvailableLibraryUpdateAsync();
             }
@@ -434,11 +447,7 @@ public partial class MainWindow
             status.Text = string.IsNullOrWhiteSpace(state.Message)
                 ? status.Text
                 : state.Message;
-            action.Content = state.Mode is SefariaLibraryUpdateMode.UpdateAvailable or
-                SefariaLibraryUpdateMode.Cancelled or
-                SefariaLibraryUpdateMode.Error
-                ? "Update now"
-                : "Check now";
+            action.Content = LibraryUpdateActionLabel(state.Mode);
             action.IsEnabled = _sefariaLibrary.HasOfflineLibrary && !_libraryUpdateService.IsBusy;
         };
 
@@ -451,15 +460,7 @@ public partial class MainWindow
                     status.Text = state.Message;
                 }
 
-                action.Content = state.Mode is SefariaLibraryUpdateMode.UpdateAvailable or
-                    SefariaLibraryUpdateMode.Cancelled or
-                    SefariaLibraryUpdateMode.Error
-                    ? "Update now"
-                    : state.Mode is SefariaLibraryUpdateMode.Downloading or
-                        SefariaLibraryUpdateMode.Importing or
-                        SefariaLibraryUpdateMode.Activating
-                        ? "Updating..."
-                        : "Check now";
+                action.Content = LibraryUpdateActionLabel(state.Mode);
                 action.IsEnabled = _sefariaLibrary.HasOfflineLibrary && !_libraryUpdateService.IsBusy;
             }, DispatcherPriority.Background);
 
@@ -630,14 +631,69 @@ public partial class MainWindow
             }
 
             _settings.InstalledBookTitleDisplay = selected;
+            _advancedSearchScopeTitleDisplay = selected;
             _settingsService.Save(_settings);
             RefreshInstalledBooksTree();
             RefreshOpenReaderTabs();
             RefreshDisplayFlyouts();
             UpdateReaderTools();
+            RefreshSavedSearchesList();
         };
 
         return option;
+    }
+
+    private Control CreateLinkOpenedTabPlacementSettingRow()
+    {
+        var afterSource = new RadioButton
+        {
+            Content = "Open next to the tab that opened the link",
+            GroupName = "LinkOpenedTabPlacement",
+            IsChecked = _settings.LinkOpenedTabPlacement == LinkOpenedTabPlacement.AfterSourceTab,
+            Tag = LinkOpenedTabPlacement.AfterSourceTab
+        };
+        var atEnd = new RadioButton
+        {
+            Content = "Open at the end of the tab strip",
+            GroupName = "LinkOpenedTabPlacement",
+            IsChecked = _settings.LinkOpenedTabPlacement == LinkOpenedTabPlacement.AtEnd,
+            Tag = LinkOpenedTabPlacement.AtEnd
+        };
+
+        void OnChanged(object? sender, RoutedEventArgs e)
+        {
+            if (sender is not RadioButton { IsChecked: true, Tag: LinkOpenedTabPlacement placement })
+            {
+                return;
+            }
+
+            _settings.LinkOpenedTabPlacement = placement;
+            _settingsService.Save(_settings);
+        }
+
+        afterSource.IsCheckedChanged += OnChanged;
+        atEnd.IsCheckedChanged += OnChanged;
+
+        return new StackPanel
+        {
+            Spacing = 6,
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = "Tabs opened from links",
+                    FontWeight = FontWeight.SemiBold
+                },
+                new TextBlock
+                {
+                    Text = "When you open a linked source in a new tab from Reader Tools.",
+                    Foreground = new SolidColorBrush(Color.Parse("#475467")),
+                    TextWrapping = TextWrapping.Wrap
+                },
+                afterSource,
+                atEnd
+            }
+        };
     }
 
     private static ComboBox CreateFontSettingPicker(

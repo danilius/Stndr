@@ -144,6 +144,31 @@ public partial class MainWindow
         // The main workspace is allowed to start empty.
     }
 
+    /// <summary>
+    /// Inserts a tab according to settings when opened from a source reader tab (links),
+    /// otherwise appends at the end.
+    /// </summary>
+    private void AddTabToStrip(TabItem tab, TabItem? sourceTab = null)
+    {
+        if (_tabs is null)
+        {
+            return;
+        }
+
+        if (sourceTab is not null &&
+            _settings.LinkOpenedTabPlacement == LinkOpenedTabPlacement.AfterSourceTab)
+        {
+            var sourceIndex = _tabs.IndexOf(sourceTab);
+            if (sourceIndex >= 0)
+            {
+                _tabs.Insert(sourceIndex + 1, tab);
+                return;
+            }
+        }
+
+        _tabs.Add(tab);
+    }
+
     private TabItem CreateTab(string title, Control? content = null)
     {
         var tab = new TabItem();
@@ -511,7 +536,6 @@ public partial class MainWindow
         if (_leftColumn is null ||
             _leftSplitter is null ||
             _leftPanelBody is null ||
-            _leftPanelTitle is null ||
             _leftPanelSearchButton is null ||
             _leftPanelSearchBox is null)
         {
@@ -525,7 +549,6 @@ public partial class MainWindow
         _leftColumn.Width = new GridLength(_leftCollapsed ? CollapsedPanelWidth : _leftExpandedWidth, GridUnitType.Pixel);
         _leftSplitter.IsVisible = !_leftCollapsed;
 
-        _leftPanelTitle.IsVisible = !_leftCollapsed;
         _leftPanelSearchButton.IsVisible = !_leftCollapsed;
         if (_leftCollapsed)
         {
@@ -696,6 +719,7 @@ public partial class MainWindow
                     .ToList(),
                 NavigationJumpQuery = readerState.NavigationJumpQuery,
                 NavigationTopicsAllExpanded = readerState.NavigationTopicsAllExpanded,
+                UseHebrewNavigationNumbers = readerState.UseHebrewNavigationNumbers,
                 IsDisplayExpanded = readerState.IsDisplayExpanded,
                 IsSedrotExpanded = readerState.IsSedrotExpanded,
                 IsCommentariesExpanded = readerState.IsCommentariesExpanded,

@@ -505,11 +505,51 @@ public partial class MainWindow
 
     private Control CreateLinksGroupHeader(ReaderTabState readerState)
     {
-        return new TextBlock
+        var layout = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+
+        var titleBlock = new TextBlock
         {
             Text = FormatLinksHeaderTitle(readerState),
             VerticalAlignment = VerticalAlignment.Center
         };
+        layout.Children.Add(titleBlock);
+
+        var languageButton = new Button
+        {
+            Content = readerState.CommentaryLanguage == CommentaryLanguage.Hebrew ? "\u05d0" : "A",
+            Background = Brushes.White,
+            BorderBrush = new SolidColorBrush(Color.Parse("#D0D5DD")),
+            BorderThickness = new Thickness(1),
+            MinWidth = 24,
+            MinHeight = 22,
+            Padding = new Thickness(4, 0),
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center
+        };
+        ToolTip.SetTip(languageButton, "Switch link titles and previews between Hebrew and English");
+        languageButton.Click += (_, e) =>
+        {
+            readerState.CommentaryLanguage = readerState.CommentaryLanguage == CommentaryLanguage.Hebrew
+                ? CommentaryLanguage.English
+                : CommentaryLanguage.Hebrew;
+            e.Handled = true;
+            UpdateReaderTools();
+            if (readerState.IsCommentarySplitOpen)
+            {
+                UpdateSplitPaneView(readerState);
+            }
+
+            SaveLayoutState();
+        };
+        layout.Children.Add(languageButton);
+        Grid.SetColumn(languageButton, 1);
+        return layout;
     }
 
     private string FormatSedrotHeading(ReaderTabState readerState)
@@ -1140,17 +1180,7 @@ public partial class MainWindow
         else if (readerState.ActiveLinkPreview is not null)
         {
             var previewText = GetPreferredLinkPreviewText(readerState);
-            var hasInstalledFullSource = HasInstalledFullLinkSource(readerState.ActiveLinkPreview);
             panel.Children.Add(CreateLinkTextBlock(readerState.ActiveLinkPreview.Reference, isEmphasized: true));
-            panel.Children.Add(new TextBlock
-            {
-                Text = readerState.ActiveLinkPreview.IsFromInstalledBook
-                    ? "Preview from local data"
-                    : "Preview from downloaded excerpt",
-                Foreground = new SolidColorBrush(Color.Parse("#667085")),
-                FontSize = Math.Max(10, GetSelectedUiFontSize() - 1),
-                TextWrapping = TextWrapping.Wrap
-            });
             panel.Children.Add(CreateLinkPreviewBody(readerState, previewText));
 
             var actionRow = new StackPanel
@@ -1173,7 +1203,7 @@ public partial class MainWindow
 
             var openButton = new Button
             {
-                Content = readerState.IsLinkSourceTabLoading ? "Downloading source..." : "Open source in new tab",
+                Content = readerState.IsLinkSourceTabLoading ? "Opening..." : "Open source in new tab",
                 HorizontalAlignment = HorizontalAlignment.Left,
                 IsEnabled = !readerState.IsLinkSourceTabLoading
             };
@@ -1184,17 +1214,6 @@ public partial class MainWindow
             };
             actionRow.Children.Add(openButton);
             panel.Children.Add(actionRow);
-
-            panel.Children.Add(new TextBlock
-            {
-                Text = hasInstalledFullSource
-                    ? "The full book is already installed and will open in a new tab."
-                    : "The full book is not installed and will be downloaded if you open it in a new tab.",
-                FontFamily = new FontFamily(GetSelectedUiFontFamily()),
-                FontSize = Math.Max(10, GetSelectedUiFontSize() - 1),
-                Foreground = new SolidColorBrush(Color.Parse("#667085")),
-                TextWrapping = TextWrapping.Wrap
-            });
 
             if (!string.IsNullOrWhiteSpace(readerState.LinkPreviewError))
             {
@@ -3322,18 +3341,11 @@ public partial class MainWindow
 
     private Control CreateNavigationGroupHeader(ReaderTabState readerState)
     {
-        if (!readerState.HasTalmudNavigation)
-        {
-            return new TextBlock
-            {
-                Text = "Navigation",
-                VerticalAlignment = VerticalAlignment.Center
-            };
-        }
-
         var layout = new Grid
         {
-            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto"),
+            ColumnDefinitions = readerState.HasTalmudNavigation
+                ? new ColumnDefinitions("Auto,*,Auto,Auto")
+                : new ColumnDefinitions("*,Auto"),
             HorizontalAlignment = HorizontalAlignment.Stretch
         };
 
@@ -3346,47 +3358,67 @@ public partial class MainWindow
         layout.Children.Add(titleBlock);
         Grid.SetColumn(titleBlock, 0);
 
-        var jumpBox = new TextBox
+        var nextColumn = 1;
+        if (readerState.HasTalmudNavigation)
         {
-            Text = readerState.NavigationJumpQuery,
-            PlaceholderText = "Jump\u2026",
-            MinWidth = 88,
-            MaxWidth = 140,
-            Height = 24,
-            Padding = new Thickness(6, 2),
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Stretch
-        };
-        jumpBox.TextChanged += (_, _) =>
-        {
-            readerState.NavigationJumpQuery = jumpBox.Text ?? string.Empty;
-            SaveLayoutState();
-        };
-        jumpBox.KeyDown += (_, e) =>
-        {
-            if (e.Key != Key.Enter)
+            var jumpBox = new TextBox
             {
-                return;
-            }
+                Text = readerState.NavigationJumpQuery,
+                PlaceholderText = "Jump\u2026",
+                MinWidth = 88,
+                MaxWidth = 140,
+                Height = 24,
+                Padding = new Thickness(6, 2),
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Stretch
+            };
+            jumpBox.TextChanged += (_, _) =>
+            {
+                readerState.NavigationJumpQuery = jumpBox.Text ?? string.Empty;
+                SaveLayoutState();
+            };
+            jumpBox.KeyDown += (_, e) =>
+            {
+                if (e.Key != Key.Enter)
+                {
+                    return;
+                }
 
-            NavigateToNavigationJumpTarget(readerState, readerState.NavigationJumpQuery);
-            e.Handled = true;
-        };
-        layout.Children.Add(jumpBox);
-        Grid.SetColumn(jumpBox, 1);
+                NavigateToNavigationJumpTarget(readerState, readerState.NavigationJumpQuery);
+                e.Handled = true;
+            };
+            layout.Children.Add(jumpBox);
+            Grid.SetColumn(jumpBox, nextColumn++);
 
-        var toggleButton = CreateNavigationHeaderIconButton(
-            IsAnyNavigationTopicExpanded(readerState) ? "\u21D1" : "\u21D3",
-            IsAnyNavigationTopicExpanded(readerState) ? "Collapse all topics" : "Expand all topics");
-        toggleButton.Click += (_, e) =>
+            var toggleButton = CreateNavigationHeaderIconButton(
+                IsAnyNavigationTopicExpanded(readerState) ? "\u21D1" : "\u21D3",
+                IsAnyNavigationTopicExpanded(readerState) ? "Collapse all topics" : "Expand all topics");
+            toggleButton.Click += (_, e) =>
+            {
+                SetAllNavigationTopicsExpanded(readerState, !IsAnyNavigationTopicExpanded(readerState));
+                e.Handled = true;
+                UpdateReaderTools();
+                SaveLayoutState();
+            };
+            layout.Children.Add(toggleButton);
+            Grid.SetColumn(toggleButton, nextColumn++);
+        }
+
+        var numberLanguageButton = CreateNavigationHeaderIconButton(
+            readerState.UseHebrewNavigationNumbers ? "\u05d0" : "A",
+            readerState.UseHebrewNavigationNumbers
+                ? "Show chapter and section numbers in English"
+                : "Show chapter and section numbers in Hebrew");
+        numberLanguageButton.Click += (_, e) =>
         {
-            SetAllNavigationTopicsExpanded(readerState, !IsAnyNavigationTopicExpanded(readerState));
+            readerState.UseHebrewNavigationNumbers = !readerState.UseHebrewNavigationNumbers;
+            RefreshNavigationNumberLabels(readerState);
             e.Handled = true;
             UpdateReaderTools();
             SaveLayoutState();
         };
-        layout.Children.Add(toggleButton);
-        Grid.SetColumn(toggleButton, 2);
+        layout.Children.Add(numberLanguageButton);
+        Grid.SetColumn(numberLanguageButton, nextColumn);
 
         return layout;
     }
@@ -3660,7 +3692,10 @@ public partial class MainWindow
             target = readerState.NavigationItems.FirstOrDefault(item =>
                 string.Equals(item.Row.ChapterKey, simanKey, StringComparison.Ordinal) ||
                 string.Equals(item.Label, simanKey, StringComparison.Ordinal) ||
-                string.Equals(item.Label, FormatNavigationChapterLabel(simanKey), StringComparison.Ordinal));
+                string.Equals(
+                    item.Label,
+                    FormatNavigationChapterLabel(simanKey, readerState.UseHebrewNavigationNumbers),
+                    StringComparison.Ordinal));
         }
 
         if (target is null)
@@ -3669,7 +3704,11 @@ public partial class MainWindow
             if (!string.IsNullOrWhiteSpace(normalizedQuery))
             {
                 target = readerState.NavigationItems.FirstOrDefault(item =>
-                    string.Equals(NormalizeHebrewNumeralInput(item.Label), normalizedQuery, StringComparison.Ordinal));
+                    string.Equals(NormalizeHebrewNumeralInput(item.Label), normalizedQuery, StringComparison.Ordinal) ||
+                    string.Equals(
+                        NormalizeHebrewNumeralInput(item.Row.ChapterKey),
+                        normalizedQuery,
+                        StringComparison.Ordinal));
             }
         }
 

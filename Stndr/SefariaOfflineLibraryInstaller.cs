@@ -29,6 +29,97 @@ public sealed class SefariaOfflineLibraryInstaller
     public static bool IsInstalled(string dataFolder) => File.Exists(SefariaOfflineLibraryPaths.ActiveDatabase(dataFolder)) &&
         File.Exists(SefariaOfflineLibraryPaths.InstallMetadata(dataFolder));
 
+    /// <summary>
+    /// Detects leftover partial download / staging import files from a killed or cancelled update.
+    /// Does not treat a healthy active install as interrupted.
+    /// </summary>
+    public static SefariaInterruptedLibraryUpdate? DetectInterruptedUpdate(string dataFolder)
+    {
+        if (string.IsNullOrWhiteSpace(dataFolder))
+        {
+            return null;
+        }
+
+        var partialBytes = GetFileLength(SefariaOfflineLibraryPaths.PartialArchive(dataFolder));
+        var completedBytes = GetFileLength(SefariaOfflineLibraryPaths.DownloadedArchive(dataFolder));
+        var stagingBytes = GetDatabaseBundleLength(SefariaOfflineLibraryPaths.StagingDatabase(dataFolder));
+        var hasState = File.Exists(SefariaOfflineLibraryPaths.DownloadState(dataFolder));
+
+        if (partialBytes <= 0 && completedBytes <= 0 && stagingBytes <= 0)
+        {
+            return null;
+        }
+
+        return new SefariaInterruptedLibraryUpdate(partialBytes, completedBytes, stagingBytes, hasState);
+    }
+
+    /// <summary>
+    /// Deletes partial download, completed-but-not-activated archive, download state, and staging DB.
+    /// Leaves the active offline library in place.
+    /// </summary>
+    public static void DiscardInterruptedUpdate(string dataFolder)
+    {
+        if (string.IsNullOrWhiteSpace(dataFolder))
+        {
+            return;
+        }
+
+        TryDeleteFile(SefariaOfflineLibraryPaths.PartialArchive(dataFolder));
+        TryDeleteFile(SefariaOfflineLibraryPaths.DownloadState(dataFolder));
+        TryDeleteFile(SefariaOfflineLibraryPaths.DownloadedArchive(dataFolder));
+        try
+        {
+            SefariaOfflineLibraryImporter.DeleteDatabaseFiles(SefariaOfflineLibraryPaths.StagingDatabase(dataFolder));
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+    }
+
+    private static long GetFileLength(string path)
+    {
+        try
+        {
+            return File.Exists(path) ? new FileInfo(path).Length : 0;
+        }
+        catch (IOException)
+        {
+            return 0;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return 0;
+        }
+    }
+
+    private static long GetDatabaseBundleLength(string databasePath)
+    {
+        long total = GetFileLength(databasePath);
+        total += GetFileLength(databasePath + "-wal");
+        total += GetFileLength(databasePath + "-shm");
+        return total;
+    }
+
+    private static void TryDeleteFile(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+    }
+
     public async Task<SefariaOfflineLibraryImportResult> DownloadAndInstallAsync(
         string dataFolder,
         IProgress<SefariaOfflineLibraryProgress>? progress = null,
@@ -40,7 +131,8 @@ public sealed class SefariaOfflineLibraryInstaller
             snapshot.SourceUri,
             SefariaOfflineLibraryPaths.DownloadedArchive(dataFolder),
             progress,
-            cancellationToken);
+            cancellationToken,
+            expectedContentLength: snapshot.ContentLength);
         return await InstallCoreAsync(dataFolder, archive, snapshot, progress, cancellationToken);
     }
 
@@ -111,6 +203,10 @@ public sealed class SefariaOfflineLibraryInstaller
             }
 
             File.Move(temporaryMetadata, metadataPath, true);
+
+            // Free multi-GiB disk only after the new library is active and metadata is written.
+            TryDeleteManagedDownloadArtifacts(dataFolder, archivePath);
+
             progress?.Report(new(SefariaOfflineLibraryStage.Complete,
                 $"Offline library installed: {result.Works:N0} books, {result.Versions:N0} versions, " +
                 $"{result.Links:N0} links and {result.LexiconEntries:N0} dictionary entries"));
@@ -126,6 +222,31 @@ public sealed class SefariaOfflineLibraryInstaller
             TryDeleteStaging(staging);
             throw;
         }
+    }
+
+    /// <summary>
+    /// Deletes the managed dump download (and partial/state) after a successful install.
+    /// Leaves user-supplied archive paths outside the data folder alone.
+    /// </summary>
+    private static void TryDeleteManagedDownloadArtifacts(string dataFolder, string archivePath)
+    {
+        try
+        {
+            var managed = Path.GetFullPath(SefariaOfflineLibraryPaths.DownloadedArchive(dataFolder));
+            var actual = Path.GetFullPath(archivePath);
+            if (!string.Equals(managed, actual, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return;
+        }
+
+        TryDeleteFile(SefariaOfflineLibraryPaths.DownloadedArchive(dataFolder));
+        TryDeleteFile(SefariaOfflineLibraryPaths.PartialArchive(dataFolder));
+        TryDeleteFile(SefariaOfflineLibraryPaths.DownloadState(dataFolder));
     }
 
     private static void TryDeleteStaging(string staging)

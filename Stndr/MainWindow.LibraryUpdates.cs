@@ -62,6 +62,8 @@ public partial class MainWindow
         {
             var showBanner = state.Mode is
                 SefariaLibraryUpdateMode.UpdateAvailable or
+                SefariaLibraryUpdateMode.Preparing or
+                SefariaLibraryUpdateMode.Interrupted or
                 SefariaLibraryUpdateMode.Downloading or
                 SefariaLibraryUpdateMode.Importing or
                 SefariaLibraryUpdateMode.Activating or
@@ -78,12 +80,16 @@ public partial class MainWindow
                     SefariaLibraryUpdateMode.Error => Color.Parse("#FEF3F2"),
                     SefariaLibraryUpdateMode.Complete => Color.Parse("#ECFDF3"),
                     SefariaLibraryUpdateMode.Cancelled => Color.Parse("#FFFAEB"),
+                    SefariaLibraryUpdateMode.Interrupted => Color.Parse("#FFFAEB"),
                     SefariaLibraryUpdateMode.UpdateAvailable => Color.Parse("#ECFDF3"),
+                    SefariaLibraryUpdateMode.Preparing => Color.Parse("#F2F4F7"),
                     _ => Color.Parse("#EFF8FF")
                 });
             }
 
             var isOffer = state.Mode == SefariaLibraryUpdateMode.UpdateAvailable;
+            var isInterrupted = state.Mode == SefariaLibraryUpdateMode.Interrupted;
+            var isPreparing = state.Mode == SefariaLibraryUpdateMode.Preparing;
             var isProgress = state.Mode is
                 SefariaLibraryUpdateMode.Downloading or
                 SefariaLibraryUpdateMode.Importing or
@@ -95,11 +101,12 @@ public partial class MainWindow
 
             if (_libraryUpdateBannerActionButton is not null)
             {
-                _libraryUpdateBannerActionButton.IsVisible = isOffer ||
+                _libraryUpdateBannerActionButton.IsVisible = isOffer || isInterrupted ||
                     (isTerminal && state.Mode != SefariaLibraryUpdateMode.Complete);
                 _libraryUpdateBannerActionButton.Content = state.Mode switch
                 {
                     SefariaLibraryUpdateMode.UpdateAvailable => "Update",
+                    SefariaLibraryUpdateMode.Interrupted => "Resume",
                     SefariaLibraryUpdateMode.Error => "Retry",
                     SefariaLibraryUpdateMode.Cancelled => "Try again",
                     _ => "Update"
@@ -109,8 +116,13 @@ public partial class MainWindow
 
             if (_libraryUpdateBannerDismissButton is not null)
             {
-                _libraryUpdateBannerDismissButton.IsVisible = isOffer || isTerminal;
-                _libraryUpdateBannerDismissButton.Content = isTerminal ? "Dismiss" : "Later";
+                _libraryUpdateBannerDismissButton.IsVisible = isOffer || isInterrupted || isTerminal;
+                _libraryUpdateBannerDismissButton.Content = isInterrupted
+                    ? "Discard"
+                    : isTerminal
+                        ? "Dismiss"
+                        : "Later";
+                _libraryUpdateBannerDismissButton.IsEnabled = !isPreparing;
             }
 
             if (_libraryUpdateBannerCancelButton is not null)
@@ -125,8 +137,8 @@ public partial class MainWindow
 
             if (_libraryUpdateBannerProgress is not null)
             {
-                _libraryUpdateBannerProgress.IsVisible = isProgress;
-                if (isProgress)
+                _libraryUpdateBannerProgress.IsVisible = isProgress || isPreparing;
+                if (isProgress || isPreparing)
                 {
                     if (state.ProgressFraction is { } fraction)
                     {
@@ -234,8 +246,17 @@ public partial class MainWindow
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
-            _libraryUpdateService.Cancelled(
-                "Update cancelled. Your existing offline library is unchanged. A partial download can resume next time.");
+            var interrupted = SefariaOfflineLibraryInstaller.DetectInterruptedUpdate(folder);
+            if (interrupted is not null)
+            {
+                _libraryUpdateService.OfferInterrupted(
+                    interrupted.SummaryMessage + " Your existing offline library is unchanged.");
+            }
+            else
+            {
+                _libraryUpdateService.Cancelled(
+                    "Update cancelled. Your existing offline library is unchanged.");
+            }
         }
         catch (Exception ex) when (
             ex is IOException or InvalidDataException or UnauthorizedAccessException or
@@ -255,10 +276,34 @@ public partial class MainWindow
             _sefariaLibrary.SetStorageRootFolder(folder);
         }
 
+        InvalidateScopeCatalogues();
         RefreshInstalledBooksTree();
         UpdateReaderTools();
         _ = LoadDictionaryCatalogueAsync();
         _libraryLoadTask = LoadSefariaLibraryAsync();
+        _ = EnsureScopeCataloguesLoadedAsync();
+    }
+
+    private void DetectAndOfferInterruptedLibraryUpdate()
+    {
+        if (_libraryUpdateService.IsBusy)
+        {
+            return;
+        }
+
+        var folder = _sefariaLibrary.StorageRootFolder;
+        if (string.IsNullOrWhiteSpace(folder))
+        {
+            return;
+        }
+
+        var interrupted = SefariaOfflineLibraryInstaller.DetectInterruptedUpdate(folder);
+        if (interrupted is null)
+        {
+            return;
+        }
+
+        _libraryUpdateService.OfferInterrupted(interrupted.SummaryMessage);
     }
 
     private async void LibraryUpdateBannerActionClicked(object? sender, RoutedEventArgs e)
@@ -266,6 +311,7 @@ public partial class MainWindow
         switch (_libraryUpdateService.CurrentState.Mode)
         {
             case SefariaLibraryUpdateMode.UpdateAvailable:
+            case SefariaLibraryUpdateMode.Interrupted:
             case SefariaLibraryUpdateMode.Cancelled:
             case SefariaLibraryUpdateMode.Error:
                 await StartBackgroundLibraryUpdateAsync();
@@ -282,12 +328,104 @@ public partial class MainWindow
             return;
         }
 
+        if (mode == SefariaLibraryUpdateMode.Interrupted)
+        {
+            await DiscardInterruptedLibraryUpdateAsync();
+            return;
+        }
+
         if (mode is SefariaLibraryUpdateMode.Complete or
             SefariaLibraryUpdateMode.Cancelled or
             SefariaLibraryUpdateMode.Error)
         {
             _libraryUpdateService.Hide();
         }
+    }
+
+    private async Task DiscardInterruptedLibraryUpdateAsync()
+    {
+        var folder = _sefariaLibrary.StorageRootFolder;
+        if (string.IsNullOrWhiteSpace(folder))
+        {
+            _libraryUpdateService.Hide();
+            return;
+        }
+
+        var confirmed = await ConfirmDiscardInterruptedUpdateAsync();
+        if (!confirmed)
+        {
+            return;
+        }
+
+        await Task.Run(() => SefariaOfflineLibraryInstaller.DiscardInterruptedUpdate(folder));
+        _libraryUpdateService.Hide();
+    }
+
+    private async Task<bool> ConfirmDiscardInterruptedUpdateAsync()
+    {
+        var result = false;
+        var dialog = new Window
+        {
+            Title = "Discard partial update?",
+            Width = 420,
+            SizeToContent = SizeToContent.Height,
+            CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner
+        };
+
+        var discardButton = new Button
+        {
+            Content = "Discard",
+            MinWidth = 88,
+            HorizontalAlignment = HorizontalAlignment.Right
+        };
+        var keepButton = new Button
+        {
+            Content = "Keep",
+            MinWidth = 80,
+            IsDefault = true,
+            HorizontalAlignment = HorizontalAlignment.Right
+        };
+        discardButton.Click += (_, _) =>
+        {
+            result = true;
+            dialog.Close();
+        };
+        keepButton.Click += (_, _) => dialog.Close();
+
+        dialog.Content = new StackPanel
+        {
+            Margin = new Thickness(20),
+            Spacing = 12,
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = "Discard the interrupted library download?",
+                    FontSize = 16,
+                    FontWeight = FontWeight.SemiBold,
+                    TextWrapping = TextWrapping.Wrap
+                },
+                new TextBlock
+                {
+                    Text =
+                        "This deletes partial download and import files. Your current offline library " +
+                        "(if installed) is not removed. You can download again later from Settings.",
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = new SolidColorBrush(Color.Parse("#475467"))
+                },
+                new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    Spacing = 8,
+                    Children = { keepButton, discardButton }
+                }
+            }
+        };
+
+        await dialog.ShowDialog(this);
+        return result;
     }
 
     private void LibraryUpdateBannerCancelClicked(object? sender, RoutedEventArgs e)

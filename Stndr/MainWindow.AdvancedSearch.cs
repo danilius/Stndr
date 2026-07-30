@@ -749,6 +749,9 @@ public partial class MainWindow
         IReadOnlyList<AdvancedSearchScopeSelection> initialScopes,
         bool useSefariaLibraryScope)
     {
+        // Start from the global title-language setting; the dialog's א/A can override for the session.
+        _advancedSearchScopeTitleDisplay = _settings.InstalledBookTitleDisplay;
+
         var selected = initialScopes
             .Where(scope => scope.Kind != AdvancedSearchScopeKind.AllInstalled)
             .Select(scope => new AdvancedSearchScopeSelection
@@ -764,10 +767,18 @@ public partial class MainWindow
             PlaceholderText = useSefariaLibraryScope
                 ? "Search Sefaria categories or books"
                 : "Search local categories or books",
-            Margin = new Thickness(0, 0, 0, 8)
+            Margin = new Thickness(0, 0, 0, 8),
+            IsEnabled = false
         };
         var selectedPanel = new WrapPanel { Margin = new Thickness(0, 0, 0, 8) };
         var scopeTree = new TreeView();
+        var statusText = new TextBlock
+        {
+            Text = "Loading catalogue…",
+            Foreground = new SolidColorBrush(Color.Parse("#667085")),
+            Margin = new Thickness(0, 0, 0, 8),
+            TextWrapping = TextWrapping.Wrap
+        };
         var titleButton = new Button
         {
             Content = GetAdvancedSearchScopeTitleDisplayButtonText(),
@@ -780,7 +791,8 @@ public partial class MainWindow
             HorizontalAlignment = HorizontalAlignment.Right,
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalContentAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center
+            VerticalContentAlignment = VerticalAlignment.Center,
+            IsEnabled = false
         };
         var searchHeader = new Grid
         {
@@ -803,7 +815,8 @@ public partial class MainWindow
         var allScopeButton = new Button
         {
             Content = useSefariaLibraryScope ? "All Sefaria Books" : "All Local Books",
-            MinWidth = 128
+            MinWidth = 128,
+            IsEnabled = false
         };
         var cancelButton = new Button { Content = "Cancel", MinWidth = 76 };
         var dialog = new Window
@@ -814,7 +827,11 @@ public partial class MainWindow
             WindowStartupLocation = WindowStartupLocation.CenterOwner
         };
 
-        Action refreshTree = () => { };
+        IReadOnlyList<AdvancedSearchScopeCatalogueNode> catalogueRoots =
+            Array.Empty<AdvancedSearchScopeCatalogueNode>();
+        var filterDebounceCts = new CancellationTokenSource();
+        var filterGeneration = 0;
+        var suppressScopeTreeEvents = false;
 
         void RefreshSelectedChips()
         {
@@ -842,7 +859,7 @@ public partial class MainWindow
                     selected.RemoveAll(candidate => candidate.Kind == scope.Kind &&
                         string.Equals(candidate.Key, scope.Key, StringComparison.OrdinalIgnoreCase));
                     RefreshSelectedChips();
-                    refreshTree();
+                    _ = RefreshScopeTreeAsync(searchBox.Text ?? string.Empty, expandAllMatches: false);
                 }));
             }
 
@@ -853,15 +870,49 @@ public partial class MainWindow
             }
         }
 
-        refreshTree = () =>
+        async Task RefreshScopeTreeAsync(string filter, bool expandAllMatches)
         {
-            var filter = searchBox.Text ?? string.Empty;
-            scopeTree.ItemsSource = BuildAdvancedSearchScopeTreeItems(
-                selected,
-                filter,
-                RefreshSelectedChips,
-                useSefariaLibraryScope);
-        };
+            var generation = Interlocked.Increment(ref filterGeneration);
+            IReadOnlyList<AdvancedSearchScopeCatalogueNode> roots;
+            if (string.IsNullOrWhiteSpace(filter))
+            {
+                roots = catalogueRoots;
+            }
+            else
+            {
+                roots = await Task.Run(() => AdvancedSearchScopeCatalogue.Filter(catalogueRoots, filter));
+            }
+
+            if (generation != filterGeneration)
+            {
+                return;
+            }
+
+            // Never materialize the full control tree. Expand only the first level when filtering
+            // so matches are visible without freezing on large catalogues.
+            var expandFirstLevel = expandAllMatches || !string.IsNullOrWhiteSpace(filter);
+            suppressScopeTreeEvents = true;
+            try
+            {
+                scopeTree.ItemsSource = BuildLazyScopeTreeItems(
+                    roots,
+                    selected,
+                    RefreshSelectedChips,
+                    () => _ = RefreshScopeTreeAsync(searchBox.Text ?? string.Empty, expandAllMatches: false),
+                    expandFirstLevel,
+                    () => suppressScopeTreeEvents,
+                    catalogueRoots);
+            }
+            finally
+            {
+                suppressScopeTreeEvents = false;
+            }
+
+            statusText.IsVisible = roots.Count == 0;
+            statusText.Text = roots.Count == 0
+                ? (string.IsNullOrWhiteSpace(filter) ? "No books available." : "No matching categories or books.")
+                : string.Empty;
+        }
 
         string? action = null;
         okButton.Click += (_, _) =>
@@ -869,35 +920,52 @@ public partial class MainWindow
             action = "apply";
             dialog.Close();
         };
-        allScopeButton.Click += (_, _) =>
+        allScopeButton.Click += async (_, _) =>
         {
             selected.Clear();
             RefreshSelectedChips();
-            refreshTree();
+            await RefreshScopeTreeAsync(searchBox.Text ?? string.Empty, expandAllMatches: false);
         };
         cancelButton.Click += (_, _) => dialog.Close();
-        searchBox.TextChanged += (_, _) => refreshTree();
-        titleButton.Click += (_, e) =>
+        searchBox.TextChanged += async (_, _) =>
+        {
+            filterDebounceCts.Cancel();
+            filterDebounceCts.Dispose();
+            filterDebounceCts = new CancellationTokenSource();
+            var token = filterDebounceCts.Token;
+            try
+            {
+                await Task.Delay(200, token);
+                if (!token.IsCancellationRequested)
+                {
+                    await RefreshScopeTreeAsync(searchBox.Text ?? string.Empty, expandAllMatches: false);
+                }
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+            }
+        };
+        titleButton.Click += async (_, e) =>
         {
             e.Handled = true;
             _advancedSearchScopeTitleDisplay = GetNextAdvancedSearchScopeTitleDisplay();
             titleButton.Content = GetAdvancedSearchScopeTitleDisplayButtonText();
             RefreshSelectedChips();
-            refreshTree();
+            await RefreshScopeTreeAsync(searchBox.Text ?? string.Empty, expandAllMatches: false);
             SaveLayoutState();
         };
 
         RefreshSelectedChips();
-        refreshTree();
 
         dialog.Content = new Grid
         {
-            RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto"),
+            RowDefinitions = new RowDefinitions("Auto,Auto,Auto,*,Auto"),
             Margin = new Thickness(16),
             Children =
             {
                 searchHeader,
                 selectedPanel,
+                statusText,
                 scroll,
                 new StackPanel
                 {
@@ -917,114 +985,120 @@ public partial class MainWindow
         if (dialog.Content is Grid grid)
         {
             Grid.SetRow(selectedPanel, 1);
-            Grid.SetRow(scroll, 2);
-            Grid.SetRow(grid.Children[3], 3);
+            Grid.SetRow(statusText, 2);
+            Grid.SetRow(scroll, 3);
+            Grid.SetRow(grid.Children[4], 4);
         }
+
+        dialog.Opened += async (_, _) =>
+        {
+            try
+            {
+                await EnsureScopeCataloguesLoadedAsync();
+                catalogueRoots = useSefariaLibraryScope
+                    ? _sefariaScopeCatalogue ?? Array.Empty<AdvancedSearchScopeCatalogueNode>()
+                    : _installedScopeCatalogue ?? Array.Empty<AdvancedSearchScopeCatalogueNode>();
+
+                if (useSefariaLibraryScope && catalogueRoots.Count == 0 && !_sefariaLibrary.HasOfflineLibrary)
+                {
+                    statusText.Text = "Offline Sefaria library is not installed.";
+                }
+                else
+                {
+                    await RefreshScopeTreeAsync(string.Empty, expandAllMatches: false);
+                    searchBox.IsEnabled = true;
+                    titleButton.IsEnabled = true;
+                    allScopeButton.IsEnabled = true;
+                    statusText.IsVisible = catalogueRoots.Count == 0;
+                    if (catalogueRoots.Count == 0)
+                    {
+                        statusText.Text = "No books available.";
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                statusText.Text = $"Could not load catalogue: {ex.Message}";
+                statusText.IsVisible = true;
+            }
+        };
+
+        dialog.Closed += (_, _) =>
+        {
+            filterDebounceCts.Cancel();
+            filterDebounceCts.Dispose();
+        };
 
         await dialog.ShowDialog(this);
         return action == "apply" ? selected : null;
     }
 
-    private List<TreeViewItem> BuildAdvancedSearchScopeTreeItems(
+    private List<TreeViewItem> BuildLazyScopeTreeItems(
+        IReadOnlyList<AdvancedSearchScopeCatalogueNode> roots,
         List<AdvancedSearchScopeSelection> selected,
-        string filter,
         Action refreshSelectedChips,
-        bool useSefariaLibraryScope)
+        Action rebuildTree,
+        bool expandFirstLevel,
+        Func<bool> isSuppressingEvents,
+        IReadOnlyList<AdvancedSearchScopeCatalogueNode> fullCatalogueRoots)
     {
-        var roots = useSefariaLibraryScope
-            ? GetSefariaScopeRoots()
-            : _sefariaLibrary.BuildInstalledTree().Cast<object>().ToList();
-        var items = new List<TreeViewItem>();
+        var items = new List<TreeViewItem>(roots.Count);
         foreach (var node in roots)
         {
-            var item = CreateAdvancedSearchScopeTreeItem(
+            items.Add(CreateLazyScopeTreeItem(
                 node,
                 selected,
-                filter,
                 refreshSelectedChips,
-                useSefariaLibraryScope);
-            if (item is not null)
-            {
-                items.Add(item);
-            }
+                rebuildTree,
+                expandFirstLevel,
+                isSuppressingEvents,
+                fullCatalogueRoots));
         }
 
         return items;
     }
 
-    private List<object> GetSefariaScopeRoots()
-    {
-        if (_sefariaRoot is not null)
-        {
-            return _sefariaRoot.Contents
-                .OrderBy(node => node.Order)
-                .Cast<object>()
-                .ToList();
-        }
-
-        try
-        {
-            _sefariaRoot = _sefariaLibrary.LoadLibraryAsync(CancellationToken.None)
-                .GetAwaiter()
-                .GetResult();
-            return _sefariaRoot.Contents
-                .OrderBy(node => node.Order)
-                .Cast<object>()
-                .ToList();
-        }
-        catch
-        {
-            return new List<object>();
-        }
-    }
-
-    private TreeViewItem? CreateAdvancedSearchScopeTreeItem(
-        object node,
+    private TreeViewItem CreateLazyScopeTreeItem(
+        AdvancedSearchScopeCatalogueNode node,
         List<AdvancedSearchScopeSelection> selected,
-        string filter,
         Action refreshSelectedChips,
-        bool useSefariaLibraryScope)
+        Action rebuildTree,
+        bool expandThisLevel,
+        Func<bool> isSuppressingEvents,
+        IReadOnlyList<AdvancedSearchScopeCatalogueNode> fullCatalogueRoots)
     {
-        var scope = CreateAdvancedSearchScopeSelection(node);
-        if (scope is null)
-        {
-            return null;
-        }
-
-        var childNodes = node switch
-        {
-            InstalledSefariaCategory { IsBookTitle: false } category => category.Children.Cast<object>(),
-            SefariaCategoryNode category => category.Contents.OrderBy(child => child.Order).Cast<object>(),
-            _ => Enumerable.Empty<object>()
-        };
-        var children = childNodes
-            .Select(child => CreateAdvancedSearchScopeTreeItem(
-                child,
-                selected,
-                filter,
-                refreshSelectedChips,
-                useSefariaLibraryScope))
-            .Where(child => child is not null)
-            .Select(child => child!)
-            .ToList();
-
-        var matchesFilter = string.IsNullOrWhiteSpace(filter) ||
-            ScopeMatchesFilter(scope, filter);
-        if (!matchesFilter && children.Count == 0)
-        {
-            return null;
-        }
+        var scope = ToAdvancedSearchScopeSelection(node);
+        var allDescendantsSelected = node.HasChildren && AreAllScopeDescendantsSelected(node, selected);
+        var selfSelected = selected.Any(candidate => candidate.Kind == scope.Kind &&
+            string.Equals(candidate.Key, scope.Key, StringComparison.OrdinalIgnoreCase));
+        // Two-state only: Avalonia three-state cycles true→null→false, and treating null as
+        // checked made unticking impossible.
+        var isDisplayedChecked = node.HasChildren ? allDescendantsSelected : selfSelected;
 
         var checkBox = new CheckBox
         {
             Content = FormatAdvancedSearchScopeLabel(scope),
-            IsChecked = selected.Any(candidate => candidate.Kind == scope.Kind &&
-                string.Equals(candidate.Key, scope.Key, StringComparison.OrdinalIgnoreCase)),
+            IsThreeState = false,
+            IsChecked = isDisplayedChecked,
             VerticalAlignment = VerticalAlignment.Center
         };
+
         checkBox.IsCheckedChanged += (_, _) =>
         {
+            if (isSuppressingEvents())
+            {
+                return;
+            }
+
             var isChecked = checkBox.IsChecked == true;
+            if (node.HasChildren)
+            {
+                ApplyScopeSelectionCascade(node, isChecked, selected);
+                refreshSelectedChips();
+                rebuildTree();
+                return;
+            }
+
             var existingIndex = selected.FindIndex(candidate => candidate.Kind == scope.Kind &&
                 string.Equals(candidate.Key, scope.Key, StringComparison.OrdinalIgnoreCase));
             if (isChecked && existingIndex < 0)
@@ -1036,19 +1110,68 @@ public partial class MainWindow
                 selected.RemoveAt(existingIndex);
             }
 
+            // Deselecting one mesechta must clear partially-selected ancestors (seder / Talmud).
+            if (!isChecked)
+            {
+                PruneIncompleteParentSelections(fullCatalogueRoots, selected);
+            }
+            else
+            {
+                PromoteFullySelectedParents(fullCatalogueRoots, selected);
+            }
+
             refreshSelectedChips();
+            rebuildTree();
         };
 
+        var expansionKey = GetAdvancedSearchScopeExpansionKey(scope);
+        var rememberExpanded = _advancedSearchExpandedScopeKeys.Contains(expansionKey);
+        var shouldExpand = (expandThisLevel || rememberExpanded) && node.HasChildren;
         var item = new TreeViewItem
         {
             Header = checkBox,
-            IsExpanded = !string.IsNullOrWhiteSpace(filter) ||
-                _advancedSearchExpandedScopeKeys.Contains(GetAdvancedSearchScopeExpansionKey(scope)),
+            IsExpanded = shouldExpand,
             DataContext = scope
         };
+
+        if (!node.HasChildren)
+        {
+            return item;
+        }
+
+        var childrenLoaded = false;
+        void LoadChildren()
+        {
+            if (childrenLoaded)
+            {
+                return;
+            }
+
+            childrenLoaded = true;
+            // Children never auto-expand further; user expands level by level.
+            item.ItemsSource = BuildLazyScopeTreeItems(
+                node.Children,
+                selected,
+                refreshSelectedChips,
+                rebuildTree,
+                expandFirstLevel: false,
+                isSuppressingEvents,
+                fullCatalogueRoots);
+        }
+
+        if (shouldExpand)
+        {
+            LoadChildren();
+        }
+        else
+        {
+            // Placeholder so the expander chevron appears; real children load on expand.
+            item.ItemsSource = new[] { new TreeViewItem { IsVisible = false, IsEnabled = false } };
+        }
+
         item.PropertyChanged += (_, e) =>
         {
-            if (e.Property != TreeViewItem.IsExpandedProperty || !string.IsNullOrWhiteSpace(filter))
+            if (e.Property != TreeViewItem.IsExpandedProperty)
             {
                 return;
             }
@@ -1057,6 +1180,7 @@ public partial class MainWindow
             if (item.IsExpanded)
             {
                 _advancedSearchExpandedScopeKeys.Add(key);
+                LoadChildren();
             }
             else
             {
@@ -1065,12 +1189,115 @@ public partial class MainWindow
 
             SaveLayoutState();
         };
-        if (children.Count > 0)
-        {
-            item.ItemsSource = children;
-        }
 
         return item;
+    }
+
+    private static void ApplyScopeSelectionCascade(
+        AdvancedSearchScopeCatalogueNode node,
+        bool isChecked,
+        List<AdvancedSearchScopeSelection> selected)
+    {
+        var scope = ToAdvancedSearchScopeSelection(node);
+        var existingIndex = selected.FindIndex(candidate => candidate.Kind == scope.Kind &&
+            string.Equals(candidate.Key, scope.Key, StringComparison.OrdinalIgnoreCase));
+        if (isChecked && existingIndex < 0)
+        {
+            selected.Add(scope);
+        }
+        else if (!isChecked && existingIndex >= 0)
+        {
+            selected.RemoveAt(existingIndex);
+        }
+
+        foreach (var child in node.Children)
+        {
+            ApplyScopeSelectionCascade(child, isChecked, selected);
+        }
+    }
+
+    /// <summary>
+    /// Removes category selections whose descendants are no longer fully selected
+    /// (e.g. seder stays selected after one mesechta is unchecked).
+    /// </summary>
+    private static void PruneIncompleteParentSelections(
+        IReadOnlyList<AdvancedSearchScopeCatalogueNode> roots,
+        List<AdvancedSearchScopeSelection> selected)
+    {
+        foreach (var root in roots)
+        {
+            PruneIncompleteParentSelectionsRecursive(root, selected);
+        }
+    }
+
+    private static void PruneIncompleteParentSelectionsRecursive(
+        AdvancedSearchScopeCatalogueNode node,
+        List<AdvancedSearchScopeSelection> selected)
+    {
+        foreach (var child in node.Children)
+        {
+            PruneIncompleteParentSelectionsRecursive(child, selected);
+        }
+
+        if (!node.HasChildren)
+        {
+            return;
+        }
+
+        if (!AreAllScopeDescendantsSelected(node, selected))
+        {
+            selected.RemoveAll(candidate =>
+                candidate.Kind == AdvancedSearchScopeKind.Category &&
+                string.Equals(candidate.Key, node.Key, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    /// <summary>
+    /// When every child of a category is selected, also select the category itself.
+    /// </summary>
+    private static void PromoteFullySelectedParents(
+        IReadOnlyList<AdvancedSearchScopeCatalogueNode> roots,
+        List<AdvancedSearchScopeSelection> selected)
+    {
+        foreach (var root in roots)
+        {
+            PromoteFullySelectedParentsRecursive(root, selected);
+        }
+    }
+
+    private static void PromoteFullySelectedParentsRecursive(
+        AdvancedSearchScopeCatalogueNode node,
+        List<AdvancedSearchScopeSelection> selected)
+    {
+        foreach (var child in node.Children)
+        {
+            PromoteFullySelectedParentsRecursive(child, selected);
+        }
+
+        if (!node.HasChildren || !AreAllScopeDescendantsSelected(node, selected))
+        {
+            return;
+        }
+
+        var scope = ToAdvancedSearchScopeSelection(node);
+        if (!selected.Any(candidate => candidate.Kind == scope.Kind &&
+                string.Equals(candidate.Key, scope.Key, StringComparison.OrdinalIgnoreCase)))
+        {
+            selected.Add(scope);
+        }
+    }
+
+    private static bool AreAllScopeDescendantsSelected(
+        AdvancedSearchScopeCatalogueNode node,
+        List<AdvancedSearchScopeSelection> selected)
+    {
+        if (!node.HasChildren)
+        {
+            return selected.Any(candidate =>
+                string.Equals(candidate.Key, node.Key, StringComparison.OrdinalIgnoreCase));
+        }
+
+        return node.Children.All(child => AreAllScopeDescendantsSelected(child, selected));
     }
 
     private static string GetAdvancedSearchScopeExpansionKey(AdvancedSearchScopeSelection scope)
@@ -1078,61 +1305,26 @@ public partial class MainWindow
         return $"{scope.Kind}:{scope.Key}";
     }
 
-    private static bool ScopeMatchesFilter(AdvancedSearchScopeSelection scope, string filter)
+    private static AdvancedSearchScopeSelection ToAdvancedSearchScopeSelection(
+        AdvancedSearchScopeCatalogueNode node)
     {
-        return scope.Label.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
-            scope.Key.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
-            (!string.IsNullOrWhiteSpace(scope.HebrewLabel) &&
-             scope.HebrewLabel.Contains(filter, StringComparison.OrdinalIgnoreCase));
-    }
-
-    private static AdvancedSearchScopeSelection? CreateAdvancedSearchScopeSelection(object node)
-    {
-        return node switch
+        return new AdvancedSearchScopeSelection
         {
-            SefariaCategoryNode category => new AdvancedSearchScopeSelection
-            {
-                Kind = AdvancedSearchScopeKind.Category,
-                Key = category.DisplayTitle,
-                Label = category.DisplayTitle,
-                HebrewLabel = category.HebrewCategory ?? string.Empty
-            },
-            SefariaBookNode book => new AdvancedSearchScopeSelection
-            {
-                Kind = AdvancedSearchScopeKind.Work,
-                Key = book.Title,
-                Label = book.Title,
-                HebrewLabel = book.HebrewTitle ?? string.Empty
-            },
-            InstalledSefariaCategory { IsBookTitle: false } category => new AdvancedSearchScopeSelection
-            {
-                Kind = AdvancedSearchScopeKind.Category,
-                Key = string.IsNullOrWhiteSpace(category.CategoryPath) ? category.Title : category.CategoryPath,
-                Label = category.Title,
-                HebrewLabel = category.HebrewTitle ?? string.Empty
-            },
-            InstalledSefariaCategory { IsBookTitle: true } category => new AdvancedSearchScopeSelection
-            {
-                Kind = AdvancedSearchScopeKind.Work,
-                Key = category.Title,
-                Label = category.Title,
-                HebrewLabel = category.HebrewTitle ?? string.Empty
-            },
-            InstalledSefariaBook book => new AdvancedSearchScopeSelection
-            {
-                Kind = AdvancedSearchScopeKind.Work,
-                Key = book.Title,
-                Label = book.Title,
-                HebrewLabel = book.HebrewTitle ?? string.Empty
-            },
-            _ => null
+            Kind = node.Kind == AdvancedSearchScopeCatalogueKind.Category
+                ? AdvancedSearchScopeKind.Category
+                : AdvancedSearchScopeKind.Work,
+            Key = node.Key,
+            Label = node.Label,
+            HebrewLabel = node.HebrewLabel
         };
     }
 
     private string FormatAdvancedSearchScopeLabel(AdvancedSearchScopeSelection scope)
     {
         var english = string.IsNullOrWhiteSpace(scope.Label) ? scope.Key : scope.Label;
-        var hebrew = scope.HebrewLabel;
+        var hebrew = string.IsNullOrWhiteSpace(scope.HebrewLabel)
+            ? GetKnownCategoryHebrewTitle(english)
+            : scope.HebrewLabel;
         return _advancedSearchScopeTitleDisplay switch
         {
             InstalledBookTitleDisplay.Hebrew => string.IsNullOrWhiteSpace(hebrew) ? english : hebrew,
@@ -1375,7 +1567,7 @@ public partial class MainWindow
                 {
                     var result = new AdvancedSearchResult
                     {
-                        Reference = $"{book.Title} {NormalizeReaderReferenceForSefaria(unit.Reference)}",
+                        Reference = SefariaReferenceFormatting.BuildFullAnchorRef(book.Title, unit.Reference),
                         WorkTitle = book.Title,
                         VersionTitle = FormatReaderVersionTitle(book),
                         Source = "Installed",
@@ -2193,10 +2385,12 @@ public partial class MainWindow
 
         var referenceWithinWork = string.IsNullOrWhiteSpace(result.ReferenceWithinWork)
             ? string.Empty
-            : NormalizeReaderReferenceForSefaria(result.ReferenceWithinWork);
+            : SefariaReferenceFormatting.NormalizeUnitPathToRelative(result.ReferenceWithinWork);
         return string.IsNullOrWhiteSpace(referenceWithinWork)
             ? hebrewTitle
-            : $"{hebrewTitle} {referenceWithinWork}";
+            : SefariaReferenceFormatting.UsesCommaAfterTitle(referenceWithinWork)
+                ? $"{hebrewTitle}, {referenceWithinWork}"
+                : $"{hebrewTitle} {referenceWithinWork}";
     }
 
     private static TextBlock CreateAdvancedSearchResultCell(string text, bool isReference)

@@ -41,9 +41,10 @@ public sealed partial class SefariaLibraryService
         using var document = JsonDocument.Parse(json);
         cancellationToken.ThrowIfCancellationRequested();
         var root = document.RootElement;
-        if (IsTalmud(book))
+        var schema = GetBookSchema(book.Title);
+        // Tractates and Talmud-addressed commentaries (Rashi on Berakhot, etc.) use daf labels.
+        if (IsTalmud(book) || schema?.HasTalmudDafAddressing == true)
         {
-            var schema = GetBookSchema(book.Title);
             return ReadTalmudTextUnits(book, root, schema, cancellationToken);
         }
 
@@ -78,9 +79,9 @@ public sealed partial class SefariaLibraryService
         cancellationToken.ThrowIfCancellationRequested();
 
         var root = document.RootElement;
-        if (IsTalmud(book))
+        var schema = GetBookSchema(book.Title);
+        if (IsTalmud(book) || schema?.HasTalmudDafAddressing == true)
         {
-            var schema = GetBookSchema(book.Title);
             foreach (var unit in EnumerateTalmudTextUnits(book, root, schema, cancellationToken))
             {
                 yield return unit;
@@ -440,7 +441,25 @@ public sealed partial class SefariaLibraryService
 
     private static bool IsTalmud(InstalledSefariaBook book)
     {
-        return book.Categories.Any(category => string.Equals(category, "Talmud", StringComparison.OrdinalIgnoreCase));
+        // Only daf-paginated tractates under Talmud. Guides, commentaries, and other works live
+        // under Talmud in the TOC but use ordinary (non-Talmud) text shapes.
+        if (!book.Categories.Any(category => string.Equals(category, "Talmud", StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        if (book.Categories.Any(category =>
+                string.Equals(category, "Guides", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(category, "Commentary", StringComparison.OrdinalIgnoreCase) ||
+                category.Contains(" on ", StringComparison.OrdinalIgnoreCase) ||
+                category.Contains("Introduction", StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        // Tractates sit under a Seder; Guides do not.
+        return book.Categories.Any(category =>
+            category.StartsWith("Seder ", StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool IsShulchanArukh(InstalledSefariaBook book)
@@ -918,30 +937,7 @@ public sealed partial class SefariaLibraryService
 
             var page = FormatTalmudPageFromAddress(address);
             var (chTitle, chHe) = GetChapterTitleFromSchema(schema, page);
-            if (pageElement.ValueKind == JsonValueKind.Array)
-            {
-                var paragraphNumber = 1;
-                foreach (var paragraph in pageElement.EnumerateArray())
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-
-                    var paragraphText = CollapseWhitespace(CollectText(paragraph, cancellationToken));
-                    if (!string.IsNullOrWhiteSpace(paragraphText))
-                    {
-                        units.Add(new ReaderTextUnit($"{page}.{paragraphNumber}", paragraphText, chTitle, chHe));
-                        paragraphNumber++;
-                    }
-                }
-            }
-            else
-            {
-                var text = CollapseWhitespace(CollectText(pageElement, cancellationToken));
-                if (!string.IsNullOrWhiteSpace(text))
-                {
-                    units.Add(new ReaderTextUnit($"{page}.1", text, chTitle, chHe));
-                }
-            }
-
+            AppendTalmudDafNestedUnits(pageElement, units, page, chTitle, chHe, cancellationToken);
             address++;
         }
     }
@@ -959,31 +955,110 @@ public sealed partial class SefariaLibraryService
 
             var page = FormatTalmudPageFromAddress(address);
             var (chTitle, chHe) = GetChapterTitleFromSchema(schema, page);
-            if (pageElement.ValueKind == JsonValueKind.Array)
+            foreach (var unit in EnumerateTalmudDafNestedUnits(pageElement, page, chTitle, chHe, cancellationToken))
             {
-                var paragraphNumber = 1;
-                foreach (var paragraph in pageElement.EnumerateArray())
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-
-                    var paragraphText = CollapseWhitespace(CollectText(paragraph, cancellationToken));
-                    if (!string.IsNullOrWhiteSpace(paragraphText))
-                    {
-                        yield return new ReaderTextUnit($"{page}.{paragraphNumber}", paragraphText, chTitle, chHe);
-                        paragraphNumber++;
-                    }
-                }
-            }
-            else
-            {
-                var text = CollapseWhitespace(CollectText(pageElement, cancellationToken));
-                if (!string.IsNullOrWhiteSpace(text))
-                {
-                    yield return new ReaderTextUnit($"{page}.1", text, chTitle, chHe);
-                }
+                yield return unit;
             }
 
             address++;
+        }
+    }
+
+    /// <summary>
+    /// Emits daf-relative units preserving Sefaria indices (including empty slots for numbering).
+    /// Depth 2: <c>2a.12</c>. Depth 3 (Rashi line/comment): <c>2a.12.1</c>.
+    /// </summary>
+    private static void AppendTalmudDafNestedUnits(
+        JsonElement pageElement,
+        List<ReaderTextUnit> units,
+        string page,
+        string chapterTitle,
+        string hebrewChapterTitle,
+        CancellationToken cancellationToken)
+    {
+        foreach (var unit in EnumerateTalmudDafNestedUnits(
+                     pageElement, page, chapterTitle, hebrewChapterTitle, cancellationToken))
+        {
+            units.Add(unit);
+        }
+    }
+
+    private static IEnumerable<ReaderTextUnit> EnumerateTalmudDafNestedUnits(
+        JsonElement pageElement,
+        string page,
+        string chapterTitle,
+        string hebrewChapterTitle,
+        CancellationToken cancellationToken)
+    {
+        if (pageElement.ValueKind != JsonValueKind.Array)
+        {
+            var text = CollapseWhitespace(CollectText(pageElement, cancellationToken));
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                yield return new ReaderTextUnit($"{page}.1", text, chapterTitle, hebrewChapterTitle);
+            }
+
+            yield break;
+        }
+
+        var lineIndex = 0;
+        foreach (var lineElement in pageElement.EnumerateArray())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            lineIndex++;
+
+            if (lineElement.ValueKind == JsonValueKind.Array &&
+                lineElement.EnumerateArray().Any(item => item.ValueKind == JsonValueKind.Array ||
+                                                         item.ValueKind == JsonValueKind.String))
+            {
+                // Depth 3+: line → comments (keep 1-based line/comment indices even when empty).
+                var hasNestedArrays = lineElement.EnumerateArray().Any(item => item.ValueKind == JsonValueKind.Array);
+                if (hasNestedArrays)
+                {
+                    // Unexpected deeper nesting: collapse line.
+                    var collapsed = CollapseWhitespace(CollectText(lineElement, cancellationToken));
+                    if (!string.IsNullOrWhiteSpace(collapsed))
+                    {
+                        yield return new ReaderTextUnit(
+                            $"{page}.{lineIndex}",
+                            collapsed,
+                            chapterTitle,
+                            hebrewChapterTitle);
+                    }
+
+                    continue;
+                }
+
+                var commentIndex = 0;
+                foreach (var commentElement in lineElement.EnumerateArray())
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    commentIndex++;
+                    var commentText = CollapseWhitespace(CollectText(commentElement, cancellationToken));
+                    if (string.IsNullOrWhiteSpace(commentText))
+                    {
+                        continue;
+                    }
+
+                    yield return new ReaderTextUnit(
+                        $"{page}.{lineIndex}.{commentIndex}",
+                        commentText,
+                        chapterTitle,
+                        hebrewChapterTitle);
+                }
+
+                continue;
+            }
+
+            var lineText = CollapseWhitespace(CollectText(lineElement, cancellationToken));
+            if (!string.IsNullOrWhiteSpace(lineText))
+            {
+                yield return new ReaderTextUnit(
+                    $"{page}.{lineIndex}",
+                    lineText,
+                    chapterTitle,
+                    hebrewChapterTitle);
+            }
         }
     }
 

@@ -52,7 +52,7 @@ public partial class MainWindow : Window
     private ScrollViewer? _leftPanelBody;
     private TreeView? _installedBooksTree;
     private ListBox? _savedSearchesList;
-    private TextBlock? _leftPanelTitle;
+
     private Button? _leftPanelSearchButton;
     private TextBox? _leftPanelSearchBox;
     private Border? _leftPanelSearchSuggestionsContainer;
@@ -100,6 +100,12 @@ public partial class MainWindow : Window
     private double _rightExpandedWidth = DefaultExpandedPanelWidth;
     private SefariaCategoryNode? _sefariaRoot;
     private Task? _libraryLoadTask;
+    private IReadOnlyList<AdvancedSearchScopeCatalogueNode>? _sefariaScopeCatalogue;
+    private IReadOnlyList<AdvancedSearchScopeCatalogueNode>? _installedScopeCatalogue;
+    private string? _sefariaScopeCatalogueKey;
+    private string? _installedScopeCatalogueKey;
+    private int _scopeCatalogueGeneration;
+    private Task? _scopeCatalogueLoadTask;
     private CommentaryReorderDragState? _activeCommentaryReorder;
     private List<FontOption>? _allFontOptions;
     private List<FontOption>? _hebrewFontOptions;
@@ -137,7 +143,6 @@ public partial class MainWindow : Window
         _leftPanelBody = this.FindControl<ScrollViewer>("LeftPanelBody");
         _installedBooksTree = this.FindControl<TreeView>("InstalledBooksTree");
         _savedSearchesList = this.FindControl<ListBox>("SavedSearchesList");
-        _leftPanelTitle = this.FindControl<TextBlock>("LeftPanelTitle");
         _leftPanelSearchButton = this.FindControl<Button>("LeftPanelSearchButton");
         _leftPanelSearchBox = this.FindControl<TextBox>("LeftPanelSearchBox");
         _leftPanelSearchSuggestionsContainer = this.FindControl<Border>("LeftPanelSearchSuggestionsContainer");
@@ -250,6 +255,7 @@ public partial class MainWindow : Window
         }
 
         _ = ReconcileInstalledBooksAfterStartupAsync();
+        _ = RunPostStartupLibraryWorkAsync();
 
         // Prompt for a Data folder only after startup has completed, so the (topmost) splash
         // window has been dismissed and the modal dialog is actually reachable. The Background
@@ -260,6 +266,7 @@ public partial class MainWindow : Window
             // first, so the modal dialog isn't hidden behind the topmost splash window.
             await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
             await PromptForDataFolderAsync(isStartup: true);
+            _ = RunPostStartupLibraryWorkAsync();
         }
 
         if (_sefariaLibrary.IsConfigured &&
@@ -277,6 +284,48 @@ public partial class MainWindow : Window
             {
                 _settings.OfflineLibrarySetupDeferred = true;
                 _settingsService.Save(_settings);
+            }
+        }
+    }
+
+    /// <summary>
+    /// After the splash closes: surface interrupted library updates, then warm the Sefaria
+    /// catalogue cache in the background with a non-blocking status banner.
+    /// </summary>
+    private async Task RunPostStartupLibraryWorkAsync()
+    {
+        try
+        {
+            DetectAndOfferInterruptedLibraryUpdate();
+            if (_libraryUpdateService.CurrentState.Mode == SefariaLibraryUpdateMode.Interrupted)
+            {
+                // Leave the interrupted banner up; still warm catalogues so Advanced Search is usable.
+            }
+
+            if (!_sefariaLibrary.IsConfigured || !_sefariaLibrary.HasOfflineLibrary)
+            {
+                return;
+            }
+
+            if (_libraryUpdateService.CurrentState.Mode is SefariaLibraryUpdateMode.Hidden or
+                SefariaLibraryUpdateMode.UpToDate or
+                SefariaLibraryUpdateMode.Preparing)
+            {
+                _libraryUpdateService.SetPreparing("Preparing search catalogue…");
+            }
+
+            await EnsureScopeCataloguesLoadedAsync();
+
+            if (_libraryUpdateService.CurrentState.Mode == SefariaLibraryUpdateMode.Preparing)
+            {
+                _libraryUpdateService.Hide();
+            }
+        }
+        catch
+        {
+            if (_libraryUpdateService.CurrentState.Mode == SefariaLibraryUpdateMode.Preparing)
+            {
+                _libraryUpdateService.Hide();
             }
         }
     }
@@ -315,8 +364,10 @@ public partial class MainWindow : Window
         RefreshInstalledBooksTree();
         RefreshOpenReaderTabs();
         UpdateReaderTools();
+        InvalidateScopeCatalogues();
         _ = LoadDictionaryCatalogueAsync();
         _libraryLoadTask = LoadSefariaLibraryAsync();
+        _ = EnsureScopeCataloguesLoadedAsync();
     }
 
     private async Task WaitForSelectedTabContentReadyAsync()

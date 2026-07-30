@@ -44,14 +44,16 @@ public partial class MainWindow
         SavedTabState? savedState,
         bool selectAfterOpen = true,
         bool renderImmediately = true,
-        string? initialReferenceWithinWork = null)
+        string? initialReferenceWithinWork = null,
+        bool forceNewTab = false,
+        TabItem? sourceTab = null)
     {
         if (_tabs is null || _centerTabs is null)
         {
             return;
         }
 
-        if (savedState is null && TryOpenDictionaryWork(book.Title))
+        if (savedState is null && !forceNewTab && TryOpenDictionaryWork(book.Title))
         {
             return;
         }
@@ -62,7 +64,9 @@ public partial class MainWindow
             return;
         }
 
-        var existing = _openReaderTabs.FirstOrDefault(pair => string.Equals(pair.Value.WorkTitle, book.Title, StringComparison.Ordinal));
+        var existing = forceNewTab
+            ? default
+            : _openReaderTabs.FirstOrDefault(pair => string.Equals(pair.Value.WorkTitle, book.Title, StringComparison.Ordinal));
         if (existing.Key is not null)
         {
             if (!string.IsNullOrWhiteSpace(initialReferenceWithinWork))
@@ -112,7 +116,7 @@ public partial class MainWindow
             var tab = CreateTab(FormatTitle(state.Primary.Title, state.Primary.HebrewTitle), tabContent);
             tab.Tag = state.Primary.Title;
             _openReaderTabs[tab] = state;
-            _tabs.Add(tab);
+            AddTabToStrip(tab, sourceTab);
             if (selectAfterOpen)
             {
                 _centerTabs.SelectedItem = tab;
@@ -130,7 +134,7 @@ public partial class MainWindow
         var normalTab = CreateTab(FormatTitle(state.Primary.Title, state.Primary.HebrewTitle), tabContent);
         normalTab.Tag = state.Primary.Title;
         _openReaderTabs[normalTab] = state;
-        _tabs.Add(normalTab);
+        AddTabToStrip(normalTab, sourceTab);
         if (selectAfterOpen)
         {
             _centerTabs.SelectedItem = normalTab;
@@ -261,6 +265,7 @@ public partial class MainWindow
         state.IsNavigationExpanded = savedState.IsNavigationExpanded;
         state.NavigationJumpQuery = savedState.NavigationJumpQuery ?? string.Empty;
         state.NavigationTopicsAllExpanded = savedState.NavigationTopicsAllExpanded;
+        state.UseHebrewNavigationNumbers = savedState.UseHebrewNavigationNumbers;
         state.ExpandedNavigationTopics.Clear();
         foreach (var topicKey in savedState.ExpandedNavigationTopicKeys)
         {
@@ -595,18 +600,18 @@ public partial class MainWindow
             ? navigationPages
                 .Where(page => pageRows.ContainsKey(page.Page))
                 .Select(page => new ReaderNavigationItem(
-                    FormatNavigationChapterLabel(page.Page),
+                    FormatNavigationChapterLabel(page.Page, state.UseHebrewNavigationNumbers),
                     pageRows[page.Page],
                     FormatChapterTitle(page)))
                 .ToList()
             : pageRows
                 .Select(pair => new ReaderNavigationItem(
-                    FormatNavigationChapterLabel(pair.Key),
+                    FormatNavigationChapterLabel(pair.Key, state.UseHebrewNavigationNumbers),
                     pair.Value,
                     pair.Value.ChapterHeading))
                 .ToList();
         state.HasTalmudNavigation = isTalmudNavigation;
-        state.NavigationChapters = BuildReaderNavigationChapters(state.NavigationItems);
+        state.NavigationChapters = BuildReaderNavigationChapters(state);
         state.ReaderRows = items;
         if (state.ReaderList is not null)
         {
@@ -847,7 +852,8 @@ public partial class MainWindow
             return;
         }
 
-        state.CommentarySortMode = CommentarySortMode.English;
+        // Code default only — not written into settings until the user changes sort mode or reorders.
+        state.CommentarySortMode = CommentarySortMode.Custom;
         state.CommentaryCustomOrder = new List<string>();
     }
 
@@ -1221,48 +1227,66 @@ public partial class MainWindow
         }
 
         state.IsLinkSourceTabLoading = true;
+        state.LinkPreviewError = string.Empty;
         UpdateReaderTools();
 
         TabItem? loadingTab = null;
+        var sourceTab = FindTabForReaderState(state);
         try
         {
             var preview = state.ActiveLinkPreview;
-            var fullVersions = _sefariaLibrary.GetFullInstalledVersionsForTitle(preview.WorkTitle);
+            var workTitle = FirstNonEmpty(preview.WorkTitle, ExtractReferenceTitle(preview.Reference));
+            var fullVersions = ResolveInstalledLinkSourceVersions(workTitle, preview);
+
             if (fullVersions.Count > 0)
             {
-                OpenInstalledLinkSource(preview, state.CommentaryLanguage, fullVersions);
+                OpenInstalledLinkSource(
+                    preview,
+                    state.CommentaryLanguage,
+                    fullVersions,
+                    forceNewTab: true,
+                    sourceTab: sourceTab);
                 return;
             }
 
             if (_tabs is null || _centerTabs is null)
             {
+                state.LinkPreviewError = "Could not open a new tab.";
                 return;
             }
 
-            var loadingContent = CreateLinkSourceLoadingView(preview.WorkTitle, preview.WorkHebrewTitle, out var progressBar, out var statusBlock);
-            loadingTab = CreateTab(FormatTitle(preview.WorkTitle, preview.WorkHebrewTitle), loadingContent);
-            loadingTab.Tag = preview.WorkTitle;
-            _tabs.Add(loadingTab);
+            // Offline library only: there is nothing further to download for missing titles.
+            if (_sefariaLibrary.HasOfflineLibrary)
+            {
+                state.LinkPreviewError =
+                    $"“{workTitle}” is not available as a full book in the offline library.";
+                return;
+            }
+
+            var loadingContent = CreateLinkSourceLoadingView(workTitle, preview.WorkHebrewTitle, out var progressBar, out var statusBlock);
+            loadingTab = CreateTab(FormatTitle(workTitle, preview.WorkHebrewTitle), loadingContent);
+            loadingTab.Tag = workTitle;
+            AddTabToStrip(loadingTab, sourceTab);
             _centerTabs.SelectedItem = loadingTab;
 
             var progress = new Progress<double>(percent =>
             {
                 progressBar.IsIndeterminate = false;
                 progressBar.Value = percent;
-                statusBlock.Text = $"Downloading {preview.WorkTitle}: {percent:0}%";
+                statusBlock.Text = $"Downloading {workTitle}: {percent:0}%";
             });
 
             await _sefariaLibrary.DownloadLinkWorkAsync(
-                preview.WorkTitle,
+                workTitle,
                 state.CommentaryLanguage,
                 progress,
                 CancellationToken.None);
 
             RefreshInstalledBooksTree();
-            fullVersions = _sefariaLibrary.GetFullInstalledVersionsForTitle(preview.WorkTitle);
+            fullVersions = ResolveInstalledLinkSourceVersions(workTitle, preview);
             if (fullVersions.Count == 0)
             {
-                throw new InvalidOperationException($"No installed versions were found for {preview.WorkTitle} after download.");
+                throw new InvalidOperationException($"No installed versions were found for {workTitle} after download.");
             }
 
             PopulateReaderTabWithInstalledLinkSource(loadingTab, preview, fullVersions, state.CommentaryLanguage);
@@ -1282,30 +1306,90 @@ public partial class MainWindow
         }
     }
 
+    private List<InstalledSefariaBook> ResolveInstalledLinkSourceVersions(
+        string workTitle,
+        SefariaLinkPreview preview)
+    {
+        var versions = _sefariaLibrary.GetFullInstalledVersionsForTitle(workTitle);
+        if (versions.Count > 0)
+        {
+            return versions;
+        }
+
+        if (!string.IsNullOrWhiteSpace(preview.WorkTitle) &&
+            !string.Equals(preview.WorkTitle, workTitle, StringComparison.OrdinalIgnoreCase))
+        {
+            versions = _sefariaLibrary.GetFullInstalledVersionsForTitle(preview.WorkTitle);
+            if (versions.Count > 0)
+            {
+                return versions;
+            }
+        }
+
+        var fromRef = ExtractReferenceTitle(preview.Reference);
+        if (!string.IsNullOrWhiteSpace(fromRef) &&
+            !string.Equals(fromRef, workTitle, StringComparison.OrdinalIgnoreCase))
+        {
+            versions = _sefariaLibrary.GetFullInstalledVersionsForTitle(fromRef);
+        }
+
+        return versions;
+    }
+
     private void OpenInstalledLinkSource(
         SefariaLinkPreview preview,
         CommentaryLanguage language,
-        List<InstalledSefariaBook> fullVersions)
+        List<InstalledSefariaBook> fullVersions,
+        bool forceNewTab = false,
+        TabItem? sourceTab = null)
     {
-        var existing = FindReaderTabByWorkTitle(preview.WorkTitle);
-        if (existing.Key is not null)
-        {
-            BeginReaderReferenceNavigation(existing.Value, preview.ReferenceWithinWork);
-            if (_centerTabs is not null)
-            {
-                _centerTabs.SelectedItem = existing.Key;
-            }
-
-            return;
-        }
-
         var targetBook = SelectInstalledLinkSourceBook(fullVersions, language);
         if (targetBook is null)
         {
             return;
         }
 
-        OpenInstalledBook(targetBook, null, initialReferenceWithinWork: preview.ReferenceWithinWork);
+        if (!forceNewTab)
+        {
+            var existing = FindReaderTabByWorkTitle(targetBook.Title);
+            if (existing.Key is null && !string.IsNullOrWhiteSpace(preview.WorkTitle))
+            {
+                existing = FindReaderTabByWorkTitle(preview.WorkTitle);
+            }
+
+            if (existing.Key is not null)
+            {
+                BeginReaderReferenceNavigation(existing.Value, preview.ReferenceWithinWork);
+                if (_centerTabs is not null)
+                {
+                    _centerTabs.SelectedItem = existing.Key;
+                }
+
+                return;
+            }
+        }
+
+        OpenInstalledBook(
+            targetBook,
+            null,
+            selectAfterOpen: true,
+            renderImmediately: true,
+            initialReferenceWithinWork: preview.ReferenceWithinWork,
+            forceNewTab: forceNewTab,
+            sourceTab: sourceTab);
+    }
+
+    private TabItem? FindTabForReaderState(ReaderTabState state)
+    {
+        foreach (var pair in _openReaderTabs)
+        {
+            if (ReferenceEquals(pair.Value, state))
+            {
+                return pair.Key;
+            }
+        }
+
+        return null;
     }
 
     private void PopulateReaderTabWithInstalledLinkSource(
@@ -1627,21 +1711,7 @@ public partial class MainWindow
             return string.Empty;
         }
 
-        var reference = NormalizeReaderReferenceForSefaria(unit.Reference);
-        return string.IsNullOrWhiteSpace(reference)
-            ? string.Empty
-            : $"{state.Primary.Title} {reference}";
-    }
-
-    private static string NormalizeReaderReferenceForSefaria(string reference)
-    {
-        reference = reference.Trim();
-        if (string.IsNullOrWhiteSpace(reference))
-        {
-            return string.Empty;
-        }
-
-        return reference.Replace('.', ':');
+        return SefariaReferenceFormatting.BuildFullAnchorRef(state.Primary.Title, unit.Reference);
     }
 
     private void ApplyReaderTitle(TextBlock titleBlock, string? englishTitle, string? hebrewTitle)
@@ -1687,11 +1757,11 @@ public partial class MainWindow
         });
     }
 
-    private List<ReaderNavigationChapter> BuildReaderNavigationChapters(List<ReaderNavigationItem> navigationItems)
+    private List<ReaderNavigationChapter> BuildReaderNavigationChapters(ReaderTabState state)
     {
         var chapters = new List<ReaderNavigationChapter>();
         var sectionIndex = 0;
-        foreach (var item in navigationItems)
+        foreach (var item in state.NavigationItems)
         {
             var current = chapters.LastOrDefault();
             if (current is null || !string.Equals(current.Title, item.ChapterTitle, StringComparison.Ordinal))
@@ -1708,7 +1778,7 @@ public partial class MainWindow
 
         foreach (var chapter in chapters)
         {
-            chapter.RangeLabel = FormatNavigationTopicRangeLabel(chapter.Items);
+            chapter.RangeLabel = FormatNavigationTopicRangeLabel(chapter.Items, state.UseHebrewNavigationNumbers);
         }
 
         return chapters;
@@ -1721,15 +1791,28 @@ public partial class MainWindow
             : title;
     }
 
-    private string FormatNavigationTopicRangeLabel(IReadOnlyList<ReaderNavigationItem> items)
+    private void RefreshNavigationNumberLabels(ReaderTabState state)
+    {
+        state.NavigationItems = state.NavigationItems
+            .Select(item => item with
+            {
+                Label = FormatNavigationChapterLabel(item.Row.ChapterKey, state.UseHebrewNavigationNumbers)
+            })
+            .ToList();
+
+        // Rebuild topic groups so buttons bind to the refreshed labels; expand keys are title-based.
+        state.NavigationChapters = BuildReaderNavigationChapters(state);
+    }
+
+    private string FormatNavigationTopicRangeLabel(IReadOnlyList<ReaderNavigationItem> items, bool useHebrewNumbers)
     {
         if (items.Count == 0)
         {
             return string.Empty;
         }
 
-        var first = FormatNavigationChapterLabel(items[0].Label);
-        var last = FormatNavigationChapterLabel(items[^1].Label);
+        var first = FormatNavigationChapterLabel(items[0].Row.ChapterKey, useHebrewNumbers);
+        var last = FormatNavigationChapterLabel(items[^1].Row.ChapterKey, useHebrewNumbers);
         return string.Equals(first, last, StringComparison.Ordinal)
             ? first
             : $"{first}\u2013{last}";
@@ -1803,9 +1886,14 @@ public partial class MainWindow
         };
     }
 
-    private string FormatNavigationChapterLabel(string chapter)
+    private string FormatNavigationChapterLabel(string chapter, bool useHebrewNumbers)
     {
-        if (_settings.InstalledBookTitleDisplay != InstalledBookTitleDisplay.Hebrew)
+        if (string.IsNullOrWhiteSpace(chapter))
+        {
+            return string.Empty;
+        }
+
+        if (!useHebrewNumbers)
         {
             return chapter;
         }

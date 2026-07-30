@@ -151,6 +151,8 @@ public sealed partial class SefariaLibraryService
                 result.SectionNames.AddRange(sections.EnumerateArray().Select(item => item.GetString() ?? ""));
             if (root.TryGetProperty("heSectionNames", out var heSections) && heSections.ValueKind == JsonValueKind.Array)
                 result.HeSectionNames.AddRange(heSections.EnumerateArray().Select(item => item.GetString() ?? ""));
+            if (root.TryGetProperty("addressTypes", out var addressTypes) && addressTypes.ValueKind == JsonValueKind.Array)
+                result.AddressTypes.AddRange(addressTypes.EnumerateArray().Select(item => item.GetString() ?? ""));
 
             using var altsDocument = JsonDocument.Parse(altsJson);
             if (altsDocument.RootElement.ValueKind == JsonValueKind.Object)
@@ -272,9 +274,9 @@ public sealed partial class SefariaLibraryService
             .ThenBy(node => node switch
             {
                 SefariaCategoryNode child when isRoot => GetTopLevelCategoryOrder(child.Category),
-                SefariaCategoryNode child => child.Order,
+                SefariaCategoryNode child => ResolveCategorySortOrder(child.Category, isRoot: false, child.Order),
                 SefariaBookNode book when isRoot => GetTopLevelCategoryOrder(book.PrimaryCategory),
-                SefariaBookNode book => book.Order,
+                SefariaBookNode book => book.Order > 0 ? book.Order : NestedUnknownOrder,
                 _ => float.MaxValue
             })
             .ThenBy(node => node switch

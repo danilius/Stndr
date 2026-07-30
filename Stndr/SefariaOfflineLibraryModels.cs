@@ -77,3 +77,44 @@ public sealed class SefariaOfflineLibraryInstallMetadata
     public int DictionaryWordForms { get; set; }
     public long DatabaseBytes { get; set; }
 }
+
+/// <summary>
+/// Leftover download/import artifacts from a killed or cancelled library update/install.
+/// The active library (if any) is left untouched until activation succeeds.
+/// </summary>
+public sealed record SefariaInterruptedLibraryUpdate(
+    long PartialArchiveBytes,
+    long CompletedArchiveBytes,
+    long StagingDatabaseBytes,
+    bool HasDownloadState)
+{
+    public long TotalBytes => PartialArchiveBytes + CompletedArchiveBytes + StagingDatabaseBytes;
+
+    public bool HasPartialDownload => PartialArchiveBytes > 0;
+    public bool HasCompletedArchive => CompletedArchiveBytes > 0;
+    public bool HasStagingDatabase => StagingDatabaseBytes > 0;
+
+    public string SummaryMessage
+    {
+        get
+        {
+            if (HasStagingDatabase)
+            {
+                return "A library import was interrupted. Resume to finish, or discard the partial work.";
+            }
+
+            if (HasCompletedArchive)
+            {
+                return "A library download finished but was not installed. Resume to import, or discard it.";
+            }
+
+            if (HasPartialDownload)
+            {
+                var giB = PartialArchiveBytes / 1024d / 1024d / 1024d;
+                return $"A library download was interrupted ({giB:N2} GiB saved). Resume to continue, or discard it.";
+            }
+
+            return "A library update was interrupted. Resume to continue, or discard partial files.";
+        }
+    }
+}

@@ -121,24 +121,177 @@ public sealed partial class SefariaLibraryService
         var cacheKey = $"{title}|{language}";
         if (!cache.TryGetValue(cacheKey, out var units))
         {
-            var book = GetOfflineLibraryBooks().FirstOrDefault(item =>
-                string.Equals(item.Title, title, StringComparison.Ordinal) &&
-                string.Equals(item.LanguageCode, language, StringComparison.OrdinalIgnoreCase));
+            // Prefer exact language, then any version for this title (many commentaries are Hebrew-only).
+            var books = GetOfflineLibraryBooks()
+                .Where(item => string.Equals(item.Title, title, StringComparison.Ordinal))
+                .ToList();
+            var book = books.FirstOrDefault(item =>
+                    string.Equals(item.LanguageCode, language, StringComparison.OrdinalIgnoreCase))
+                ?? books.FirstOrDefault(item =>
+                    language.StartsWith("he", StringComparison.OrdinalIgnoreCase)
+                        ? IsHebrew(item)
+                        : !IsHebrew(item))
+                ?? books.FirstOrDefault();
             units = book is null ? null : ReadInstalledBookUnits(book, token);
             cache[cacheKey] = units;
         }
-        if (units is null) return "";
-        var relative = fullReference.StartsWith(title, StringComparison.Ordinal)
+        if (units is null || units.Count == 0) return "";
+
+        var relative = fullReference.StartsWith(title, StringComparison.OrdinalIgnoreCase)
             ? fullReference[title.Length..].TrimStart(' ', ',')
             : fullReference;
-        relative = relative.Replace(':', '.');
-        var unit = units.FirstOrDefault(item => string.Equals(item.Reference, relative, StringComparison.OrdinalIgnoreCase));
-        return unit?.Text ?? "";
+        if (string.IsNullOrWhiteSpace(relative)) return "";
+
+        var match = FindUnitForSefariaRelative(units, relative);
+        return match?.Text ?? "";
     }
 
-    private static bool IsCommentaryRow(OfflineLinkRow row) =>
-        string.Equals(row.Dependence, "Commentary", StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(row.LinkType, "commentary", StringComparison.OrdinalIgnoreCase);
+    /// <summary>
+    /// Matches a Sefaria relative ref (e.g. <c>Part 1 1:1</c> or <c>Introduction, Introduction 1</c>)
+    /// against internal unit paths (e.g. <c>Part 1.default.1.1</c> or <c>Introduction.Introduction.1</c>).
+    /// </summary>
+    private static ReaderTextUnit? FindUnitForSefariaRelative(
+        IReadOnlyList<ReaderTextUnit> units,
+        string sefariaRelative)
+    {
+        var target = TokenizeSefariaRelativeReference(sefariaRelative);
+        if (target.Count == 0) return null;
+
+        ReaderTextUnit? best = null;
+        var bestScore = -1;
+        foreach (var unit in units)
+        {
+            var candidate = TokenizeUnitPathReference(unit.Reference);
+            if (candidate.Count == 0) continue;
+
+            if (TokensEqual(candidate, target))
+            {
+                return unit;
+            }
+
+            // Prefer the longest shared prefix (handles slightly coarser/finer addresses).
+            var shared = 0;
+            var n = Math.Min(candidate.Count, target.Count);
+            while (shared < n &&
+                   string.Equals(candidate[shared], target[shared], StringComparison.OrdinalIgnoreCase))
+            {
+                shared++;
+            }
+
+            if (shared == target.Count || shared == candidate.Count)
+            {
+                if (shared > bestScore)
+                {
+                    bestScore = shared;
+                    best = unit;
+                }
+            }
+        }
+
+        return best;
+    }
+
+    /// <summary>Unit paths use dots: <c>Part 1.default.1.1</c> → [Part 1, 1, 1].</summary>
+    private static List<string> TokenizeUnitPathReference(string unitReference)
+    {
+        if (string.IsNullOrWhiteSpace(unitReference)) return new List<string>();
+
+        return unitReference
+            .Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(part =>
+                !string.Equals(part, "default", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(part, "nodes", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Sefaria relatives: <c>Part 1 1:1</c>, <c>2a:12:1</c>, <c>Introduction, Introduction 1</c>, <c>1:1</c>.
+    /// </summary>
+    private static List<string> TokenizeSefariaRelativeReference(string relative)
+    {
+        if (string.IsNullOrWhiteSpace(relative)) return new List<string>();
+
+        var tokens = new List<string>();
+        foreach (var segment in relative.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            // Pure numeric address: 1:1:1
+            if (System.Text.RegularExpressions.Regex.IsMatch(segment, @"^\d+(?::\d+)*$"))
+            {
+                tokens.AddRange(segment.Split(':', StringSplitOptions.RemoveEmptyEntries));
+                continue;
+            }
+
+            // Talmud daf address: 2a, 2a:12, 2a:12:1
+            var dafAddress = System.Text.RegularExpressions.Regex.Match(
+                segment,
+                @"^(?<daf>\d+[ab])(?::(?<rest>\d+(?::\d+)*))?$",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (dafAddress.Success)
+            {
+                tokens.Add(dafAddress.Groups["daf"].Value);
+                if (dafAddress.Groups["rest"].Success)
+                {
+                    tokens.AddRange(dafAddress.Groups["rest"].Value.Split(':', StringSplitOptions.RemoveEmptyEntries));
+                }
+
+                continue;
+            }
+
+            // Named node + trailing numeric address: "Part 1 1:1"
+            var withAddress = System.Text.RegularExpressions.Regex.Match(
+                segment,
+                @"^(?<name>.+?)\s+(?<addr>\d+(?::\d+)*)$");
+            if (withAddress.Success)
+            {
+                tokens.Add(withAddress.Groups["name"].Value.Trim());
+                tokens.AddRange(withAddress.Groups["addr"].Value.Split(':', StringSplitOptions.RemoveEmptyEntries));
+                continue;
+            }
+
+            tokens.Add(segment);
+        }
+
+        return tokens;
+    }
+
+    private static bool TokensEqual(IReadOnlyList<string> a, IReadOnlyList<string> b)
+    {
+        if (a.Count != b.Count) return false;
+        for (var i = 0; i < a.Count; i++)
+        {
+            if (!string.Equals(a[i], b[i], StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// True when this link is a commentary <em>on the anchor</em>, not merely a link to some
+    /// commentary work. Many dump links point from e.g. Mishneh Torah to Beit Yosef on
+    /// Shulchan Arukh (related/parallel law). Those works have dependence=Commentary, but they
+    /// are not commentaries on the open book and must not fill the Commentaries panel.
+    /// </summary>
+    private static bool IsCommentaryRow(OfflineLinkRow row)
+    {
+        // Prefer explicit link type from the dump. Dependence alone is too broad: it marks the
+        // target as "a commentary work" regardless of which base text it comments on.
+        if (!string.Equals(row.LinkType, "commentary", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!string.Equals(row.Dependence, "Commentary", StringComparison.OrdinalIgnoreCase))
+        {
+            // Some commentary links still use type=commentary with empty dependence; keep them.
+            // If dependence is set to something else, treat as non-commentary.
+            return string.IsNullOrWhiteSpace(row.Dependence);
+        }
+
+        return true;
+    }
 
     private static string GetOfflineLinkCategory(OfflineLinkRow row)
     {

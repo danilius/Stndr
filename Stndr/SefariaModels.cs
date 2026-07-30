@@ -289,6 +289,15 @@ public enum InstalledBookTitleDisplay
     Both
 }
 
+/// <summary>Where a tab opened from a link is inserted in the tab strip.</summary>
+public enum LinkOpenedTabPlacement
+{
+    /// <summary>Place the new tab immediately after the reader tab that opened the link.</summary>
+    AfterSourceTab,
+    /// <summary>Append the new tab at the end of the tab strip.</summary>
+    AtEnd
+}
+
 public enum ReaderDisplayMode
 {
     PrimaryOnly,
@@ -322,6 +331,8 @@ public sealed class AppSettings
     [System.Text.Json.Serialization.JsonIgnore]
     public string DataStorageFolder { get; set; } = string.Empty;
     public InstalledBookTitleDisplay InstalledBookTitleDisplay { get; set; } = InstalledBookTitleDisplay.Both;
+    /// <summary>Where tabs opened from Reader Tools links appear in the tab strip.</summary>
+    public LinkOpenedTabPlacement LinkOpenedTabPlacement { get; set; } = LinkOpenedTabPlacement.AfterSourceTab;
     public Dictionary<string, string> SelectedHebrewTextsByBook { get; set; } = new();
     public Dictionary<string, string> SelectedTranslationsByBook { get; set; } = new();
     public Dictionary<string, ReaderDisplayMode> ReaderDisplayModesByBook { get; set; } = new();
@@ -534,7 +545,14 @@ public sealed class BookSchema
     public int Depth { get; set; }
     public List<string> SectionNames { get; set; } = new();
     public List<string> HeSectionNames { get; set; } = new();
+    /// <summary>Sefaria schema addressTypes, e.g. Talmud, Integer, Perek.</summary>
+    public List<string> AddressTypes { get; set; } = new();
     public Dictionary<string, List<SchemaAltNode>> AltStructures { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>True when the first address dimension is a Talmud daf (2a, 2b, …).</summary>
+    public bool HasTalmudDafAddressing =>
+        AddressTypes.Count > 0 &&
+        string.Equals(AddressTypes[0], "Talmud", StringComparison.OrdinalIgnoreCase);
 
     public static BookSchema? Load(string filePath)
     {

@@ -257,10 +257,6 @@
                                  PlaceholderText="Search installed books..."
                                  VerticalAlignment="Center" />
                     </StackPanel>
-                    <TextBlock x:Name="LeftPanelTitle"
-                               Text="Library"
-                               VerticalAlignment="Center"
-                               Margin="8,0,0,0" />
                 </StackPanel>
 
                 <ScrollViewer x:Name="LeftPanelBody"
@@ -270,7 +266,7 @@
                     <StackPanel Margin="6"
                                 HorizontalAlignment="Stretch"
                                 Spacing="8">
-                        <Expander Header="Installed Books"
+                        <Expander Header="Library"
                                   IsExpanded="True"
                                   HorizontalAlignment="Stretch">
                             <TreeView x:Name="InstalledBooksTree"

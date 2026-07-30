@@ -64,6 +64,7 @@ public partial class MainWindow
         public List<string> ExpandedNavigationTopicKeys { get; set; } = new();
         public string NavigationJumpQuery { get; set; } = string.Empty;
         public bool NavigationTopicsAllExpanded { get; set; }
+        public bool UseHebrewNavigationNumbers { get; set; }
         public bool IsDisplayExpanded { get; set; } = true;
         public bool IsSedrotExpanded { get; set; } = true;
         public bool IsCommentariesExpanded { get; set; } = true;
@@ -102,6 +103,7 @@ public partial class MainWindow
         public Dictionary<string, Expander> NavigationTopicExpanders { get; } = new(StringComparer.Ordinal);
         public string NavigationJumpQuery { get; set; } = string.Empty;
         public bool NavigationTopicsAllExpanded { get; set; }
+        public bool UseHebrewNavigationNumbers { get; set; }
         public string ActiveNavigationTopicKey { get; set; } = string.Empty;
         public BookSchema? Schema { get; set; }
         public bool IsNavigationExpanded { get; set; } = true;
@@ -124,7 +126,9 @@ public partial class MainWindow
         public string SelectedCommentarySourceTitleEnglish { get; set; } = string.Empty;
         public string SelectedCommentarySourceTitleHebrew { get; set; } = string.Empty;
         public HashSet<string> PinnedCommentarySourceKeys { get; set; } = new(StringComparer.OrdinalIgnoreCase);
-        public CommentarySortMode CommentarySortMode { get; set; } = CommentarySortMode.English;
+        // Default Custom so drag-reorder is available without hunting the sort flyout.
+        // Session/book prefs can still override to English/Hebrew when the user chooses them.
+        public CommentarySortMode CommentarySortMode { get; set; } = CommentarySortMode.Custom;
         public List<string> CommentaryCustomOrder { get; set; } = new();
         public Flyout? CommentarySortFlyout { get; set; }
         public HashSet<string> SelectedLinkCategories { get; set; } = new(StringComparer.OrdinalIgnoreCase);

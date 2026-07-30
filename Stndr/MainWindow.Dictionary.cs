@@ -1148,13 +1148,6 @@ public partial class MainWindow
                 return;
             }
 
-            contentPanel.Children.Add(new TextBlock
-            {
-                Text = preview.IsFromInstalledBook ? "Preview from local data" : "Preview from Sefaria",
-                Foreground = new SolidColorBrush(Color.Parse("#667085")),
-                TextWrapping = TextWrapping.Wrap
-            });
-
             AddDictionaryReferencePreviewText(contentPanel, preview.HebrewText, FlowDirection.RightToLeft);
             AddDictionaryReferencePreviewText(contentPanel, preview.EnglishText, FlowDirection.LeftToRight);
 

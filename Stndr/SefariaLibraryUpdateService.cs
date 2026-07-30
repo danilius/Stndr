@@ -83,6 +83,10 @@ public enum SefariaLibraryUpdateMode
     Checking,
     UpToDate,
     UpdateAvailable,
+    /// <summary>Non-blocking status while the app warms caches after splash.</summary>
+    Preparing,
+    /// <summary>Partial download/import left behind after kill or cancel; Resume/Discard offered.</summary>
+    Interrupted,
     Downloading,
     Importing,
     Activating,
@@ -115,6 +119,17 @@ public sealed class SefariaLibraryUpdateService(ISefariaLibraryUpdateSource? sou
         SefariaLibraryUpdateMode.Importing or
         SefariaLibraryUpdateMode.Activating;
 
+    /// <summary>
+    /// True while an update install is running, or while a resumable interrupted update is shown.
+    /// Background "is there a newer snapshot?" checks should not clobber these states.
+    /// </summary>
+    public bool SuppressBackgroundOffer => IsBusy ||
+        CurrentState.Mode is SefariaLibraryUpdateMode.Interrupted or
+            SefariaLibraryUpdateMode.Preparing or
+            SefariaLibraryUpdateMode.Complete or
+            SefariaLibraryUpdateMode.Cancelled or
+            SefariaLibraryUpdateMode.Error;
+
     public void StartBackgroundChecks(
         Func<string?> dataFolderProvider,
         Func<bool>? enabledProvider = null,
@@ -138,7 +153,7 @@ public sealed class SefariaLibraryUpdateService(ISefariaLibraryUpdateSource? sou
         LibraryUpdateSnoozeState snooze = default,
         CancellationToken token = default)
     {
-        if (IsBusy)
+        if (IsBusy || CurrentState.Mode == SefariaLibraryUpdateMode.Interrupted)
         {
             return CurrentState;
         }
@@ -214,6 +229,12 @@ public sealed class SefariaLibraryUpdateService(ISefariaLibraryUpdateSource? sou
 
     public void Hide() => Publish(new(SefariaLibraryUpdateMode.Hidden, "", CurrentState.RemoteSnapshot));
 
+    public void OfferInterrupted(string message) =>
+        Publish(new(SefariaLibraryUpdateMode.Interrupted, message, CurrentState.RemoteSnapshot));
+
+    public void SetPreparing(string message) =>
+        Publish(new(SefariaLibraryUpdateMode.Preparing, message, CurrentState.RemoteSnapshot));
+
     private async Task RunBackgroundChecksAsync(
         Func<string?> provider,
         Func<bool> enabled,
@@ -225,7 +246,7 @@ public sealed class SefariaLibraryUpdateService(ISefariaLibraryUpdateSource? sou
             await Task.Delay(InitialDelay, token);
             while (!token.IsCancellationRequested)
             {
-                if (enabled() && !IsBusy)
+                if (enabled() && !SuppressBackgroundOffer)
                 {
                     await CheckNowAsync(provider(), snoozeProvider(), token);
                 }

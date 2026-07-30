@@ -219,8 +219,27 @@ public sealed partial class SefariaLibraryService
         "Kabbalah"
     ];
 
+    /// <summary>Seder order (Mishnah / Bavli / Yerushalmi / Tosefta). Always before commentaries.</summary>
+    private static readonly string[] SederCategoryOrder =
+    [
+        "Seder Zeraim",
+        "Seder Moed",
+        "Seder Nashim",
+        "Seder Nezikin",
+        "Seder Kodashim",
+        "Seder Tahorot"
+    ];
+
+    // Nested category sort tiers (lower first). Keeps sedarim ahead of Guides / Rishonim / etc.
+    private const float NestedPrimaryBase = 0f;       // Torah, Prophets, Bavli, Yerushalmi…
+    private const float NestedSederBase = 100f;       // Seder Zeraim…Seder Tahorot
+    private const float NestedSecondaryBase = 200f;   // Minor Tractates, Guides
+    private const float NestedCommentaryBase = 300f;  // Rishonim / Acharonim / Modern…
+    private const float NestedOtherBase = 400f;       // Midrash branches, liturgy, thought…
+
     private const float TopLevelOtherOrder = 9000f;
     private const float TopLevelUnknownOrder = 8000f;
+    private const float NestedUnknownOrder = 5000f;
 
     public ObservableCollection<object> BuildInstalledTree()
     {
@@ -595,7 +614,7 @@ public sealed partial class SefariaLibraryService
             book.Categories = categories;
         }
 
-        // Prefer house top-level rank; keep deeper TOC ranks when present.
+        // Prefer house ranks for known categories; fall back to TOC ranks, then name-stable order.
         var orders = new List<float>(categories.Count);
         for (var i = 0; i < categories.Count; i++)
         {
@@ -605,7 +624,20 @@ public sealed partial class SefariaLibraryService
                 continue;
             }
 
-            orders.Add(i < book.CategoryOrders.Count ? book.CategoryOrders[i] : i);
+            var house = GetNestedCategoryOrder(categories[i]);
+            if (house is not null)
+            {
+                orders.Add(house.Value);
+                continue;
+            }
+
+            if (i < book.CategoryOrders.Count && book.CategoryOrders[i] > 0)
+            {
+                orders.Add(book.CategoryOrders[i]);
+                continue;
+            }
+
+            orders.Add(NestedUnknownOrder + i);
         }
 
         book.CategoryOrders = orders;
@@ -648,12 +680,130 @@ public sealed partial class SefariaLibraryService
         return TopLevelUnknownOrder;
     }
 
+    /// <summary>
+    /// House order for nested categories. Sedarim always sort before Guides / Rishonim /
+    /// Acharonim / Modern commentary under Mishnah and Talmud.
+    /// </summary>
+    internal static float? GetNestedCategoryOrder(string? categoryName)
+    {
+        if (string.IsNullOrWhiteSpace(categoryName))
+        {
+            return null;
+        }
+
+        // 1) Sedarim first under Mishnah / Bavli / Yerushalmi / Tosefta.
+        for (var i = 0; i < SederCategoryOrder.Length; i++)
+        {
+            if (string.Equals(SederCategoryOrder[i], categoryName, StringComparison.OrdinalIgnoreCase))
+            {
+                return NestedSederBase + i;
+            }
+        }
+
+        if (categoryName.StartsWith("Seder ", StringComparison.OrdinalIgnoreCase))
+        {
+            return NestedSederBase + SederCategoryOrder.Length;
+        }
+
+        // 2) Primary corpus sections.
+        if (string.Equals(categoryName, "Torah", StringComparison.OrdinalIgnoreCase)) return NestedPrimaryBase;
+        if (string.Equals(categoryName, "Prophets", StringComparison.OrdinalIgnoreCase)) return NestedPrimaryBase + 1;
+        if (string.Equals(categoryName, "Writings", StringComparison.OrdinalIgnoreCase)) return NestedPrimaryBase + 2;
+        if (string.Equals(categoryName, "Targum", StringComparison.OrdinalIgnoreCase)) return NestedPrimaryBase + 3;
+        if (string.Equals(categoryName, "Bavli", StringComparison.OrdinalIgnoreCase)) return NestedPrimaryBase + 10;
+        if (string.Equals(categoryName, "Yerushalmi", StringComparison.OrdinalIgnoreCase)) return NestedPrimaryBase + 11;
+
+        // 3) Secondary non-commentary groups (after sedarim).
+        if (string.Equals(categoryName, "Minor Tractates", StringComparison.OrdinalIgnoreCase))
+        {
+            return NestedSecondaryBase;
+        }
+
+        if (string.Equals(categoryName, "Guides", StringComparison.OrdinalIgnoreCase))
+        {
+            return NestedSecondaryBase + 1;
+        }
+
+        if (categoryName.Contains("Minor Tractates", StringComparison.OrdinalIgnoreCase))
+        {
+            return NestedSecondaryBase + 2;
+        }
+
+        // 4) Commentary tiers (always after sedarim / guides).
+        if (categoryName.StartsWith("Rishonim", StringComparison.OrdinalIgnoreCase))
+        {
+            return NestedCommentaryBase;
+        }
+
+        if (categoryName.StartsWith("Acharonim", StringComparison.OrdinalIgnoreCase))
+        {
+            return NestedCommentaryBase + 1;
+        }
+
+        if (categoryName.StartsWith("Modern Commentary", StringComparison.OrdinalIgnoreCase) ||
+            categoryName.StartsWith("Modern Works", StringComparison.OrdinalIgnoreCase) ||
+            categoryName.StartsWith("Contemporary", StringComparison.OrdinalIgnoreCase))
+        {
+            return NestedCommentaryBase + 2;
+        }
+
+        if (string.Equals(categoryName, "Commentary", StringComparison.OrdinalIgnoreCase) ||
+            categoryName.StartsWith("Commentary", StringComparison.OrdinalIgnoreCase))
+        {
+            return NestedCommentaryBase + 3;
+        }
+
+        // 5) Other known branches.
+        if (string.Equals(categoryName, "Aggadic Midrash", StringComparison.OrdinalIgnoreCase)) return NestedOtherBase;
+        if (string.Equals(categoryName, "Halachic Midrash", StringComparison.OrdinalIgnoreCase)) return NestedOtherBase + 1;
+        if (string.Equals(categoryName, "Midrash Rabbah", StringComparison.OrdinalIgnoreCase)) return NestedOtherBase + 2;
+        if (string.Equals(categoryName, "Siddur", StringComparison.OrdinalIgnoreCase)) return NestedOtherBase + 10;
+        if (string.Equals(categoryName, "Piyutim", StringComparison.OrdinalIgnoreCase)) return NestedOtherBase + 11;
+        if (string.Equals(categoryName, "Kinnot", StringComparison.OrdinalIgnoreCase)) return NestedOtherBase + 12;
+        if (string.Equals(categoryName, "Guide for the Perplexed", StringComparison.OrdinalIgnoreCase)) return NestedOtherBase + 20;
+        if (string.Equals(categoryName, "Philosophy", StringComparison.OrdinalIgnoreCase)) return NestedOtherBase + 21;
+        if (string.Equals(categoryName, "Hashkafah", StringComparison.OrdinalIgnoreCase)) return NestedOtherBase + 22;
+
+        return null;
+    }
+
+    /// <summary>Order used when building any category tree (installed + offline Sefaria scope).</summary>
+    internal static float ResolveCategorySortOrder(string? categoryName, bool isRoot, float existingOrder = 0)
+    {
+        if (isRoot)
+        {
+            return GetTopLevelCategoryOrder(categoryName);
+        }
+
+        var nested = GetNestedCategoryOrder(categoryName);
+        if (nested is not null)
+        {
+            return nested.Value;
+        }
+
+        if (existingOrder > 0)
+        {
+            return existingOrder;
+        }
+
+        return NestedUnknownOrder;
+    }
+
     private static float GetInstalledCategoryOrder(InstalledSefariaBook book, int level)
     {
         if (level == 0)
         {
             var top = book.Categories.FirstOrDefault(category => !string.IsNullOrWhiteSpace(category));
             return GetTopLevelCategoryOrder(top);
+        }
+
+        if (level >= 0 && level < book.Categories.Count)
+        {
+            var house = GetNestedCategoryOrder(book.Categories[level]);
+            if (house is not null)
+            {
+                return house.Value;
+            }
         }
 
         return level >= 0 && level < book.CategoryOrders.Count
@@ -707,7 +857,10 @@ public sealed partial class SefariaLibraryService
     {
         return node switch
         {
-            InstalledSefariaCategory category => category.Order,
+            InstalledSefariaCategory category => ResolveCategorySortOrder(
+                category.Title,
+                isRoot: false,
+                existingOrder: category.Order),
             InstalledSefariaBook book => book.Order,
             _ => 0
         };
