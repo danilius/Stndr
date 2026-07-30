@@ -126,7 +126,11 @@ public partial class MainWindow
         // rank/tier/confidence labels each of its entries.
         foreach (var reading in result.Readings)
         {
-            var label = $"Concordance · #{reading.Rank} · {reading.Tier} · {reading.Score:P0}";
+            // An LLM-adjudicated pick has no calibrated probability — showing the ranker's
+            // residual score as a percentage would be dishonest. Name the provenance instead.
+            var label = reading.Tier == Tier.LlmAdjudicated
+                ? $"Concordance · #{reading.Rank} · AI-suggested"
+                : $"Concordance · #{reading.Rank} · {reading.Tier} · {reading.Score:P0}";
             foreach (var entry in reading.Entries)
             {
                 var glosses = entry.Senses
