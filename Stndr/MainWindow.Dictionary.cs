@@ -2094,7 +2094,17 @@ public partial class MainWindow
         {
             if (ReferenceEquals(_dictionaryPopupWindow, popup) && !_isDictionaryDocked)
             {
-                CloseDictionarySurface();
+                // Deferred for the same focus-transition reason as
+                // DismissDictionaryPopupIfFloating, but with NO Activate(): this
+                // path also fires when the user switches to another application,
+                // and stealing the foreground back would be hostile.
+                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                {
+                    if (ReferenceEquals(_dictionaryPopupWindow, popup) && !_isDictionaryDocked)
+                    {
+                        CloseDictionarySurface();
+                    }
+                });
             }
         };
         EnsureDictionaryPopupDismissalHooks();
@@ -2144,7 +2154,17 @@ public partial class MainWindow
     {
         if (_dictionaryPopupWindow is not null && !_isDictionaryDocked)
         {
-            CloseDictionarySurface();
+            // Deferred: closing the popup synchronously inside the very pointer/key
+            // event that is moving focus makes Windows treat it as an active-window
+            // death and foreground the PREVIOUS application (involuntary alt-tab).
+            // Let the transition settle, close, then keep the foreground on us —
+            // this path only runs for in-app clicks/Esc, so re-activating never
+            // yanks the user back from another program.
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                CloseDictionarySurface();
+                Activate();
+            });
         }
     }
 
