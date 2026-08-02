@@ -59,7 +59,7 @@ public partial class MainWindow : Window
     private ListBox? _leftPanelSearchSuggestions;
     private TextBlock? _dictionaryToolsWord;
     private TextBlock? _dictionaryToolsReference;
-    private TextBlock? _dictionaryToolsPrimaryGloss;
+    private StackPanel? _dictionaryToolsResultsPanel;
     private TextBlock? _dictionaryToolsStatus;
     private TextBox? _dictionaryLookupBox;
     private TextBlock? _dictionaryLookupReference;

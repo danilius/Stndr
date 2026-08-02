@@ -360,6 +360,20 @@ public sealed class AppSettings
     public string LibraryUpdateSnoozedRemoteKey { get; set; } = string.Empty;
     public DateTime? LibraryUpdateSnoozedUntilUtc { get; set; }
     public bool LibraryUpdateLaterTipAcknowledged { get; set; }
+
+    // --- Hebrew Dictionary Concordance (M9) integration ---
+    /// <summary>
+    /// When true, the reader's Dictionary lookup uses the Hebrew Dictionary Concordance for refs it
+    /// covers, falling back to the Sefaria dictionary otherwise. Reversible: turn off to restore the
+    /// original behaviour.
+    /// </summary>
+    public bool UseConcordanceForDictionary { get; set; } = true;
+
+    /// <summary>
+    /// Path to the concordance SQLite artifact (talmud_lane.sqlite). Empty falls back to a machine-local
+    /// dev default; if neither exists the concordance is simply inactive.
+    /// </summary>
+    public string ConcordanceDatabasePath { get; set; } = string.Empty;
 }
 
 public sealed class ReaderLinksPreferences
