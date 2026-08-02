@@ -1689,8 +1689,14 @@ public partial class MainWindow
         var isHebrew = preferHebrew && !string.IsNullOrWhiteSpace(commentary.HebrewText);
 
         builder.AppendLine("<article class=\"commentary\">");
-        builder.Append("<div class=\"ref\">");
-        builder.Append(WebUtility.HtmlEncode(commentary.Ref));
+        builder.Append("<div class=\"ref");
+        if (preferHebrew)
+        {
+            builder.Append(" hebrew");
+        }
+
+        builder.Append("\">");
+        builder.Append(WebUtility.HtmlEncode(FormatCommentaryDisplayRef(commentary, preferHebrew)));
         builder.AppendLine("</div>");
 
         if (string.IsNullOrWhiteSpace(text))
@@ -1851,7 +1857,7 @@ public partial class MainWindow
     {
         var header = new Grid
         {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"),
             Margin = new Thickness(16, 12, 16, 8)
         };
         header.Children.Add(new TextBlock
@@ -1866,10 +1872,40 @@ public partial class MainWindow
             VerticalAlignment = VerticalAlignment.Center
         });
 
+        var languageButton = new Button
+        {
+            Content = readerState.CommentaryLanguage == CommentaryLanguage.Hebrew ? "\u05d0" : "A",
+            Background = Brushes.White,
+            BorderBrush = new SolidColorBrush(Color.Parse("#D0D5DD")),
+            BorderThickness = new Thickness(1),
+            MinWidth = 28,
+            MinHeight = 26,
+            Padding = new Thickness(6, 0),
+            Margin = new Thickness(0, 0, 8, 0),
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center
+        };
+        ToolTip.SetTip(languageButton, "Switch commentaries between Hebrew and English");
+        languageButton.Click += (_, e) =>
+        {
+            readerState.CommentaryLanguage = readerState.CommentaryLanguage == CommentaryLanguage.Hebrew
+                ? CommentaryLanguage.English
+                : CommentaryLanguage.Hebrew;
+            e.Handled = true;
+            UpdateReaderTools();
+            UpdateSplitPaneView(readerState);
+            SaveLayoutState();
+        };
+        header.Children.Add(languageButton);
+        Grid.SetColumn(languageButton, 1);
+
         var closeButton = new Button
         {
             Content = "Close split",
-            HorizontalAlignment = HorizontalAlignment.Right
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center
         };
         closeButton.Click += (_, e) =>
         {
@@ -1878,7 +1914,7 @@ public partial class MainWindow
             e.Handled = true;
         };
         header.Children.Add(closeButton);
-        Grid.SetColumn(closeButton, 1);
+        Grid.SetColumn(closeButton, 2);
 
         var content = new StackPanel
         {
@@ -2407,24 +2443,24 @@ public partial class MainWindow
         header.Children.Add(badge);
         Grid.SetColumn(badge, 2);
 
-        var descriptionBlock = new TextBlock
-        {
-            Text = description,
-            FontSize = Math.Max(11, GetSelectedUiFontSize() - 1),
-            Foreground = new SolidColorBrush(Color.Parse("#475467")),
-            TextWrapping = TextWrapping.Wrap,
-            FlowDirection = useHebrew ? FlowDirection.RightToLeft : FlowDirection.LeftToRight
-        };
-
+        // Descriptions stay off the main list; right-click "Show description" when available.
         var content = new StackPanel
         {
             Spacing = 5,
-            Children =
-            {
-                header,
-                descriptionBlock
-            }
+            Children = { header }
         };
+
+        // Disabled empty-state rows still show a short status line.
+        if (!enabled && !string.IsNullOrWhiteSpace(description))
+        {
+            content.Children.Add(new TextBlock
+            {
+                Text = description,
+                FontSize = Math.Max(11, GetSelectedUiFontSize() - 1),
+                Foreground = new SolidColorBrush(Color.Parse("#475467")),
+                TextWrapping = TextWrapping.Wrap
+            });
+        }
 
         var row = new Button
         {
@@ -2437,6 +2473,27 @@ public partial class MainWindow
         if (isSelected)
         {
             row.Classes.Add("selected");
+        }
+
+        var descriptionForMenu = description?.Trim() ?? string.Empty;
+        var hasShowableDescription = enabled &&
+            !string.IsNullOrWhiteSpace(descriptionForMenu) &&
+            !string.Equals(descriptionForMenu, "No entries for the selected paragraph.", StringComparison.Ordinal);
+        if (hasShowableDescription)
+        {
+            var showDescriptionItem = new MenuItem
+            {
+                Header = useHebrew ? "הצג תיאור" : "Show description"
+            };
+            showDescriptionItem.Click += async (_, e) =>
+            {
+                e.Handled = true;
+                await ShowCommentaryDescriptionDialogAsync(title, descriptionForMenu, useHebrew);
+            };
+            row.ContextMenu = new ContextMenu
+            {
+                Items = { showDescriptionItem }
+            };
         }
 
         if (!enabled)
@@ -2465,6 +2522,56 @@ public partial class MainWindow
         };
 
         return row;
+    }
+
+    private async Task ShowCommentaryDescriptionDialogAsync(string title, string description, bool useHebrew)
+    {
+        var dialog = new Window
+        {
+            Title = useHebrew ? "תיאור" : "Description",
+            Width = 420,
+            SizeToContent = SizeToContent.Height,
+            CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner
+        };
+
+        var closeButton = new Button
+        {
+            Content = useHebrew ? "סגור" : "Close",
+            MinWidth = 80,
+            IsDefault = true,
+            HorizontalAlignment = HorizontalAlignment.Right
+        };
+        closeButton.Click += (_, _) => dialog.Close();
+
+        dialog.Content = new StackPanel
+        {
+            Margin = new Thickness(20),
+            Spacing = 12,
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = title,
+                    FontSize = 16,
+                    FontWeight = FontWeight.SemiBold,
+                    TextWrapping = TextWrapping.Wrap,
+                    FlowDirection = useHebrew ? FlowDirection.RightToLeft : FlowDirection.LeftToRight,
+                    FontFamily = new FontFamily(useHebrew ? GetSelectedHebrewFontFamily() : GetSelectedEnglishFontFamily())
+                },
+                new TextBlock
+                {
+                    Text = description,
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = new SolidColorBrush(Color.Parse("#475467")),
+                    FlowDirection = useHebrew ? FlowDirection.RightToLeft : FlowDirection.LeftToRight,
+                    FontFamily = new FontFamily(useHebrew ? GetSelectedHebrewFontFamily() : GetSelectedEnglishFontFamily())
+                },
+                closeButton
+            }
+        };
+
+        await dialog.ShowDialog(this);
     }
 
     private Control CreateCommentaryContentBox(
@@ -2579,6 +2686,7 @@ public partial class MainWindow
         var text = useHebrew
             ? FirstNonEmpty(commentary.HebrewText, commentary.Text)
             : FirstNonEmpty(commentary.Text, commentary.HebrewText);
+        var displayRef = FormatCommentaryDisplayRef(commentary, useHebrew);
 
         var panel = new StackPanel
         {
@@ -2587,10 +2695,12 @@ public partial class MainWindow
 
         panel.Children.Add(new TextBlock
         {
-            Text = commentary.Ref,
+            Text = displayRef,
             Foreground = new SolidColorBrush(Color.Parse("#667085")),
             FontSize = Math.Max(10, GetSelectedUiFontSize() - 1),
-            TextWrapping = TextWrapping.Wrap
+            TextWrapping = TextWrapping.Wrap,
+            FlowDirection = useHebrew ? FlowDirection.RightToLeft : FlowDirection.LeftToRight,
+            FontFamily = new FontFamily(useHebrew ? GetSelectedHebrewFontFamily() : GetSelectedEnglishFontFamily())
         });
 
         if (string.IsNullOrWhiteSpace(text))
@@ -2610,6 +2720,61 @@ public partial class MainWindow
             readerState.HebrewMarksMode,
             GetCommentaryReaderFontSize(readerState)));
         return panel;
+    }
+
+    /// <summary>
+    /// In Hebrew mode, prefer the Hebrew work name with the same location suffix
+    /// (e.g. רש״י על ברכות 2a:12:1). English mode keeps the dump ref as-is.
+    /// </summary>
+    private static string FormatCommentaryDisplayRef(SefariaCommentaryItem commentary, bool preferHebrew)
+    {
+        if (!preferHebrew || string.IsNullOrWhiteSpace(commentary.Ref))
+        {
+            return commentary.Ref;
+        }
+
+        var hebrewWork = FirstNonEmpty(
+            commentary.CollectiveTitleHebrew,
+            commentary.HebrewDisplayTitle);
+        if (string.IsNullOrWhiteSpace(hebrewWork))
+        {
+            return commentary.Ref;
+        }
+
+        var relative = ExtractCommentaryRelativeRef(commentary);
+        if (string.IsNullOrWhiteSpace(relative))
+        {
+            return hebrewWork;
+        }
+
+        return SefariaReferenceFormatting.UsesCommaAfterTitle(relative)
+            ? $"{hebrewWork}, {relative}"
+            : $"{hebrewWork} {relative}";
+    }
+
+    private static string ExtractCommentaryRelativeRef(SefariaCommentaryItem commentary)
+    {
+        var full = commentary.Ref.Trim();
+        foreach (var title in new[]
+                 {
+                     commentary.IndexTitle,
+                     commentary.CollectiveTitleEnglish,
+                     commentary.DisplayTitle
+                 })
+        {
+            if (string.IsNullOrWhiteSpace(title))
+            {
+                continue;
+            }
+
+            if (full.StartsWith(title, StringComparison.OrdinalIgnoreCase) &&
+                full.Length > title.Length)
+            {
+                return full[title.Length..].TrimStart(' ', ',');
+            }
+        }
+
+        return full;
     }
 
     private double GetCommentaryReaderFontSize(ReaderTabState readerState)
