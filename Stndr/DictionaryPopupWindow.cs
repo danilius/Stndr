@@ -33,6 +33,10 @@ public sealed class DictionaryPopupWindow : Window
         SizeToContent = SizeToContent.Height;
         CanResize = false;
         ShowInTaskbar = false;
+        // Never steal activation on open: closing an ACTIVE window mid-focus-change
+        // makes Windows fall back to the previously focused application (observed as
+        // an involuntary alt-tab when click-away dismissal closed the popup).
+        ShowActivated = false;
         SystemDecorations = Avalonia.Controls.WindowDecorations.None;
         Background = Brushes.Transparent;
 
