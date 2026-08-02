@@ -555,14 +555,7 @@ public partial class MainWindow
             TextWrapping = TextWrapping.Wrap,
             IsVisible = false
         };
-        _dictionaryToolsPrimaryGloss = new TextBlock
-        {
-            FontSize = dictionaryFontSize,
-            FontWeight = FontWeight.SemiBold,
-            Foreground = new SolidColorBrush(Color.Parse("#1D2939")),
-            TextWrapping = TextWrapping.Wrap,
-            IsVisible = false
-        };
+        _dictionaryToolsResultsPanel = new StackPanel { Spacing = 4 };
         _dictionaryToolsStatus = new TextBlock
         {
             FontSize = dictionaryFontSize,
@@ -631,7 +624,13 @@ public partial class MainWindow
                     header,
                     _dictionaryToolsWord,
                     _dictionaryToolsReference,
-                    _dictionaryToolsPrimaryGloss,
+                    new ScrollViewer
+                    {
+                        MaxHeight = 360,
+                        HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+                        VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+                        Content = _dictionaryToolsResultsPanel
+                    },
                     _dictionaryToolsStatus
                 }
             }
@@ -668,10 +667,9 @@ public partial class MainWindow
             _dictionaryToolsReference.IsVisible = !string.IsNullOrWhiteSpace(_dictionaryCurrentReference);
         }
 
-        if (_dictionaryToolsPrimaryGloss is not null)
+        if (_dictionaryToolsResultsPanel is not null)
         {
-            _dictionaryToolsPrimaryGloss.Text = _dictionaryPrimaryGloss;
-            _dictionaryToolsPrimaryGloss.IsVisible = !string.IsNullOrWhiteSpace(_dictionaryPrimaryGloss);
+            PopulateDictionaryEntriesPanel(_dictionaryToolsResultsPanel, GetDictionaryFontSize());
         }
 
         if (_dictionaryToolsStatus is not null)
@@ -684,7 +682,7 @@ public partial class MainWindow
     {
         _dictionaryToolsWord = null;
         _dictionaryToolsReference = null;
-        _dictionaryToolsPrimaryGloss = null;
+        _dictionaryToolsResultsPanel = null;
         _dictionaryToolsStatus = null;
     }
 
@@ -712,7 +710,12 @@ public partial class MainWindow
             : "Looking up dictionary entry...";
 
         RefreshDictionarySurface();
-        OpenOrSelectTab(DictionaryTabTitle);
+        // Right-click looks up into the floating popup window (anchored at the click) rather than
+        // yanking the user to the full Dictionary tab. When docked, ShowDictionaryPopupWindow no-ops
+        // and the docked reader-tools surface updates via RefreshDictionarySurface above. The tab's
+        // result panel is still populated by RunDictionaryTabLookupAsync, so opening the Dictionary
+        // tab manually shows the full ranked list.
+        ShowDictionaryPopupWindow(repositionToAnchor: true);
         ApplyDictionaryTabHeaderState();
         _ = RunDictionaryTabLookupAsync(lookupWord, _dictionaryCurrentReference);
         SaveLayoutState();
@@ -768,7 +771,7 @@ public partial class MainWindow
 
         try
         {
-            var entries = await LookupDictionaryEntriesWithFallbacksAsync(lookupWord, _dictionaryCurrentReference, cts.Token);
+            var entries = await LookupDictionaryEntriesRoutedAsync(lookupWord, _dictionaryCurrentReference, cts.Token);
             if (cts.IsCancellationRequested ||
                 !string.Equals(_dictionaryCurrentWord, lookupGeneration, StringComparison.Ordinal))
             {
@@ -829,12 +832,15 @@ public partial class MainWindow
 
     private void RenderDictionaryTabResults(IReadOnlyList<SefariaDictionaryEntry> entries)
     {
+        // Set first so the dock/popup surfaces can render the full list even when the Dictionary tab
+        // (and thus its results panel) was never created.
+        _dictionaryDisplayedEntries = entries;
+
         if (_dictionaryLookupResultsPanel is null)
         {
             return;
         }
 
-        _dictionaryDisplayedEntries = entries;
         _dictionaryLookupResultsPanel.Children.Clear();
         foreach (var entry in entries)
         {
@@ -856,9 +862,9 @@ public partial class MainWindow
             _dictionaryToolsReference.FontSize = Math.Max(11, dictionaryFontSize - 3);
         }
 
-        if (_dictionaryToolsPrimaryGloss is not null)
+        if (_dictionaryToolsResultsPanel is not null)
         {
-            _dictionaryToolsPrimaryGloss.FontSize = dictionaryFontSize;
+            PopulateDictionaryEntriesPanel(_dictionaryToolsResultsPanel, dictionaryFontSize);
         }
 
         if (_dictionaryToolsStatus is not null)
@@ -891,6 +897,73 @@ public partial class MainWindow
     }
 
     private double GetDictionaryFontSize() => GetSelectedEnglishFontSize();
+
+    /// <summary>
+    /// Builds a fresh, scroll-friendly list of all currently displayed dictionary entries for the
+    /// dock/popup surfaces, or null when there are none. Each entry shows its headword, its source/
+    /// rank label (e.g. "Concordance · #2 · Inferred · 41%"), and its definition — so the full ranked
+    /// set is visible, not just the top guess.
+    /// </summary>
+    private StackPanel? BuildDictionaryEntriesPanel(double fontSize)
+    {
+        if (_dictionaryDisplayedEntries.Count == 0)
+        {
+            return null;
+        }
+
+        var panel = new StackPanel { Spacing = 4 };
+        PopulateDictionaryEntriesPanel(panel, fontSize);
+        return panel;
+    }
+
+    private void PopulateDictionaryEntriesPanel(StackPanel panel, double fontSize)
+    {
+        panel.Children.Clear();
+        foreach (var entry in _dictionaryDisplayedEntries)
+        {
+            panel.Children.Add(BuildCompactDictionaryEntryCard(entry, fontSize));
+        }
+    }
+
+    private Control BuildCompactDictionaryEntryCard(SefariaDictionaryEntry entry, double fontSize)
+    {
+        var stack = new StackPanel { Spacing = 2 };
+        stack.Children.Add(new SelectableTextBlock
+        {
+            Text = entry.Headword,
+            FontSize = fontSize,
+            FontWeight = FontWeight.SemiBold,
+            TextWrapping = TextWrapping.Wrap
+        });
+
+        if (!string.IsNullOrWhiteSpace(entry.LexiconName))
+        {
+            stack.Children.Add(new TextBlock
+            {
+                Text = entry.LexiconName,
+                FontSize = Math.Max(10, fontSize - 4),
+                Foreground = new SolidColorBrush(Color.Parse("#667085")),
+                TextWrapping = TextWrapping.Wrap
+            });
+        }
+
+        var gloss = NormalizeDictionaryText(
+            string.IsNullOrWhiteSpace(entry.ContentText) ? entry.Definition : entry.ContentText);
+        stack.Children.Add(new SelectableTextBlock
+        {
+            Text = string.IsNullOrWhiteSpace(gloss) ? "(no definition)" : gloss,
+            FontSize = fontSize,
+            TextWrapping = TextWrapping.Wrap
+        });
+
+        return new Border
+        {
+            BorderBrush = new SolidColorBrush(Color.Parse("#EAECF0")),
+            BorderThickness = new Thickness(0, 0, 0, 1),
+            Padding = new Thickness(0, 4, 0, 6),
+            Child = stack
+        };
+    }
 
     private static string GetDictionaryEntryKey(SefariaDictionaryEntry entry) =>
         $"{entry.LexiconName}\u001f{entry.Headword}\u001f{entry.EntryId}\u001f{entry.StrongNumber}";
@@ -1944,7 +2017,8 @@ public partial class MainWindow
         if (_dictionaryPopupWindow is not null)
         {
             _dictionaryPopupWindow.ApplyFontSize(GetDictionaryFontSize());
-            _dictionaryPopupWindow.UpdateEntry(displayWord, _dictionaryCurrentReference, _dictionaryPrimaryGloss, status);
+            _dictionaryPopupWindow.UpdateEntry(displayWord, _dictionaryCurrentReference, status);
+            _dictionaryPopupWindow.SetResultsContent(BuildDictionaryEntriesPanel(GetDictionaryFontSize()));
             if (!_isDictionaryDocked && _dictionaryPopupWindow.IsVisible && !_dictionaryPopupUserPositioned)
             {
                 ScheduleDictionaryPopupReposition(_dictionaryPopupWindow);
@@ -1973,8 +2047,8 @@ public partial class MainWindow
         popup.UpdateEntry(
             string.IsNullOrWhiteSpace(_dictionaryCurrentWord) ? "Dictionary selection" : _dictionaryCurrentWord,
             _dictionaryCurrentReference,
-            _dictionaryPrimaryGloss,
             _dictionaryStatusText);
+        popup.SetResultsContent(BuildDictionaryEntriesPanel(GetDictionaryFontSize()));
         ApplyDictionaryPopupPosition(popup);
         if (!popup.IsVisible)
         {
@@ -2013,6 +2087,17 @@ public partial class MainWindow
         var popup = new DictionaryPopupWindow();
         popup.DockRequested += (_, _) => DockDictionaryToReaderTools();
         popup.DismissRequested += (_, _) => CloseDictionarySurface();
+        // Click-away / focus-away dismissal. Guards: docking sets _isDictionaryDocked
+        // BEFORE closing the popup, and CloseDictionaryPopupWindow nulls the field before
+        // Close(), so neither programmatic close path can bounce back in here.
+        popup.Deactivated += (_, _) =>
+        {
+            if (ReferenceEquals(_dictionaryPopupWindow, popup) && !_isDictionaryDocked)
+            {
+                CloseDictionarySurface();
+            }
+        };
+        EnsureDictionaryPopupDismissalHooks();
         popup.PositionCommitted += (_, position) =>
         {
             _dictionaryPopupUserPositioned = true;
@@ -2029,6 +2114,38 @@ public partial class MainWindow
         };
         _dictionaryPopupWindow = popup;
         return popup;
+    }
+
+    private bool _dictionaryPopupDismissHooked;
+
+    private void EnsureDictionaryPopupDismissalHooks()
+    {
+        if (_dictionaryPopupDismissHooked)
+        {
+            return;
+        }
+
+        _dictionaryPopupDismissHooked = true;
+        // The popup is a separate window, so any pointer press reaching the main
+        // window is by definition outside it. handledEventsToo: buttons and the
+        // WebView chrome mark events handled before they'd bubble here.
+        AddHandler(PointerPressedEvent, (_, _) => DismissDictionaryPopupIfFloating(),
+            Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
+        AddHandler(KeyDownEvent, (_, e) =>
+        {
+            if (e.Key == Avalonia.Input.Key.Escape)
+            {
+                DismissDictionaryPopupIfFloating();
+            }
+        }, Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
+    }
+
+    private void DismissDictionaryPopupIfFloating()
+    {
+        if (_dictionaryPopupWindow is not null && !_isDictionaryDocked)
+        {
+            CloseDictionarySurface();
+        }
     }
 
     private void ScheduleDictionaryPopupReposition(DictionaryPopupWindow popup)

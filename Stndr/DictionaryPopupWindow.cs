@@ -17,7 +17,7 @@ public sealed class DictionaryPopupWindow : Window
 
     private readonly TextBlock _wordText;
     private readonly TextBlock _referenceText;
-    private readonly TextBlock _primaryGlossText;
+    private readonly ContentControl _resultsHost;
     private readonly TextBlock _statusText;
     private readonly Border _dragHandle;
     private Point? _dragPointerOrigin;
@@ -54,13 +54,7 @@ public sealed class DictionaryPopupWindow : Window
             Foreground = StatusTextBrush,
             TextWrapping = TextWrapping.Wrap
         };
-        _primaryGlossText = new TextBlock
-        {
-            FontWeight = FontWeight.SemiBold,
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = new SolidColorBrush(Color.Parse("#1D2939")),
-            IsVisible = false
-        };
+        _resultsHost = new ContentControl { IsVisible = false };
 
         var dockButton = new Button
         {
@@ -126,6 +120,15 @@ public sealed class DictionaryPopupWindow : Window
         _dragHandle.PointerReleased += OnDragHandlePointerReleased;
         _dragHandle.PointerCaptureLost += (_, _) => ResetDrag();
 
+        KeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Escape)
+            {
+                DismissRequested?.Invoke(this, EventArgs.Empty);
+                e.Handled = true;
+            }
+        };
+
         Content = new Border
         {
             Background = PopupBackgroundBrush,
@@ -141,28 +144,38 @@ public sealed class DictionaryPopupWindow : Window
                     _dragHandle,
                     _wordText,
                     _referenceText,
-                    _primaryGlossText,
+                    new ScrollViewer
+                    {
+                        MaxHeight = 380,
+                        HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+                        VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+                        Content = _resultsHost
+                    },
                     _statusText
                 }
             }
         };
     }
 
-    public void UpdateEntry(string word, string reference, string primaryGloss, string status)
+    public void UpdateEntry(string word, string reference, string status)
     {
         _wordText.Text = word;
         _referenceText.Text = reference;
         _referenceText.IsVisible = !string.IsNullOrWhiteSpace(reference);
-        _primaryGlossText.Text = primaryGloss;
-        _primaryGlossText.IsVisible = !string.IsNullOrWhiteSpace(primaryGloss);
         _statusText.Text = status;
+    }
+
+    /// <summary>Sets the popup's results body (the caller-built list of entries), or clears it.</summary>
+    public void SetResultsContent(Control? content)
+    {
+        _resultsHost.Content = content;
+        _resultsHost.IsVisible = content is not null;
     }
 
     public void ApplyFontSize(double fontSize)
     {
         _wordText.FontSize = fontSize;
         _referenceText.FontSize = Math.Max(11, fontSize - 3);
-        _primaryGlossText.FontSize = fontSize;
         _statusText.FontSize = fontSize;
     }
 
