@@ -139,6 +139,35 @@ public partial class MainWindow
                     ShowDictionaryEntry(dictionaryWord, dictionaryReference, dictionaryAnchor);
                     break;
 
+                case "dictionaryDoubleClicked":
+                    // Double-click only feeds the DOCKED dictionary (a floating popup
+                    // appearing on double-click would be intrusive); right-click remains
+                    // the path to the popup.
+                    if (_isDictionaryDocked)
+                    {
+                        var doubleClickReference = root.TryGetProperty("ref", out var doubleClickRefElement)
+                            ? doubleClickRefElement.GetString()
+                            : string.Empty;
+                        var doubleClickWord = root.TryGetProperty("word", out var doubleClickWordElement)
+                            ? doubleClickWordElement.GetString()
+                            : string.Empty;
+                        if (!string.IsNullOrWhiteSpace(doubleClickWord))
+                        {
+                            SelectReaderRowFromWebReference(state, doubleClickReference);
+                            EnsureRightPanelExpandedForDictionary();
+                            ShowDictionaryEntry(doubleClickWord, doubleClickReference, null);
+                        }
+                    }
+                    break;
+
+                case "readerPointerDown":
+                    DismissDictionaryPopupIfFloating();
+                    break;
+
+                case "escapePressed":
+                    DismissDictionaryPopupIfFloating();
+                    break;
+
                 case "copyClicked":
                     var copyText = root.TryGetProperty("text", out var copyTextElement)
                         ? copyTextElement.GetString()
@@ -839,6 +868,29 @@ public partial class MainWindow
                     if (menu.classList.contains('open') && !menu.contains(event.target)) {
                         hideMenu();
                     }
+                    // The native WebView swallows pointer events before Avalonia sees
+                    // them; forward so the host can dismiss the dictionary popup.
+                    send({ type: 'readerPointerDown' });
+                });
+
+                document.addEventListener('dblclick', (event) => {
+                    const row = event.target.closest('.reader-row');
+                    if (!row) {
+                        return;
+                    }
+
+                    const word = getWordAtPoint(event.clientX, event.clientY);
+                    if (!word) {
+                        return;
+                    }
+
+                    send({
+                        type: 'dictionaryDoubleClicked',
+                        ref: row.dataset.ref || '',
+                        word: word,
+                        clientX: event.clientX,
+                        clientY: event.clientY
+                    });
                 });
 
                 document.addEventListener('scroll', hideMenu, { passive: true });
@@ -846,6 +898,7 @@ public partial class MainWindow
                 document.addEventListener('keydown', (event) => {
                     if (event.key === 'Escape') {
                         hideMenu();
+                        send({ type: 'escapePressed' });
                     }
 
                     // Native WebView focus does not bubble keys to Avalonia; forward tab shortcuts.

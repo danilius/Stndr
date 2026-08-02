@@ -120,6 +120,15 @@ public sealed class DictionaryPopupWindow : Window
         _dragHandle.PointerReleased += OnDragHandlePointerReleased;
         _dragHandle.PointerCaptureLost += (_, _) => ResetDrag();
 
+        KeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Escape)
+            {
+                DismissRequested?.Invoke(this, EventArgs.Empty);
+                e.Handled = true;
+            }
+        };
+
         Content = new Border
         {
             Background = PopupBackgroundBrush,

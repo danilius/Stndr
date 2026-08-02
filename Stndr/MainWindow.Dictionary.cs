@@ -2087,6 +2087,17 @@ public partial class MainWindow
         var popup = new DictionaryPopupWindow();
         popup.DockRequested += (_, _) => DockDictionaryToReaderTools();
         popup.DismissRequested += (_, _) => CloseDictionarySurface();
+        // Click-away / focus-away dismissal. Guards: docking sets _isDictionaryDocked
+        // BEFORE closing the popup, and CloseDictionaryPopupWindow nulls the field before
+        // Close(), so neither programmatic close path can bounce back in here.
+        popup.Deactivated += (_, _) =>
+        {
+            if (ReferenceEquals(_dictionaryPopupWindow, popup) && !_isDictionaryDocked)
+            {
+                CloseDictionarySurface();
+            }
+        };
+        EnsureDictionaryPopupDismissalHooks();
         popup.PositionCommitted += (_, position) =>
         {
             _dictionaryPopupUserPositioned = true;
@@ -2103,6 +2114,38 @@ public partial class MainWindow
         };
         _dictionaryPopupWindow = popup;
         return popup;
+    }
+
+    private bool _dictionaryPopupDismissHooked;
+
+    private void EnsureDictionaryPopupDismissalHooks()
+    {
+        if (_dictionaryPopupDismissHooked)
+        {
+            return;
+        }
+
+        _dictionaryPopupDismissHooked = true;
+        // The popup is a separate window, so any pointer press reaching the main
+        // window is by definition outside it. handledEventsToo: buttons and the
+        // WebView chrome mark events handled before they'd bubble here.
+        AddHandler(PointerPressedEvent, (_, _) => DismissDictionaryPopupIfFloating(),
+            Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
+        AddHandler(KeyDownEvent, (_, e) =>
+        {
+            if (e.Key == Avalonia.Input.Key.Escape)
+            {
+                DismissDictionaryPopupIfFloating();
+            }
+        }, Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
+    }
+
+    private void DismissDictionaryPopupIfFloating()
+    {
+        if (_dictionaryPopupWindow is not null && !_isDictionaryDocked)
+        {
+            CloseDictionarySurface();
+        }
     }
 
     private void ScheduleDictionaryPopupReposition(DictionaryPopupWindow popup)
