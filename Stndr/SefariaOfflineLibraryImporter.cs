@@ -26,7 +26,7 @@ namespace Stndr;
 /// </summary>
 public sealed class SefariaOfflineLibraryImporter
 {
-    public const int SchemaVersion = 3;
+    public const int SchemaVersion = 4;
     private const int ProgressInterval = 50_000;
     private static readonly JsonWriterSettings CompactJson = new()
     {
@@ -180,7 +180,7 @@ public sealed class SefariaOfflineLibraryImporter
             CREATE TABLE metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL) WITHOUT ROWID;
             INSERT INTO metadata VALUES('schema_version','{SchemaVersion}');
             INSERT INTO metadata VALUES('created_utc','{DateTime.UtcNow:O}');
-            CREATE TABLE works(id INTEGER PRIMARY KEY,upstream_id TEXT NOT NULL,title TEXT NOT NULL UNIQUE,he_title TEXT NOT NULL,categories_json TEXT NOT NULL,schema_json TEXT NOT NULL,alt_structs_json TEXT NOT NULL,dependence TEXT NOT NULL,collective_title TEXT NOT NULL,authors_json TEXT NOT NULL,en_description TEXT NOT NULL,he_description TEXT NOT NULL,en_short_description TEXT NOT NULL,he_short_description TEXT NOT NULL);
+            CREATE TABLE works(id INTEGER PRIMARY KEY,upstream_id TEXT NOT NULL,title TEXT NOT NULL UNIQUE,he_title TEXT NOT NULL,categories_json TEXT NOT NULL,order_value REAL NOT NULL,schema_json TEXT NOT NULL,alt_structs_json TEXT NOT NULL,dependence TEXT NOT NULL,collective_title TEXT NOT NULL,authors_json TEXT NOT NULL,en_description TEXT NOT NULL,he_description TEXT NOT NULL,en_short_description TEXT NOT NULL,he_short_description TEXT NOT NULL);
             CREATE TABLE terms(id INTEGER PRIMARY KEY,data_json TEXT NOT NULL);
             CREATE TABLE categories(id INTEGER PRIMARY KEY,data_json TEXT NOT NULL);
             CREATE TABLE people(id INTEGER PRIMARY KEY,data_json TEXT NOT NULL);
@@ -202,7 +202,7 @@ public sealed class SefariaOfflineLibraryImporter
         progress?.Report(new(SefariaOfflineLibraryStage.ImportingMetadata, "Importing books and schemas..."));
         using var transaction = connection.BeginTransaction();
         using var insert = new PreparedInsert(connection, transaction,
-            "INSERT INTO works VALUES($p0,$p1,$p2,$p3,$p4,$p5,$p6,$p7,$p8,$p9,$p10,$p11,$p12,$p13)", 14);
+            "INSERT INTO works VALUES($p0,$p1,$p2,$p3,$p4,$p5,$p6,$p7,$p8,$p9,$p10,$p11,$p12,$p13,$p14)", 15);
         await foreach (var document in ReadBsonDocumentsAsync(stream, token))
         {
             var title = String(document, "title");
@@ -211,7 +211,7 @@ public sealed class SefariaOfflineLibraryImporter
             _workIds[title] = id;
             var schema = Value(document, "schema", new BsonDocument());
             await insert.ExecuteAsync(token, id, UpstreamId(document), title, PrimaryTitle(schema, "he"), Json(Value(document, "categories", new BsonArray())),
-                Json(schema), Json(Value(document, "alt_structs", new BsonDocument())), String(document, "dependence"),
+                ExtractWorkOrder(document), Json(schema), Json(Value(document, "alt_structs", new BsonDocument())), String(document, "dependence"),
                 String(document, "collective_title"), Json(Value(document, "authors", new BsonArray())), String(document, "enDesc"),
                 String(document, "heDesc"), String(document, "enShortDesc"), String(document, "heShortDesc"));
             if (_nextWorkId % 500 == 0)
@@ -484,7 +484,7 @@ public sealed class SefariaOfflineLibraryImporter
         _workIds[title] = id;
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = "INSERT INTO works VALUES($id,'',$title,'','[]','{}','{}','','','[]','','','','')";
+        command.CommandText = "INSERT INTO works VALUES($id,'',$title,'','[]',0,'{}','{}','','','[]','','','','')";
         command.Parameters.AddWithValue("$id", id);
         command.Parameters.AddWithValue("$title", title);
         await command.ExecuteNonQueryAsync(token);
@@ -696,6 +696,39 @@ public sealed class SefariaOfflineLibraryImporter
     private static long Long(BsonDocument document, string key) =>
         document.TryGetValue(key, out var value) && !value.IsBsonNull && value.IsNumeric ? value.ToInt64() : 0;
     private static string Json(BsonValue value) => value.ToJson(CompactJson);
+
+    /// <summary>
+    /// Index records store one or more table-of-contents ranks. The last numeric value is
+    /// the rank within the work's immediate category, which is the value displayed by the
+    /// Sefaria table of contents.
+    /// </summary>
+    internal static double ExtractWorkOrder(BsonDocument document)
+    {
+        if (!document.TryGetValue("order", out var value) || value.IsBsonNull)
+        {
+            return 0;
+        }
+
+        if (value.IsNumeric)
+        {
+            return value.ToDouble();
+        }
+
+        if (value is not BsonArray values)
+        {
+            return 0;
+        }
+
+        for (var i = values.Count - 1; i >= 0; i--)
+        {
+            if (values[i].IsNumeric)
+            {
+                return values[i].ToDouble();
+            }
+        }
+
+        return 0;
+    }
 
     private static string PrimaryTitle(BsonValue schema, string language)
     {

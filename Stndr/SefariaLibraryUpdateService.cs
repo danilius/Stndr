@@ -177,11 +177,11 @@ public sealed class SefariaLibraryUpdateService(ISefariaLibraryUpdateSource? sou
                     remote));
             }
 
-            if (IsSnoozed(remote, snooze))
+            if (IsSnoozed(snooze, DateTime.UtcNow))
             {
                 return Publish(new(
                     SefariaLibraryUpdateMode.Hidden,
-                    $"A Sefaria library update is snoozed until {snooze.UntilUtc?.ToLocalTime():d MMM yyyy}.",
+                    $"Sefaria library update reminders are paused until {snooze.UntilUtc?.ToLocalTime():d MMM yyyy}.",
                     remote));
             }
 
@@ -300,20 +300,32 @@ public sealed class SefariaLibraryUpdateService(ISefariaLibraryUpdateSource? sou
         return false;
     }
 
-    private static bool IsSnoozed(SefariaRemoteSnapshot remote, LibraryUpdateSnoozeState snooze)
+    internal static bool IsSnoozed(LibraryUpdateSnoozeState snooze, DateTime utcNow)
     {
-        if (string.IsNullOrWhiteSpace(snooze.RemoteKey) || snooze.UntilUtc is null)
+        if (snooze.UntilUtc is null)
         {
             return false;
         }
 
-        if (DateTime.UtcNow >= snooze.UntilUtc.Value)
-        {
-            return false;
-        }
-
-        return string.Equals(snooze.RemoteKey, remote.IdentityKey, StringComparison.Ordinal);
+        return utcNow < snooze.UntilUtc.Value;
     }
+
+    internal static bool IsAutomaticCheckDue(
+        DateTime? nextAutomaticCheckUtc,
+        DateTime? snoozedUntilUtc,
+        DateTime utcNow)
+    {
+        var next = nextAutomaticCheckUtc;
+        if (snoozedUntilUtc is { } snoozed && (next is null || snoozed > next.Value))
+        {
+            next = snoozed;
+        }
+
+        return next is null || utcNow >= next.Value;
+    }
+
+    internal static DateTime GetNextAutomaticCheckUtc(DateTime baselineUtc, int intervalDays) =>
+        baselineUtc.AddDays(intervalDays);
 
     private static async Task<SefariaOfflineLibraryInstallMetadata?> ReadMetadataAsync(string folder, CancellationToken token)
     {

@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
@@ -47,9 +48,14 @@ public partial class MainWindow
 
     private void StartLibraryUpdateChecks()
     {
+        EnsureLibraryUpdateScheduleInitialized();
         _libraryUpdateService.StartBackgroundChecks(
             () => _sefariaLibrary.StorageRootFolder,
-            () => _settings.CheckForLibraryUpdatesAutomatically,
+            () => _settings.CheckForLibraryUpdatesAutomatically &&
+                SefariaLibraryUpdateService.IsAutomaticCheckDue(
+                    _settings.LibraryUpdateNextAutomaticCheckUtc,
+                    _settings.LibraryUpdateSnoozedUntilUtc,
+                    DateTime.UtcNow),
             GetLibraryUpdateSnoozeState);
     }
 
@@ -58,6 +64,13 @@ public partial class MainWindow
 
     private void ApplyLibraryUpdateState(SefariaLibraryUpdateState state)
     {
+        if (state.Mode is SefariaLibraryUpdateMode.UpToDate or
+            SefariaLibraryUpdateMode.UpdateAvailable or
+            SefariaLibraryUpdateMode.Complete)
+        {
+            ScheduleNextLibraryUpdateCheck();
+        }
+
         if (_libraryUpdateBanner is not null && _libraryUpdateBannerMessage is not null)
         {
             var showBanner = state.Mode is
@@ -465,6 +478,7 @@ public partial class MainWindow
         _settings.LibraryUpdateSnoozeDays = days;
         _settings.LibraryUpdateSnoozedRemoteKey = remote.IdentityKey;
         _settings.LibraryUpdateSnoozedUntilUtc = DateTime.UtcNow.AddDays(days);
+        _settings.LibraryUpdateNextAutomaticCheckUtc = _settings.LibraryUpdateSnoozedUntilUtc;
         _settingsService.Save(_settings);
     }
 
@@ -477,6 +491,48 @@ public partial class MainWindow
 
     private static int NormalizeLibraryUpdateSnoozeDays(int days) =>
         days is 1 or 3 or 7 or 14 or 30 or 90 ? days : 14;
+
+    private void EnsureLibraryUpdateScheduleInitialized()
+    {
+        if (_settings.LibraryUpdateNextAutomaticCheckUtc is not null)
+        {
+            return;
+        }
+
+        var baselineUtc = DateTime.UtcNow;
+        try
+        {
+            var metadataPath = SefariaOfflineLibraryPaths.InstallMetadata(_sefariaLibrary.StorageRootFolder);
+            if (File.Exists(metadataPath))
+            {
+                var metadata = JsonSerializer.Deserialize<SefariaOfflineLibraryInstallMetadata>(
+                    File.ReadAllText(metadataPath));
+                if (metadata?.InstalledAtUtc != default)
+                {
+                    baselineUtc = metadata!.InstalledAtUtc.Kind == DateTimeKind.Utc
+                        ? metadata.InstalledAtUtc
+                        : metadata.InstalledAtUtc.ToUniversalTime();
+                }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or JsonException)
+        {
+            // A missing/corrupt timestamp falls back to a fresh interval from today.
+        }
+
+        ScheduleNextLibraryUpdateCheck(baselineUtc);
+    }
+
+    private void ScheduleNextLibraryUpdateCheck(DateTime? baselineUtc = null)
+    {
+        var days = NormalizeLibraryUpdateSnoozeDays(_settings.LibraryUpdateSnoozeDays);
+        _settings.LibraryUpdateSnoozeDays = days;
+        _settings.LibraryUpdateNextAutomaticCheckUtc =
+            SefariaLibraryUpdateService.GetNextAutomaticCheckUtc(
+                baselineUtc ?? DateTime.UtcNow,
+                days);
+        _settingsService.Save(_settings);
+    }
 
     private async Task ShowLibraryUpdateLaterTipAsync()
     {

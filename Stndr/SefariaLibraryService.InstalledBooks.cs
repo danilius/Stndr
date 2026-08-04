@@ -201,56 +201,26 @@ public sealed partial class SefariaLibraryService
     /// House order for top-level Installed Books (not plain A–Z).
     /// Responsa sits after Halakhah; Kabbalah is last among the main corpora.
     /// </summary>
-    private static readonly string[] TopLevelCategoryOrder =
-    [
-        "Tanakh",
-        "Mishnah",
-        "Talmud",
-        "Tosefta",
-        "Midrash",
-        "Halakhah",
-        "Responsa",
-        "Liturgy",
-        "Jewish Thought",
-        "Musar",
-        "Chasidut",
-        "Second Temple",
-        "Reference",
-        "Kabbalah"
-    ];
-
-    /// <summary>Seder order (Mishnah / Bavli / Yerushalmi / Tosefta). Always before commentaries.</summary>
-    private static readonly string[] SederCategoryOrder =
-    [
-        "Seder Zeraim",
-        "Seder Moed",
-        "Seder Nashim",
-        "Seder Nezikin",
-        "Seder Kodashim",
-        "Seder Tahorot"
-    ];
-
-    // Nested category sort tiers (lower first). Keeps sedarim ahead of Guides / Rishonim / etc.
-    private const float NestedPrimaryBase = 0f;       // Torah, Prophets, Bavli, Yerushalmi…
-    private const float NestedSederBase = 100f;       // Seder Zeraim…Seder Tahorot
-    private const float NestedSecondaryBase = 200f;   // Minor Tractates, Guides
-    private const float NestedCommentaryBase = 300f;  // Rishonim / Acharonim / Modern…
-    private const float NestedOtherBase = 400f;       // Midrash branches, liturgy, thought…
-
-    private const float TopLevelOtherOrder = 9000f;
-    private const float TopLevelUnknownOrder = 8000f;
-    private const float NestedUnknownOrder = 5000f;
-
     public ObservableCollection<object> BuildInstalledTree()
     {
-        var roots = new ObservableCollection<object>();
         var orderLookup = BuildIndexOrderLookup();
         var installedBooks = GetInstalledBooks()
-            .Select(book => NormalizeInstalledBookPlacement(ApplyIndexOrder(book, orderLookup)))
+            .Select(book => ApplyIndexOrder(book, orderLookup));
+
+        return BuildInstalledTreeFromBooks(installedBooks);
+    }
+
+    internal static ObservableCollection<object> BuildInstalledTreeFromBooks(
+        IEnumerable<InstalledSefariaBook> books)
+    {
+        var roots = new ObservableCollection<object>();
+        var installedBooks = books
+            .Select(CloneInstalledBook)
+            .Select(NormalizeInstalledBookPlacement)
             .OrderBy(book => GetInstalledCategoryOrder(book, 0))
             .ThenBy(book => GetInstalledCategoryOrder(book, 1))
             .ThenBy(book => GetInstalledCategoryOrder(book, 2))
-            .ThenBy(book => book.Order)
+            .ThenBy(book => SefariaLibraryOrdering.GetBookOrder(book.Categories, book.Title, book.Order))
             .ThenBy(book => book.Title, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
@@ -304,13 +274,13 @@ public sealed partial class SefariaLibraryService
                     HebrewTitle = book.HebrewTitle,
                     CategoryPath = string.Join("/", categoryPath.Append(book.Title)),
                     IsBookTitle = true,
-                    Order = book.CategoryOrders.Count > 0 ? book.Order : float.MaxValue
+                    Order = SefariaLibraryOrdering.GetBookOrder(categoryPath, book.Title, book.Order)
                 };
                 current.Add(bookCategory);
             }
         }
 
-        SortInstalledTree(roots, isRoot: true);
+        SortInstalledTree(roots, []);
         return roots;
     }
 
@@ -614,30 +584,17 @@ public sealed partial class SefariaLibraryService
             book.Categories = categories;
         }
 
-        // Prefer house ranks for known categories; fall back to TOC ranks, then name-stable order.
+        SefariaLibraryOrdering.ApplyHalakhahPlacement(book);
+        categories = book.Categories;
+
+        // Apply path-specific house ranks, then imported Sefaria ranks, then name-stable order.
         var orders = new List<float>(categories.Count);
+        var parentPath = new List<string>(categories.Count);
         for (var i = 0; i < categories.Count; i++)
         {
-            if (i == 0)
-            {
-                orders.Add(GetTopLevelCategoryOrder(categories[i]));
-                continue;
-            }
-
-            var house = GetNestedCategoryOrder(categories[i]);
-            if (house is not null)
-            {
-                orders.Add(house.Value);
-                continue;
-            }
-
-            if (i < book.CategoryOrders.Count && book.CategoryOrders[i] > 0)
-            {
-                orders.Add(book.CategoryOrders[i]);
-                continue;
-            }
-
-            orders.Add(NestedUnknownOrder + i);
+            var upstreamOrder = i < book.CategoryOrders.Count ? book.CategoryOrders[i] : 0;
+            orders.Add(SefariaLibraryOrdering.GetCategoryOrder(parentPath, categories[i], upstreamOrder));
+            parentPath.Add(categories[i]);
         }
 
         book.CategoryOrders = orders;
@@ -657,158 +614,16 @@ public sealed partial class SefariaLibraryService
         return ["Other"];
     }
 
-    private static float GetTopLevelCategoryOrder(string? categoryName)
-    {
-        if (string.IsNullOrWhiteSpace(categoryName))
-        {
-            return TopLevelOtherOrder;
-        }
-
-        for (var i = 0; i < TopLevelCategoryOrder.Length; i++)
-        {
-            if (string.Equals(TopLevelCategoryOrder[i], categoryName, StringComparison.OrdinalIgnoreCase))
-            {
-                return i;
-            }
-        }
-
-        if (string.Equals(categoryName, "Other", StringComparison.OrdinalIgnoreCase))
-        {
-            return TopLevelOtherOrder;
-        }
-
-        return TopLevelUnknownOrder;
-    }
-
-    /// <summary>
-    /// House order for nested categories. Sedarim always sort before Guides / Rishonim /
-    /// Acharonim / Modern commentary under Mishnah and Talmud.
-    /// </summary>
-    internal static float? GetNestedCategoryOrder(string? categoryName)
-    {
-        if (string.IsNullOrWhiteSpace(categoryName))
-        {
-            return null;
-        }
-
-        // 1) Sedarim first under Mishnah / Bavli / Yerushalmi / Tosefta.
-        for (var i = 0; i < SederCategoryOrder.Length; i++)
-        {
-            if (string.Equals(SederCategoryOrder[i], categoryName, StringComparison.OrdinalIgnoreCase))
-            {
-                return NestedSederBase + i;
-            }
-        }
-
-        if (categoryName.StartsWith("Seder ", StringComparison.OrdinalIgnoreCase))
-        {
-            return NestedSederBase + SederCategoryOrder.Length;
-        }
-
-        // 2) Primary corpus sections.
-        if (string.Equals(categoryName, "Torah", StringComparison.OrdinalIgnoreCase)) return NestedPrimaryBase;
-        if (string.Equals(categoryName, "Prophets", StringComparison.OrdinalIgnoreCase)) return NestedPrimaryBase + 1;
-        if (string.Equals(categoryName, "Writings", StringComparison.OrdinalIgnoreCase)) return NestedPrimaryBase + 2;
-        if (string.Equals(categoryName, "Targum", StringComparison.OrdinalIgnoreCase)) return NestedPrimaryBase + 3;
-        if (string.Equals(categoryName, "Bavli", StringComparison.OrdinalIgnoreCase)) return NestedPrimaryBase + 10;
-        if (string.Equals(categoryName, "Yerushalmi", StringComparison.OrdinalIgnoreCase)) return NestedPrimaryBase + 11;
-
-        // 3) Secondary non-commentary groups (after sedarim).
-        if (string.Equals(categoryName, "Minor Tractates", StringComparison.OrdinalIgnoreCase))
-        {
-            return NestedSecondaryBase;
-        }
-
-        if (string.Equals(categoryName, "Guides", StringComparison.OrdinalIgnoreCase))
-        {
-            return NestedSecondaryBase + 1;
-        }
-
-        if (categoryName.Contains("Minor Tractates", StringComparison.OrdinalIgnoreCase))
-        {
-            return NestedSecondaryBase + 2;
-        }
-
-        // 4) Commentary tiers (always after sedarim / guides).
-        if (categoryName.StartsWith("Rishonim", StringComparison.OrdinalIgnoreCase))
-        {
-            return NestedCommentaryBase;
-        }
-
-        if (categoryName.StartsWith("Acharonim", StringComparison.OrdinalIgnoreCase))
-        {
-            return NestedCommentaryBase + 1;
-        }
-
-        if (categoryName.StartsWith("Modern Commentary", StringComparison.OrdinalIgnoreCase) ||
-            categoryName.StartsWith("Modern Works", StringComparison.OrdinalIgnoreCase) ||
-            categoryName.StartsWith("Contemporary", StringComparison.OrdinalIgnoreCase))
-        {
-            return NestedCommentaryBase + 2;
-        }
-
-        if (string.Equals(categoryName, "Commentary", StringComparison.OrdinalIgnoreCase) ||
-            categoryName.StartsWith("Commentary", StringComparison.OrdinalIgnoreCase))
-        {
-            return NestedCommentaryBase + 3;
-        }
-
-        // 5) Other known branches.
-        if (string.Equals(categoryName, "Aggadic Midrash", StringComparison.OrdinalIgnoreCase)) return NestedOtherBase;
-        if (string.Equals(categoryName, "Halachic Midrash", StringComparison.OrdinalIgnoreCase)) return NestedOtherBase + 1;
-        if (string.Equals(categoryName, "Midrash Rabbah", StringComparison.OrdinalIgnoreCase)) return NestedOtherBase + 2;
-        if (string.Equals(categoryName, "Siddur", StringComparison.OrdinalIgnoreCase)) return NestedOtherBase + 10;
-        if (string.Equals(categoryName, "Piyutim", StringComparison.OrdinalIgnoreCase)) return NestedOtherBase + 11;
-        if (string.Equals(categoryName, "Kinnot", StringComparison.OrdinalIgnoreCase)) return NestedOtherBase + 12;
-        if (string.Equals(categoryName, "Guide for the Perplexed", StringComparison.OrdinalIgnoreCase)) return NestedOtherBase + 20;
-        if (string.Equals(categoryName, "Philosophy", StringComparison.OrdinalIgnoreCase)) return NestedOtherBase + 21;
-        if (string.Equals(categoryName, "Hashkafah", StringComparison.OrdinalIgnoreCase)) return NestedOtherBase + 22;
-
-        return null;
-    }
-
-    /// <summary>Order used when building any category tree (installed + offline Sefaria scope).</summary>
-    internal static float ResolveCategorySortOrder(string? categoryName, bool isRoot, float existingOrder = 0)
-    {
-        if (isRoot)
-        {
-            return GetTopLevelCategoryOrder(categoryName);
-        }
-
-        var nested = GetNestedCategoryOrder(categoryName);
-        if (nested is not null)
-        {
-            return nested.Value;
-        }
-
-        if (existingOrder > 0)
-        {
-            return existingOrder;
-        }
-
-        return NestedUnknownOrder;
-    }
-
     private static float GetInstalledCategoryOrder(InstalledSefariaBook book, int level)
     {
-        if (level == 0)
+        if (level < 0 || level >= book.Categories.Count)
         {
-            var top = book.Categories.FirstOrDefault(category => !string.IsNullOrWhiteSpace(category));
-            return GetTopLevelCategoryOrder(top);
+            return SefariaLibraryOrdering.UnknownOrder;
         }
 
-        if (level >= 0 && level < book.Categories.Count)
-        {
-            var house = GetNestedCategoryOrder(book.Categories[level]);
-            if (house is not null)
-            {
-                return house.Value;
-            }
-        }
-
-        return level >= 0 && level < book.CategoryOrders.Count
-            ? book.CategoryOrders[level]
-            : float.MaxValue;
+        var parentPath = book.Categories.Take(level).ToArray();
+        var upstreamOrder = level < book.CategoryOrders.Count ? book.CategoryOrders[level] : 0;
+        return SefariaLibraryOrdering.GetCategoryOrder(parentPath, book.Categories[level], upstreamOrder);
     }
 
     private static bool InstalledBookMetadataMatches(InstalledSefariaBook current, InstalledSefariaBook refreshed)
@@ -823,46 +638,36 @@ public sealed partial class SefariaLibraryService
             Math.Abs(current.Order - refreshed.Order) < 0.001;
     }
 
-    private static void SortInstalledTree(ObservableCollection<object> nodes, bool isRoot = false)
+    private static void SortInstalledTree(
+        ObservableCollection<object> nodes,
+        IReadOnlyList<string> parentPath)
     {
+        var categoriesFirst = SefariaLibraryOrdering.CategoriesBeforeBooks(parentPath);
         var sorted = nodes
-            .OrderBy(node => isRoot ? GetRootInstalledTreeOrder(node) : GetInstalledTreeOrder(node))
+            .OrderBy(node => categoriesFirst && node is InstalledSefariaCategory { IsBookTitle: true } ? 1 : 0)
+            .ThenBy(GetInstalledTreeOrder)
             .ThenBy(GetInstalledTreeTitle, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
         nodes.Clear();
         foreach (var node in sorted)
         {
-            if (node is InstalledSefariaCategory category)
+            if (node is InstalledSefariaCategory { IsBookTitle: false } category)
             {
-                SortInstalledTree(category.Children, isRoot: false);
+                SortInstalledTree(category.Children, [.. parentPath, category.Title]);
             }
 
             nodes.Add(node);
         }
     }
 
-    private static float GetRootInstalledTreeOrder(object node)
-    {
-        return node switch
-        {
-            InstalledSefariaCategory { IsBookTitle: true } => TopLevelOtherOrder + 1,
-            InstalledSefariaCategory category => GetTopLevelCategoryOrder(category.Title),
-            InstalledSefariaBook => TopLevelOtherOrder + 1,
-            _ => TopLevelOtherOrder + 1
-        };
-    }
-
     private static float GetInstalledTreeOrder(object node)
     {
         return node switch
         {
-            InstalledSefariaCategory category => ResolveCategorySortOrder(
-                category.Title,
-                isRoot: false,
-                existingOrder: category.Order),
+            InstalledSefariaCategory category => category.Order,
             InstalledSefariaBook book => book.Order,
-            _ => 0
+            _ => SefariaLibraryOrdering.UnknownOrder
         };
     }
 

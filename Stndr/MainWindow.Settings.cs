@@ -491,7 +491,7 @@ public partial class MainWindow
             }
 
             _settings.LibraryUpdateSnoozeDays = NormalizeLibraryUpdateSnoozeDays(days);
-            _settingsService.Save(_settings);
+            ScheduleNextLibraryUpdateCheck();
         };
 
         return new StackPanel
@@ -516,7 +516,7 @@ public partial class MainWindow
                     {
                         new TextBlock
                         {
-                            Text = "After I dismiss an update, remind me in:",
+                            Text = "Automatically check for updates every:",
                             VerticalAlignment = VerticalAlignment.Center
                         },
                         snoozePicker,

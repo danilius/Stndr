@@ -355,7 +355,9 @@ public sealed class AppSettings
     public bool OfflineLibrarySetupDeferred { get; set; }
     public bool ShowReaderLicenses { get; set; } = true;
     public bool CheckForLibraryUpdatesAutomatically { get; set; } = true;
-    /// <summary>Days to hide a dismissed library-update offer for the same remote dump.</summary>
+    /// <summary>Next time an automatic library-update check may offer a snapshot.</summary>
+    public DateTime? LibraryUpdateNextAutomaticCheckUtc { get; set; }
+    /// <summary>Days to hide all library-update offers after the user chooses Later.</summary>
     public int LibraryUpdateSnoozeDays { get; set; } = 14;
     public string LibraryUpdateSnoozedRemoteKey { get; set; } = string.Empty;
     public DateTime? LibraryUpdateSnoozedUntilUtc { get; set; }
