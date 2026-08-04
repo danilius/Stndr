@@ -394,12 +394,17 @@ public sealed record ReaderTextUnit(
     string Reference,
     string Text,
     string ChapterTitle = "",
-    string HebrewChapterTitle = "");
+    string HebrewChapterTitle = "",
+    string NavigationKey = "",
+    string NavigationLabel = "",
+    string HebrewNavigationLabel = "");
 
 public sealed record ReaderNavigationPage(
     string Page,
     string ChapterTitle,
-    string HebrewChapterTitle);
+    string HebrewChapterTitle,
+    string Label = "",
+    string HebrewLabel = "");
 
 public sealed class SefariaCommentaryItem
 {
@@ -563,6 +568,12 @@ public sealed class BookSchema
     public List<string> HeSectionNames { get; set; } = new();
     /// <summary>Sefaria schema addressTypes, e.g. Talmud, Integer, Perek.</summary>
     public List<string> AddressTypes { get; set; } = new();
+    /// <summary>
+    /// Complete recursive Sefaria schema. Existing specialized readers continue to use the
+    /// flattened properties above; this tree is consumed only by explicitly supported complex
+    /// schema profiles.
+    /// </summary>
+    public SefariaSchemaNode? RootNode { get; set; }
     public Dictionary<string, List<SchemaAltNode>> AltStructures { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>True when the first address dimension is a Talmud daf (2a, 2b, …).</summary>
@@ -585,6 +596,11 @@ public sealed class BookSchema
                 HeTitle = GetString(root, "heTitle"),
                 Depth = GetInt(root, "schema", "depth"),
             };
+
+            var recursiveRoot = root.TryGetProperty("schema", out var schemaElement)
+                ? schemaElement
+                : root;
+            schema.RootNode = SefariaSchemaNode.Parse(recursiveRoot);
 
             if (root.TryGetProperty("sectionNames", out var sn))
             {
@@ -646,6 +662,105 @@ public sealed class BookSchema
         }
         return current.ValueKind == JsonValueKind.Number && current.TryGetInt32(out var v) ? v : 0;
     }
+}
+
+public sealed class SefariaSchemaNode
+{
+    public string Key { get; set; } = string.Empty;
+    public string Title { get; set; } = string.Empty;
+    public string HeTitle { get; set; } = string.Empty;
+    public string SharedTitle { get; set; } = string.Empty;
+    public string NodeType { get; set; } = string.Empty;
+    public bool IsDefault { get; set; }
+    public int Depth { get; set; }
+    public List<string> SectionNames { get; set; } = new();
+    public List<string> HeSectionNames { get; set; } = new();
+    public List<string> AddressTypes { get; set; } = new();
+    public List<SefariaSchemaNode> Children { get; set; } = new();
+
+    internal static SefariaSchemaNode Parse(JsonElement element)
+    {
+        var node = new SefariaSchemaNode
+        {
+            Key = GetString(element, "key"),
+            Title = GetPrimaryTitle(element, "en"),
+            HeTitle = GetPrimaryTitle(element, "he"),
+            SharedTitle = GetString(element, "sharedTitle"),
+            NodeType = GetString(element, "nodeType"),
+            IsDefault = element.TryGetProperty("default", out var defaultValue) &&
+                defaultValue.ValueKind == JsonValueKind.True,
+            Depth = element.TryGetProperty("depth", out var depthValue) &&
+                depthValue.TryGetInt32(out var depth)
+                    ? depth
+                    : 0
+        };
+
+        AddStrings(element, "sectionNames", node.SectionNames);
+        AddStrings(element, "heSectionNames", node.HeSectionNames);
+        AddStrings(element, "addressTypes", node.AddressTypes);
+
+        if (element.TryGetProperty("nodes", out var children) && children.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var child in children.EnumerateArray())
+            {
+                if (child.ValueKind == JsonValueKind.Object)
+                {
+                    node.Children.Add(Parse(child));
+                }
+            }
+        }
+
+        return node;
+    }
+
+    private static string GetPrimaryTitle(JsonElement element, string language)
+    {
+        if (!element.TryGetProperty("titles", out var titles) || titles.ValueKind != JsonValueKind.Array)
+        {
+            return string.Empty;
+        }
+
+        var fallback = string.Empty;
+        foreach (var title in titles.EnumerateArray())
+        {
+            if (!title.TryGetProperty("lang", out var lang) ||
+                !string.Equals(lang.GetString(), language, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var text = GetString(title, "text");
+            if (string.IsNullOrWhiteSpace(fallback))
+            {
+                fallback = text;
+            }
+
+            if (title.TryGetProperty("primary", out var primary) && primary.ValueKind == JsonValueKind.True)
+            {
+                return text;
+            }
+        }
+
+        return fallback;
+    }
+
+    private static void AddStrings(JsonElement element, string propertyName, List<string> destination)
+    {
+        if (!element.TryGetProperty(propertyName, out var values) || values.ValueKind != JsonValueKind.Array)
+        {
+            return;
+        }
+
+        foreach (var value in values.EnumerateArray())
+        {
+            destination.Add(value.GetString() ?? string.Empty);
+        }
+    }
+
+    private static string GetString(JsonElement element, string propertyName) =>
+        element.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString() ?? string.Empty
+            : string.Empty;
 }
 
 public sealed class SchemaAltNode

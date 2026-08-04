@@ -3865,16 +3865,8 @@ public partial class MainWindow
 
         if (target is null)
         {
-            var normalizedQuery = NormalizeHebrewNumeralInput(query);
-            if (!string.IsNullOrWhiteSpace(normalizedQuery))
-            {
-                target = readerState.NavigationItems.FirstOrDefault(item =>
-                    string.Equals(NormalizeHebrewNumeralInput(item.Label), normalizedQuery, StringComparison.Ordinal) ||
-                    string.Equals(
-                        NormalizeHebrewNumeralInput(item.Row.ChapterKey),
-                        normalizedQuery,
-                        StringComparison.Ordinal));
-            }
+            target = readerState.NavigationItems.FirstOrDefault(item =>
+                MatchesNavigationJumpQuery(item, query));
         }
 
         if (target is null)
@@ -3910,6 +3902,63 @@ public partial class MainWindow
 
         ScrollReaderRowToTop(readerState, target.Row);
         SaveLayoutState();
+    }
+
+    private bool MatchesNavigationJumpQuery(ReaderNavigationItem item, string query)
+    {
+        var normalizedQuery = NormalizeNavigationJumpText(query);
+        if (string.IsNullOrWhiteSpace(normalizedQuery))
+        {
+            return false;
+        }
+
+        var hebrewAddress = FormatNavigationChapterLabel(item.EnglishLabel, useHebrewNumbers: true);
+        var candidates = new[]
+        {
+            item.Label,
+            item.EnglishLabel,
+            item.HebrewLabel,
+            hebrewAddress,
+            item.Row.ChapterKey,
+            $"{item.EnglishGroupTitle} {item.EnglishLabel}",
+            $"{item.HebrewGroupTitle} {hebrewAddress}",
+            $"{item.HebrewGroupTitle} {item.HebrewLabel}"
+        };
+
+        return candidates.Any(candidate =>
+            string.Equals(
+                NormalizeNavigationJumpText(candidate),
+                normalizedQuery,
+                StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string NormalizeNavigationJumpText(string value)
+    {
+        var builder = new StringBuilder(value.Length);
+        var previousWasSpace = false;
+        foreach (var character in value.Trim())
+        {
+            if (character is '"' or '\'' or '\u05f3' or '\u05f4')
+            {
+                continue;
+            }
+
+            if (char.IsWhiteSpace(character) || character is '.' or ':' or ',')
+            {
+                if (!previousWasSpace && builder.Length > 0)
+                {
+                    builder.Append(' ');
+                    previousWasSpace = true;
+                }
+
+                continue;
+            }
+
+            builder.Append(char.ToLowerInvariant(character));
+            previousWasSpace = false;
+        }
+
+        return builder.ToString().Trim();
     }
 
     private Control CreateReaderNavigationButtonGrid(IEnumerable<ReaderNavigationItem> items)

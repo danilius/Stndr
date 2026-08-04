@@ -183,7 +183,14 @@ public partial class MainWindow
         string ChapterKey,
         string ChapterHeading);
 
-    private sealed record ReaderNavigationItem(string Label, ReaderDisplayRow Row, string ChapterTitle);
+    private sealed record ReaderNavigationItem(
+        string Label,
+        ReaderDisplayRow Row,
+        string ChapterTitle,
+        string EnglishLabel = "",
+        string HebrewLabel = "",
+        string EnglishGroupTitle = "",
+        string HebrewGroupTitle = "");
 
     private sealed record TorahSedra(
         string Key,
