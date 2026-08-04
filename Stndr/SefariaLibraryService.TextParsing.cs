@@ -48,6 +48,11 @@ public sealed partial class SefariaLibraryService
             return ReadTalmudTextUnits(book, root, schema, cancellationToken);
         }
 
+        if (TryReadSupportedComplexSchemaUnits(root, schema, cancellationToken, out var structuredUnits))
+        {
+            return structuredUnits;
+        }
+
         if (!TryGetPrimaryTextElement(root, out var textElement))
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -90,6 +95,17 @@ public sealed partial class SefariaLibraryService
             yield break;
         }
 
+        if (TryReadSupportedComplexSchemaUnits(root, schema, cancellationToken, out var structuredUnits))
+        {
+            foreach (var unit in structuredUnits)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                yield return unit;
+            }
+
+            yield break;
+        }
+
         if (!TryGetPrimaryTextElement(root, out var textElement))
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -112,11 +128,7 @@ public sealed partial class SefariaLibraryService
         using var document = JsonDocument.Parse(json);
         var root = document.RootElement;
 
-        BookSchema? schema = null;
-        if (IsTalmud(book))
-        {
-            schema = GetBookSchema(book.Title);
-        }
+        var schema = GetBookSchema(book.Title);
 
         if (IsShulchanArukh(book))
         {
@@ -125,6 +137,21 @@ public sealed partial class SefariaLibraryService
             {
                 return shulchanPages;
             }
+        }
+
+        if (TryReadSupportedComplexSchemaUnits(root, schema, CancellationToken.None, out var structuredUnits))
+        {
+            return structuredUnits
+                .Where(unit => !string.IsNullOrWhiteSpace(unit.NavigationKey))
+                .GroupBy(unit => unit.NavigationKey, StringComparer.Ordinal)
+                .Select(group => group.First())
+                .Select(unit => new ReaderNavigationPage(
+                    unit.NavigationKey,
+                    unit.ChapterTitle,
+                    unit.HebrewChapterTitle,
+                    unit.NavigationLabel,
+                    unit.HebrewNavigationLabel))
+                .ToList();
         }
 
         if (!IsTalmud(book) ||
@@ -567,6 +594,171 @@ public sealed partial class SefariaLibraryService
             index++;
         }
     }
+
+    private static bool TryReadSupportedComplexSchemaUnits(
+        JsonElement root,
+        BookSchema? schema,
+        CancellationToken cancellationToken,
+        out List<ReaderTextUnit> units)
+    {
+        units = new List<ReaderTextUnit>();
+        // Require a genuine multi-part commentary. A two-node work can share this
+        // shape while having different navigation expectations; keep those on the
+        // established fallback until they have their own regression coverage.
+        if (schema?.RootNode is not { Children.Count: >= 3 } schemaRoot ||
+            !root.TryGetProperty("text", out var rawText) ||
+            rawText.ValueKind != JsonValueKind.Object ||
+            !TryMatchNamedChapterVerseProfile(schemaRoot, rawText, out var containers))
+        {
+            return false;
+        }
+
+        foreach (var (container, introduction, body, content) in containers)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var groupTitle = FirstSchemaNodeTitle(container);
+            var hebrewGroupTitle = container.HeTitle;
+
+            if (content.TryGetProperty(introduction.Key, out var introductionText) &&
+                HasTextContent(introductionText))
+            {
+                var introductionTitle = FirstSchemaNodeTitle(introduction);
+                var hebrewIntroductionTitle = introduction.HeTitle;
+                if (string.IsNullOrWhiteSpace(hebrewIntroductionTitle) &&
+                    string.Equals(introductionTitle, "Introduction", StringComparison.OrdinalIgnoreCase))
+                {
+                    hebrewIntroductionTitle = "\u05d4\u05e7\u05d3\u05de\u05d4";
+                }
+
+                foreach (var unit in EnumerateTextUnits(
+                             introductionText,
+                             new List<string> { container.Key, introduction.Key },
+                             cancellationToken))
+                {
+                    units.Add(unit with
+                    {
+                        ChapterTitle = groupTitle,
+                        HebrewChapterTitle = hebrewGroupTitle,
+                        NavigationKey = $"{container.Key}.{introduction.Key}",
+                        NavigationLabel = introductionTitle,
+                        HebrewNavigationLabel = hebrewIntroductionTitle
+                    });
+                }
+            }
+
+            if (!content.TryGetProperty(body.Key, out var bodyText) || !HasTextContent(bodyText))
+            {
+                continue;
+            }
+
+            foreach (var unit in EnumerateTextUnits(
+                         bodyText,
+                         new List<string> { container.Key, body.Key },
+                         cancellationToken))
+            {
+                var parts = unit.Reference.Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                if (parts.Length < 5)
+                {
+                    // This profile promises Chapter/Verse/Paragraph. Falling back is safer than
+                    // emitting partially addressed rows if a future dump changes that contract.
+                    units.Clear();
+                    return false;
+                }
+
+                var chapter = parts[2];
+                var verse = parts[3];
+                units.Add(unit with
+                {
+                    ChapterTitle = groupTitle,
+                    HebrewChapterTitle = hebrewGroupTitle,
+                    NavigationKey = $"{container.Key}.{chapter}.{verse}",
+                    NavigationLabel = $"{chapter}:{verse}"
+                });
+            }
+        }
+
+        return units.Count > 0;
+    }
+
+    private static bool TryMatchNamedChapterVerseProfile(
+        SefariaSchemaNode schemaRoot,
+        JsonElement rawText,
+        out List<(SefariaSchemaNode Container, SefariaSchemaNode Introduction, SefariaSchemaNode Body, JsonElement Content)> containers)
+    {
+        containers = new();
+        var schemaKeys = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var container in schemaRoot.Children)
+        {
+            if (container.IsDefault || string.IsNullOrWhiteSpace(container.Key) || container.Children.Count != 2)
+            {
+                return false;
+            }
+
+            var introductions = container.Children.Where(IsIntroductionLeaf).Take(2).ToList();
+            var bodies = container.Children.Where(IsChapterVerseParagraphLeaf).Take(2).ToList();
+            if (introductions.Count != 1 || bodies.Count != 1 ||
+                !rawText.TryGetProperty(container.Key, out var content) ||
+                content.ValueKind != JsonValueKind.Object)
+            {
+                return false;
+            }
+
+            var introduction = introductions[0];
+            var body = bodies[0];
+
+            var childKeys = new HashSet<string>(
+                new[] { introduction.Key, body.Key },
+                StringComparer.Ordinal);
+            if (content.EnumerateObject().Any(property =>
+                    HasTextContent(property.Value) && !childKeys.Contains(property.Name)))
+            {
+                return false;
+            }
+
+            schemaKeys.Add(container.Key);
+            containers.Add((container, introduction, body, content));
+        }
+
+        if (rawText.EnumerateObject().Any(property =>
+                HasTextContent(property.Value) && !schemaKeys.Contains(property.Name)))
+        {
+            containers.Clear();
+            return false;
+        }
+
+        return containers.Count > 0;
+    }
+
+    private static bool IsIntroductionLeaf(SefariaSchemaNode node) =>
+        !node.IsDefault &&
+        node.Children.Count == 0 &&
+        node.Depth == 1 &&
+        node.SectionNames.Count == 1 &&
+        string.Equals(node.SectionNames[0], "Paragraph", StringComparison.OrdinalIgnoreCase) &&
+        (node.Key.Contains("Introduction", StringComparison.OrdinalIgnoreCase) ||
+         node.Title.Contains("Introduction", StringComparison.OrdinalIgnoreCase) ||
+         node.SharedTitle.Contains("Introduction", StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsChapterVerseParagraphLeaf(SefariaSchemaNode node) =>
+        node.IsDefault &&
+        node.Children.Count == 0 &&
+        node.Depth == 3 &&
+        node.SectionNames.Count == 3 &&
+        string.Equals(node.SectionNames[0], "Chapter", StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(node.SectionNames[1], "Verse", StringComparison.OrdinalIgnoreCase) &&
+        (string.Equals(node.SectionNames[2], "Paragraph", StringComparison.OrdinalIgnoreCase) ||
+         string.Equals(node.SectionNames[2], "Comment", StringComparison.OrdinalIgnoreCase)) &&
+        (node.AddressTypes.Count == 0 ||
+         !node.AddressTypes.Any(addressType =>
+             string.Equals(addressType, "Talmud", StringComparison.OrdinalIgnoreCase)));
+
+    private static string FirstSchemaNodeTitle(SefariaSchemaNode node) =>
+        !string.IsNullOrWhiteSpace(node.Title)
+            ? node.Title
+            : !string.IsNullOrWhiteSpace(node.SharedTitle)
+                ? node.SharedTitle
+                : node.Key;
 
     private static IEnumerable<ReaderTextUnit> EnumerateTextUnits(
         JsonElement element,

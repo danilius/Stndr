@@ -521,7 +521,6 @@ public partial class MainWindow
                 true)
         };
         readerList.Classes.Add("reader-list");
-        readerList.KeyDown += (_, e) => HandleReaderPageKeyDown(state, e);
         var currentReaderList = readerList;
         currentReaderList.AttachedToVisualTree += (_, _) =>
         {
@@ -562,6 +561,9 @@ public partial class MainWindow
         var chapterTitlesByPage = navigationPages
             .GroupBy(page => page.Page, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => FormatChapterTitle(group.First()), StringComparer.Ordinal);
+        var navigationLabelsByPage = navigationPages
+            .GroupBy(page => page.Page, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => FormatNavigationPageLabel(group.First(), state.UseHebrewNavigationNumbers), StringComparer.Ordinal);
 
         var showTranslation = state.SelectedTranslation is not null && state.DisplayMode != ReaderDisplayMode.PrimaryOnly;
         var rowUnits = PairReaderUnitsByReference(primaryUnits, showTranslation ? translationUnits : new List<ReaderTextUnit>());
@@ -571,7 +573,10 @@ public partial class MainWindow
         foreach (var (primary, translation) in rowUnits)
         {
             var reference = primary?.Reference ?? translation?.Reference ?? string.Empty;
-            var page = GetReferencePart(reference, 0);
+            var page = FirstNonEmpty(
+                primary?.NavigationKey,
+                translation?.NavigationKey,
+                GetReferencePart(reference, 0));
             var chapterTitle = chapterTitlesByPage.TryGetValue(page, out var navigationChapterTitle)
                 ? navigationChapterTitle
                 : FormatChapterTitle(primary, translation);
@@ -583,7 +588,9 @@ public partial class MainWindow
                     Translation: null,
                     IsChapterHeading: true,
                     ChapterKey: page,
-                    ChapterHeading: FormatChapterHeading(page, chapterTitle));
+                    ChapterHeading: FormatChapterHeading(
+                        navigationLabelsByPage.TryGetValue(page, out var navigationLabel) ? navigationLabel : page,
+                        chapterTitle));
                 items.Add(heading);
                 pageRows[page] = heading;
             }
@@ -600,15 +607,23 @@ public partial class MainWindow
             ? navigationPages
                 .Where(page => pageRows.ContainsKey(page.Page))
                 .Select(page => new ReaderNavigationItem(
-                    FormatNavigationChapterLabel(page.Page, state.UseHebrewNavigationNumbers),
+                    FormatNavigationPageLabel(page, state.UseHebrewNavigationNumbers),
                     pageRows[page.Page],
-                    FormatChapterTitle(page)))
+                    FormatChapterTitle(page),
+                    page.Label,
+                    page.HebrewLabel,
+                    page.ChapterTitle,
+                    page.HebrewChapterTitle))
                 .ToList()
             : pageRows
                 .Select(pair => new ReaderNavigationItem(
                     FormatNavigationChapterLabel(pair.Key, state.UseHebrewNavigationNumbers),
                     pair.Value,
-                    pair.Value.ChapterHeading))
+                    pair.Value.ChapterHeading,
+                    pair.Key,
+                    string.Empty,
+                    pair.Value.ChapterHeading,
+                    string.Empty))
                 .ToList();
         state.HasTalmudNavigation = isTalmudNavigation;
         state.NavigationChapters = BuildReaderNavigationChapters(state);
@@ -636,6 +651,12 @@ public partial class MainWindow
             return primaryUnits
                 .Select(unit => ((ReaderTextUnit?)unit, (ReaderTextUnit?)null))
                 .ToList();
+        }
+
+        if (primaryUnits.Any(unit => !string.IsNullOrWhiteSpace(unit.NavigationKey)) ||
+            translationUnits.Any(unit => !string.IsNullOrWhiteSpace(unit.NavigationKey)))
+        {
+            return PairStructuredReaderUnitsByReference(primaryUnits, translationUnits);
         }
 
         var translationsByReference = translationUnits
@@ -671,6 +692,40 @@ public partial class MainWindow
         }
 
         return rows;
+    }
+
+    private static List<(ReaderTextUnit? Primary, ReaderTextUnit? Translation)> PairStructuredReaderUnitsByReference(
+        IReadOnlyList<ReaderTextUnit> primaryUnits,
+        IReadOnlyList<ReaderTextUnit> translationUnits)
+    {
+        var primaryByReference = primaryUnits
+            .GroupBy(unit => NormalizeReaderUnitReference(unit.Reference), StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+        var translationsByReference = translationUnits
+            .GroupBy(unit => NormalizeReaderUnitReference(unit.Reference), StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+        var leading = primaryUnits.Count >= translationUnits.Count ? primaryUnits : translationUnits;
+        var trailing = ReferenceEquals(leading, primaryUnits) ? translationUnits : primaryUnits;
+        var orderedReferences = new List<string>(Math.Max(primaryUnits.Count, translationUnits.Count));
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var unit in leading.Concat(trailing))
+        {
+            var reference = NormalizeReaderUnitReference(unit.Reference);
+            if (seen.Add(reference))
+            {
+                orderedReferences.Add(reference);
+            }
+        }
+
+        return orderedReferences
+            .Select(reference =>
+            {
+                primaryByReference.TryGetValue(reference, out var primary);
+                translationsByReference.TryGetValue(reference, out var translation);
+                return ((ReaderTextUnit?)primary, (ReaderTextUnit?)translation);
+            })
+            .ToList();
     }
 
     private static string NormalizeReaderUnitReference(string reference)
@@ -1595,40 +1650,6 @@ public partial class MainWindow
             string.Equals(state.SelectedCommentaryRef, requestedAnchorRef, StringComparison.Ordinal);
     }
 
-    private void HandleReaderPageKeyDown(ReaderTabState state, KeyEventArgs e)
-    {
-        // Ctrl+PageUp/PageDown switches center tabs; plain PageUp/PageDown moves chapters.
-        if (e.KeyModifiers != KeyModifiers.None)
-        {
-            return;
-        }
-
-        var direction = e.Key switch
-        {
-            Key.PageDown => 1,
-            Key.PageUp => -1,
-            _ => 0
-        };
-        if (direction == 0 || state.NavigationItems.Count == 0)
-        {
-            return;
-        }
-
-        var currentKey = FirstNonEmpty(state.SelectedReaderRow?.ChapterKey, state.CurrentChapterKey);
-        var currentIndex = state.NavigationItems.FindIndex(item =>
-            string.Equals(item.Row.ChapterKey, currentKey, StringComparison.Ordinal));
-        if (currentIndex < 0)
-        {
-            currentIndex = direction > 0 ? -1 : state.NavigationItems.Count;
-        }
-
-        var nextIndex = Math.Clamp(currentIndex + direction, 0, state.NavigationItems.Count - 1);
-        var nextItem = state.NavigationItems[nextIndex];
-        ScrollReaderRowToTop(state, nextItem.Row);
-        UpdateReaderChapterHeader(state, nextItem.Row);
-        e.Handled = true;
-    }
-
     private void UpdateReaderChapterHeader(ReaderTabState state, ReaderDisplayRow? row)
     {
         if (state.ChapterBlock is null)
@@ -1796,7 +1817,14 @@ public partial class MainWindow
         state.NavigationItems = state.NavigationItems
             .Select(item => item with
             {
-                Label = FormatNavigationChapterLabel(item.Row.ChapterKey, state.UseHebrewNavigationNumbers)
+                Label = FormatNavigationPageLabel(
+                    new ReaderNavigationPage(
+                        item.Row.ChapterKey,
+                        item.EnglishGroupTitle,
+                        item.HebrewGroupTitle,
+                        item.EnglishLabel,
+                        item.HebrewLabel),
+                    state.UseHebrewNavigationNumbers)
             })
             .ToList();
 
@@ -1811,8 +1839,8 @@ public partial class MainWindow
             return string.Empty;
         }
 
-        var first = FormatNavigationChapterLabel(items[0].Row.ChapterKey, useHebrewNumbers);
-        var last = FormatNavigationChapterLabel(items[^1].Row.ChapterKey, useHebrewNumbers);
+        var first = items[0].Label;
+        var last = items[^1].Label;
         return string.Equals(first, last, StringComparison.Ordinal)
             ? first
             : $"{first}\u2013{last}";
@@ -1820,22 +1848,45 @@ public partial class MainWindow
 
     private List<ReaderNavigationPage> BuildReaderNavigationPages(ReaderTabState state)
     {
-        var navigationPages = _sefariaLibrary.ReadInstalledBookNavigationPages(state.Primary);
-        if (navigationPages.Count > 0)
-        {
-            return navigationPages;
-        }
+        var primaryPages = _sefariaLibrary.ReadInstalledBookNavigationPages(state.Primary);
 
         if (state.SelectedTranslation is not null)
         {
-            navigationPages = _sefariaLibrary.ReadInstalledBookNavigationPages(state.SelectedTranslation);
-            if (navigationPages.Count > 0)
+            var translationPages = _sefariaLibrary.ReadInstalledBookNavigationPages(state.SelectedTranslation);
+            if (primaryPages.Count == 0)
             {
-                return navigationPages;
+                return translationPages;
+            }
+
+            if (translationPages.Count > 0 &&
+                (primaryPages.Any(page => !string.IsNullOrWhiteSpace(page.Label)) ||
+                 translationPages.Any(page => !string.IsNullOrWhiteSpace(page.Label))))
+            {
+                return MergeStructuredNavigationPages(primaryPages, translationPages);
             }
         }
 
-        return new List<ReaderNavigationPage>();
+        return primaryPages;
+    }
+
+    private static List<ReaderNavigationPage> MergeStructuredNavigationPages(
+        IReadOnlyList<ReaderNavigationPage> primaryPages,
+        IReadOnlyList<ReaderNavigationPage> translationPages)
+    {
+        var leading = primaryPages.Count >= translationPages.Count ? primaryPages : translationPages;
+        var trailing = ReferenceEquals(leading, primaryPages) ? translationPages : primaryPages;
+        var result = new List<ReaderNavigationPage>(Math.Max(primaryPages.Count, translationPages.Count));
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var page in leading.Concat(trailing))
+        {
+            if (seen.Add(page.Page))
+            {
+                result.Add(page);
+            }
+        }
+
+        return result;
     }
 
     private Control CreateReaderDisplayRow(ReaderTabState state, ReaderDisplayRow row)
@@ -1898,6 +1949,12 @@ public partial class MainWindow
             return chapter;
         }
 
+        var addressParts = chapter.Split(':', StringSplitOptions.TrimEntries);
+        if (addressParts.Length > 1 && addressParts.All(part => int.TryParse(part, out _)))
+        {
+            return string.Join(":", addressParts.Select(part => ToHebrewNumber(int.Parse(part))));
+        }
+
         if (!int.TryParse(chapter, out var number))
         {
             var numericPrefixLength = 0;
@@ -1919,6 +1976,21 @@ public partial class MainWindow
         }
 
         return ToHebrewNumber(number);
+    }
+
+    private string FormatNavigationPageLabel(ReaderNavigationPage page, bool useHebrewNumbers)
+    {
+        if (string.IsNullOrWhiteSpace(page.Label))
+        {
+            return FormatNavigationChapterLabel(page.Page, useHebrewNumbers);
+        }
+
+        if (page.Label.Any(char.IsDigit))
+        {
+            return FormatNavigationChapterLabel(page.Label, useHebrewNumbers);
+        }
+
+        return FormatChapterTitleParts(page.Label, page.HebrewLabel);
     }
 
     private static string FormatHebrewNavigationSuffix(string suffix)

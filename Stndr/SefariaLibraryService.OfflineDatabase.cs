@@ -239,7 +239,12 @@ public sealed partial class SefariaLibraryService
         {
             using var schemaDocument = JsonDocument.Parse(schemaJson);
             var root = schemaDocument.RootElement;
-            var result = new BookSchema { Title = title, HeTitle = heTitle };
+            var result = new BookSchema
+            {
+                Title = title,
+                HeTitle = heTitle,
+                RootNode = SefariaSchemaNode.Parse(root)
+            };
             if (root.TryGetProperty("depth", out var depth) && depth.TryGetInt32(out var depthValue)) result.Depth = depthValue;
             if (root.TryGetProperty("sectionNames", out var sections) && sections.ValueKind == JsonValueKind.Array)
                 result.SectionNames.AddRange(sections.EnumerateArray().Select(item => item.GetString() ?? ""));
