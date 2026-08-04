@@ -59,10 +59,12 @@ public sealed partial class SefariaLibraryService
 
         var books = new List<InstalledSefariaBook>(12_000);
         using var connection = OpenOfflineConnection();
+        var categoryOrders = LoadOfflineCategoryOrders(connection);
+        var workOrderExpression = OfflineWorksHaveOrderColumn(connection) ? "w.order_value" : "0";
         using var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT v.id,w.title,w.he_title,w.categories_json,v.actual_language,v.language,
-                   v.version_title,v.compressed_bytes,v.license,v.version_source,
+        command.CommandText = $"""
+            SELECT v.id,w.title,w.he_title,w.categories_json,{workOrderExpression},
+                   v.actual_language,v.language,v.version_title,v.compressed_bytes,v.license,v.version_source,
                    v.is_primary,v.is_source,v.priority,v.segment_count
             FROM versions v JOIN works w ON w.id=v.work_id
             WHERE v.segment_count>0
@@ -72,24 +74,27 @@ public sealed partial class SefariaLibraryService
         while (reader.Read())
         {
             var id = reader.GetInt64(0);
-            var language = FirstNonEmpty(reader.GetString(4), reader.GetString(5), "en");
+            var categories = ParseStringArray(reader.GetString(3));
+            var language = FirstNonEmpty(reader.GetString(5), reader.GetString(6), "en");
             books.Add(new InstalledSefariaBook
             {
                 OfflineVersionId = id,
                 Title = reader.GetString(1),
                 HebrewTitle = reader.GetString(2),
-                Categories = ParseStringArray(reader.GetString(3)),
+                Categories = categories,
+                CategoryOrders = ResolveOfflineCategoryOrders(categories, categoryOrders),
+                Order = (float)reader.GetDouble(4),
                 LanguageCode = NormalizeOfflineLanguageCode(language),
-                VersionTitle = reader.GetString(6),
+                VersionTitle = reader.GetString(7),
                 FilePath = $"sefaria-library://version/{id}",
-                FileLength = reader.GetInt64(7),
+                FileLength = reader.GetInt64(8),
                 FileLastWriteTimeUtc = info.LastWriteTimeUtc,
-                License = reader.GetString(8),
-                VersionSource = reader.GetString(9),
-                OfflineIsPrimary = reader.GetInt64(10) != 0,
-                OfflineIsSource = reader.GetInt64(11) != 0,
-                OfflinePriority = reader.GetDouble(12),
-                SegmentCount = reader.GetInt64(13)
+                License = reader.GetString(9),
+                VersionSource = reader.GetString(10),
+                OfflineIsPrimary = reader.GetInt64(11) != 0,
+                OfflineIsSource = reader.GetInt64(12) != 0,
+                OfflinePriority = reader.GetDouble(13),
+                SegmentCount = reader.GetInt64(14)
             });
         }
 
@@ -100,6 +105,95 @@ public sealed partial class SefariaLibraryService
             _offlineDatabaseLength = info.Length;
         }
         return books;
+    }
+
+    private static bool OfflineWorksHaveOrderColumn(SqliteConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA table_info(works)";
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            if (string.Equals(reader.GetString(1), "order_value", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private bool HasImportedOfflineWorkOrder()
+    {
+        if (!HasOfflineLibrary)
+        {
+            return false;
+        }
+
+        try
+        {
+            using var connection = OpenOfflineConnection();
+            return OfflineWorksHaveOrderColumn(connection);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static Dictionary<string, float> LoadOfflineCategoryOrders(SqliteConnection connection)
+    {
+        var result = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT data_json FROM categories";
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(reader.GetString(0));
+                var root = document.RootElement;
+                if (!root.TryGetProperty("path", out var pathElement) ||
+                    pathElement.ValueKind != JsonValueKind.Array ||
+                    !root.TryGetProperty("order", out var orderElement) ||
+                    !orderElement.TryGetSingle(out var order) ||
+                    order <= 0)
+                {
+                    continue;
+                }
+
+                var path = pathElement.EnumerateArray()
+                    .Select(item => item.GetString())
+                    .Where(item => !string.IsNullOrWhiteSpace(item))
+                    .Cast<string>()
+                    .ToArray();
+                if (path.Length > 0)
+                {
+                    result[string.Join("/", path)] = order;
+                }
+            }
+            catch (JsonException)
+            {
+                // Preserve the rest of the catalogue when one upstream record is malformed.
+            }
+        }
+
+        return result;
+    }
+
+    private static List<float> ResolveOfflineCategoryOrders(
+        IReadOnlyList<string> categories,
+        IReadOnlyDictionary<string, float> categoryOrders)
+    {
+        var result = new List<float>(categories.Count);
+        var path = new List<string>(categories.Count);
+        foreach (var category in categories)
+        {
+            path.Add(category);
+            result.Add(categoryOrders.TryGetValue(string.Join("/", path), out var order) ? order : 0);
+        }
+
+        return result;
     }
 
     private string ReadOfflineVersionJson(long versionId)
@@ -203,20 +297,38 @@ public sealed partial class SefariaLibraryService
     private SefariaCategoryNode BuildOfflineLibraryTree(CancellationToken token)
     {
         var root = new SefariaCategoryNode { Category = "Sefaria" };
+        var orderLookup = BuildIndexOrderLookup();
         foreach (var group in GetOfflineLibraryBooks().GroupBy(book => book.Title, StringComparer.Ordinal))
         {
             token.ThrowIfCancellationRequested();
-            var representative = group.First();
+            var representative = NormalizeInstalledBookPlacement(
+                ApplyIndexOrder(group.First(), orderLookup));
             var parent = root;
-            foreach (var categoryName in representative.Categories.Where(value => !string.IsNullOrWhiteSpace(value)))
+            var categoryPath = new List<string>();
+            for (var i = 0; i < representative.Categories.Count; i++)
             {
+                var categoryName = representative.Categories[i];
+                if (string.IsNullOrWhiteSpace(categoryName)) continue;
+                var categoryOrder = i < representative.CategoryOrders.Count
+                    ? representative.CategoryOrders[i]
+                    : SefariaLibraryOrdering.UnknownOrder;
                 var category = parent.Contents.OfType<SefariaCategoryNode>()
                     .FirstOrDefault(item => string.Equals(item.Category, categoryName, StringComparison.OrdinalIgnoreCase));
                 if (category is null)
                 {
-                    category = new SefariaCategoryNode { Category = categoryName };
+                    category = new SefariaCategoryNode
+                    {
+                        Category = categoryName,
+                        Order = categoryOrder
+                    };
                     parent.Contents.Add(category);
                 }
+                else if (categoryOrder < category.Order || category.Order <= 0)
+                {
+                    category.Order = categoryOrder;
+                }
+
+                categoryPath.Add(categoryName);
                 parent = category;
             }
 
@@ -234,13 +346,17 @@ public sealed partial class SefariaLibraryService
                 HebrewTitle = representative.HebrewTitle,
                 Categories = new List<string>(representative.Categories),
                 PrimaryCategory = representative.Categories.FirstOrDefault(),
+                Order = SefariaLibraryOrdering.GetBookOrder(
+                    categoryPath,
+                    representative.Title,
+                    representative.Order),
                 Versions = versions,
                 SelectedVersion = versions.FirstOrDefault(),
                 IsVersionsLoaded = true,
                 IsDownloaded = true
             });
         }
-        SortOfflineLibraryCategories(root);
+        SortOfflineLibraryCategories(root, []);
         return root;
     }
 
@@ -262,22 +378,25 @@ public sealed partial class SefariaLibraryService
         return result;
     }
 
-    private static void SortOfflineLibraryCategories(SefariaCategoryNode category, bool isRoot = true)
+    private static void SortOfflineLibraryCategories(
+        SefariaCategoryNode category,
+        IReadOnlyList<string> parentPath)
     {
         foreach (var child in category.Contents.OfType<SefariaCategoryNode>())
         {
-            SortOfflineLibraryCategories(child, isRoot: false);
+            SortOfflineLibraryCategories(child, [.. parentPath, child.Category ?? string.Empty]);
         }
 
+        var categoriesFirst = SefariaLibraryOrdering.CategoriesBeforeBooks(parentPath);
         category.Contents = new System.Collections.ObjectModel.ObservableCollection<SefariaNode>(category.Contents
-            .OrderBy(node => node is SefariaCategoryNode ? 0 : 1)
+            .OrderBy(node => categoriesFirst && node is SefariaBookNode ? 1 : 0)
             .ThenBy(node => node switch
             {
-                SefariaCategoryNode child when isRoot => GetTopLevelCategoryOrder(child.Category),
-                SefariaCategoryNode child => ResolveCategorySortOrder(child.Category, isRoot: false, child.Order),
-                SefariaBookNode book when isRoot => GetTopLevelCategoryOrder(book.PrimaryCategory),
-                SefariaBookNode book => book.Order > 0 ? book.Order : NestedUnknownOrder,
-                _ => float.MaxValue
+                SefariaCategoryNode child => child.Order > 0
+                    ? child.Order
+                    : SefariaLibraryOrdering.GetCategoryOrder(parentPath, child.Category),
+                SefariaBookNode book => SefariaLibraryOrdering.GetBookOrder(parentPath, book.Title, book.Order),
+                _ => SefariaLibraryOrdering.UnknownOrder
             })
             .ThenBy(node => node switch
             {

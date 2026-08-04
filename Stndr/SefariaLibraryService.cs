@@ -144,6 +144,22 @@ public sealed partial class SefariaLibraryService
     {
         if (HasOfflineLibrary)
         {
+            // Schema-v3 offline libraries predate imported work-order metadata. Cache the
+            // official TOC when possible so existing installs receive canonical ordering
+            // immediately; schema-v4 snapshots no longer depend on this network fallback.
+            if (!File.Exists(IndexFilePath) && !HasImportedOfflineWorkOrder())
+            {
+                try
+                {
+                    await EnsureIndexAvailableAsync(cancellationToken);
+                }
+                catch (Exception) when (!cancellationToken.IsCancellationRequested)
+                {
+                    // Offline use remains supported; house rules and alphabetical fallback
+                    // still produce deterministic trees until a refreshed dump is installed.
+                }
+            }
+
             return await Task.Run(() => BuildOfflineLibraryTree(cancellationToken), cancellationToken);
         }
 

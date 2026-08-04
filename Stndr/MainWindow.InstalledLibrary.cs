@@ -46,6 +46,9 @@ public partial class MainWindow
 
             _sefariaRoot = await _sefariaLibrary.LoadLibraryAsync(CancellationToken.None);
             await BuildSefariaScopeCatalogueFromRootAsync(_sefariaRoot);
+            // A legacy offline install may have downloaded its canonical TOC during the
+            // load above. Rebuild the visible tree so those newly available ranks apply.
+            RefreshInstalledBooksTree();
         }
         catch
         {
