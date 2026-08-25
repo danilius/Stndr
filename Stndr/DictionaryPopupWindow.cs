@@ -24,6 +24,7 @@ public sealed class DictionaryPopupWindow : Window
     private PixelPoint? _dragWindowOrigin;
 
     public event EventHandler? DockRequested;
+    public event EventHandler? OpenInDictionaryRequested;
     public event EventHandler? DismissRequested;
     public event EventHandler<PixelPoint>? PositionCommitted;
 
@@ -75,6 +76,22 @@ public sealed class DictionaryPopupWindow : Window
             e.Handled = true;
         };
 
+        var openButton = new Button
+        {
+            Content = "Open",
+            Background = Brushes.Transparent,
+            BorderBrush = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(8, 2),
+            MinHeight = 26
+        };
+        ToolTip.SetTip(openButton, "Open this entry in the Dictionary tab with nearby entries");
+        openButton.Click += (_, e) =>
+        {
+            OpenInDictionaryRequested?.Invoke(this, EventArgs.Empty);
+            e.Handled = true;
+        };
+
         var closeButton = new Button
         {
             Content = "✕",
@@ -101,7 +118,7 @@ public sealed class DictionaryPopupWindow : Window
             Padding = new Thickness(0, 0, 0, 8),
             Child = new Grid
             {
-                ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"),
+                ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto"),
                 ColumnSpacing = 6,
                 Children =
                 {
@@ -111,13 +128,15 @@ public sealed class DictionaryPopupWindow : Window
                         FontWeight = FontWeight.SemiBold,
                         VerticalAlignment = VerticalAlignment.Center
                     },
+                    openButton,
                     dockButton,
                     closeButton
                 }
             }
         };
-        Grid.SetColumn(dockButton, 1);
-        Grid.SetColumn(closeButton, 2);
+        Grid.SetColumn(openButton, 1);
+        Grid.SetColumn(dockButton, 2);
+        Grid.SetColumn(closeButton, 3);
 
         _dragHandle.PointerPressed += OnDragHandlePointerPressed;
         _dragHandle.PointerMoved += OnDragHandlePointerMoved;

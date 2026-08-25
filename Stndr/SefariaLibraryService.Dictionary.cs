@@ -11,7 +11,9 @@ namespace Stndr;
 public sealed class SefariaDictionaryEntry
 {
     public long EntryId { get; init; }
+    public long LexiconId { get; init; }
     public string Headword { get; init; } = string.Empty;
+    public string SortKey { get; init; } = string.Empty;
     public string Transliteration { get; init; } = string.Empty;
     public string Pronunciation { get; init; } = string.Empty;
     public string LexiconName { get; init; } = string.Empty;
@@ -29,6 +31,13 @@ public sealed class SefariaDictionaryEntry
 
 public sealed record SefariaLexiconInfo(long Id, string Name, string Language, string ToLanguage, int EntryCount);
 public sealed record SefariaDictionaryPrefix(string Prefix, int EntryCount);
+
+public enum SefariaDictionarySearchMode
+{
+    Everything,
+    Headwords,
+    EntryText
+}
 
 public sealed partial class SefariaLibraryService
 {

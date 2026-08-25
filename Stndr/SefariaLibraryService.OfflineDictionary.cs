@@ -76,7 +76,8 @@ public sealed partial class SefariaLibraryService
     }
 
     public async Task<IReadOnlyList<SefariaDictionaryEntry>> SearchOfflineDictionaryAsync(
-        string query, long? lexiconId = null, int limit = 100, CancellationToken token = default)
+        string query, long? lexiconId = null, int limit = 100, CancellationToken token = default,
+        SefariaDictionarySearchMode mode = SefariaDictionarySearchMode.Everything)
     {
         if (!HasOfflineLibrary || string.IsNullOrWhiteSpace(query)) return Array.Empty<SefariaDictionaryEntry>();
         var key = SefariaOfflineLibraryImporter.NormalizeDictionaryKey(query, keepSpaces: true);
@@ -84,15 +85,23 @@ public sealed partial class SefariaLibraryService
             .Select(part => "\"" + part.Replace("\"", "\"\"") + "\"*"));
         await using var connection = OpenOfflineConnection();
         using var command = connection.CreateCommand();
-        command.CommandText = DictionaryEntrySelect + """
-            WHERE ($lexicon IS NULL OR e.lexicon_id=$lexicon) AND e.id IN (
-                SELECT entry_id FROM lexicon_aliases WHERE alias_key=$key OR alias_key LIKE $key||'%'
-                UNION SELECT wfe.entry_id FROM dictionary_word_forms wf
-                    JOIN dictionary_word_form_entries wfe ON wfe.form_id=wf.id
-                    WHERE wf.form_key=$key OR wf.consonantal_form=$key
-                UNION SELECT rowid FROM lexicon_search WHERE lexicon_search MATCH $fts
-            ) ORDER BY CASE WHEN e.headword_key=$key THEN 0 WHEN e.headword_key LIKE $key||'%' THEN 1 ELSE 2 END,
-              e.sort_key,e.id LIMIT $limit
+        var headwordMatches = """
+            SELECT entry_id FROM lexicon_aliases WHERE alias_key=$key OR alias_key LIKE $key||'%'
+            UNION SELECT wfe.entry_id FROM dictionary_word_forms wf
+                JOIN dictionary_word_form_entries wfe ON wfe.form_id=wf.id
+                WHERE wf.form_key=$key OR wf.consonantal_form=$key
+            """;
+        var textMatches = "SELECT rowid FROM lexicon_search WHERE definition_text MATCH $fts";
+        var matches = mode switch
+        {
+            SefariaDictionarySearchMode.Headwords => headwordMatches,
+            SefariaDictionarySearchMode.EntryText => textMatches,
+            _ => headwordMatches + " UNION " + textMatches
+        };
+        command.CommandText = DictionaryEntrySelect + $"""
+            WHERE ($lexicon IS NULL OR e.lexicon_id=$lexicon) AND e.id IN ({matches})
+            ORDER BY CASE WHEN e.headword_key=$key THEN 0 WHEN e.headword_key LIKE $key||'%' THEN 1 ELSE 2 END,
+              l.name COLLATE NOCASE,e.sort_key,e.id LIMIT $limit
             """;
         command.Parameters.AddWithValue("$lexicon", lexiconId is null ? DBNull.Value : lexiconId.Value);
         command.Parameters.AddWithValue("$key", key);
@@ -100,6 +109,46 @@ public sealed partial class SefariaLibraryService
         command.Parameters.AddWithValue("$limit", Math.Clamp(limit, 1, 250));
         try { return await ReadOfflineDictionaryEntriesAsync(command, key, token); }
         catch (SqliteException) { return Array.Empty<SefariaDictionaryEntry>(); }
+    }
+
+    public async Task<IReadOnlyList<SefariaDictionaryEntry>> GetOfflineDictionaryContextAsync(
+        long entryId, int before = 20, int after = 20, CancellationToken token = default)
+    {
+        if (!HasOfflineLibrary || entryId <= 0) return Array.Empty<SefariaDictionaryEntry>();
+        await using var connection = OpenOfflineConnection();
+
+        var previous = await ReadAdjacentDictionaryEntriesAsync(
+            connection, entryId, before, beforeTarget: true, token);
+        var following = await ReadAdjacentDictionaryEntriesAsync(
+            connection, entryId, after + 1, beforeTarget: false, token);
+        return previous.Reverse().Concat(following).ToList();
+    }
+
+    public async Task<IReadOnlyList<SefariaDictionaryEntry>> GetOfflineAdjacentDictionaryEntriesAsync(
+        long entryId, bool before, int limit = 20, CancellationToken token = default)
+    {
+        if (!HasOfflineLibrary || entryId <= 0) return Array.Empty<SefariaDictionaryEntry>();
+        await using var connection = OpenOfflineConnection();
+        var entries = await ReadAdjacentDictionaryEntriesAsync(connection, entryId, limit, before, token);
+        return before ? entries.Reverse().ToList() : entries;
+    }
+
+    private async Task<IReadOnlyList<SefariaDictionaryEntry>> ReadAdjacentDictionaryEntriesAsync(
+        SqliteConnection connection, long entryId, int limit, bool beforeTarget, CancellationToken token)
+    {
+        using var command = connection.CreateCommand();
+        var comparison = beforeTarget
+            ? "(e.sort_key<t.sort_key OR (e.sort_key=t.sort_key AND e.id<t.id))"
+            : "(e.sort_key>t.sort_key OR (e.sort_key=t.sort_key AND e.id>=t.id))";
+        var direction = beforeTarget ? "DESC" : "ASC";
+        command.CommandText = DictionaryEntrySelect + $"""
+            JOIN lexicon_entries t ON t.id=$entry
+            WHERE e.lexicon_id=t.lexicon_id AND {comparison}
+            ORDER BY e.sort_key {direction},e.id {direction} LIMIT $limit
+            """;
+        command.Parameters.AddWithValue("$entry", entryId);
+        command.Parameters.AddWithValue("$limit", Math.Clamp(limit, 1, 100));
+        return await ReadOfflineDictionaryEntriesAsync(command, null, token);
     }
 
     public async Task<SefariaDictionaryEntry?> GetOfflineDictionaryEntryAsync(long entryId, CancellationToken token = default)
@@ -137,7 +186,7 @@ public sealed partial class SefariaLibraryService
     }
 
     private const string DictionaryEntrySelect =
-        "SELECT e.id,e.headword,e.transliteration,e.pronunciation,l.name,e.definition_text," +
+        "SELECT e.id,e.lexicon_id,e.headword,e.sort_key,e.transliteration,e.pronunciation,l.name,e.definition_text," +
         "e.strong_number,e.gk,e.twot,e.root,e.prev_hw,e.next_hw " +
         "FROM lexicon_entries e JOIN lexicons l ON l.id=e.lexicon_id ";
 
@@ -149,18 +198,20 @@ public sealed partial class SefariaLibraryService
         while (await reader.ReadAsync(token))
             rows.Add(new SefariaDictionaryEntry
             {
-                EntryId = reader.GetInt64(0), Headword = reader.GetString(1), Transliteration = reader.GetString(2),
-                Pronunciation = reader.GetString(3), LexiconName = reader.GetString(4), Definition = reader.GetString(5),
-                ContentText = reader.GetString(5), StrongNumber = reader.GetString(6), GkNumber = reader.GetString(7),
-                TwotNumber = reader.GetString(8), Root = reader.GetString(9), PreviousHeadword = reader.GetString(10),
-                NextHeadword = reader.GetString(11), IsOffline = true
+                EntryId = reader.GetInt64(0), LexiconId = reader.GetInt64(1), Headword = reader.GetString(2),
+                SortKey = reader.GetString(3), Transliteration = reader.GetString(4), Pronunciation = reader.GetString(5),
+                LexiconName = reader.GetString(6), Definition = reader.GetString(7), ContentText = reader.GetString(7),
+                StrongNumber = reader.GetString(8), GkNumber = reader.GetString(9), TwotNumber = reader.GetString(10),
+                Root = reader.GetString(11), PreviousHeadword = reader.GetString(12), NextHeadword = reader.GetString(13),
+                IsOffline = true
             });
         if (string.IsNullOrWhiteSpace(formKey) || rows.Count == 0) return rows;
 
         var references = await LoadOfflineDictionaryReferencesAsync(command.Connection!, rows.Select(row => row.EntryId).ToArray(), formKey, token);
         return rows.Select(row => new SefariaDictionaryEntry
         {
-            EntryId = row.EntryId, Headword = row.Headword, Transliteration = row.Transliteration,
+            EntryId = row.EntryId, LexiconId = row.LexiconId, Headword = row.Headword, SortKey = row.SortKey,
+            Transliteration = row.Transliteration,
             Pronunciation = row.Pronunciation, LexiconName = row.LexiconName, Definition = row.Definition,
             ContentText = row.ContentText, StrongNumber = row.StrongNumber, GkNumber = row.GkNumber,
             TwotNumber = row.TwotNumber, Root = row.Root, PreviousHeadword = row.PreviousHeadword,

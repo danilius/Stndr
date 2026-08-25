@@ -14,6 +14,7 @@ using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Threading;
 
 namespace Stndr;
 
@@ -28,7 +29,12 @@ public partial class MainWindow
 
     private sealed record DictionarySearchScopeOption(long? LexiconId, string Label)
     {
-        public override string ToString() => Label;
+        public override string ToString() => $"Scope: {Label}";
+    }
+
+    private sealed record DictionarySearchModeOption(SefariaDictionarySearchMode Mode, string Label)
+    {
+        public override string ToString() => $"Find: {Label}";
     }
 
     private static readonly Regex DictionaryHtmlTagRegex = new("<.*?>", RegexOptions.Compiled);
@@ -132,70 +138,13 @@ public partial class MainWindow
 
     private Control CreateDictionaryView()
     {
-        _dictionaryLookupBox = new TextBox
-        {
-            PlaceholderText = "Enter a Hebrew or Aramaic word...",
-            MinWidth = 280,
-            VerticalAlignment = VerticalAlignment.Center,
-            AcceptsReturn = false,
-            Text = _dictionaryCurrentWord
-        };
-        // On Windows Avalonia maps the physical Enter key to Key.Return, not Key.Enter.
-        _dictionaryLookupBox.KeyDown += async (_, e) =>
-        {
-            if (e.Key is not (Key.Enter or Key.Return))
-            {
-                return;
-            }
-
-            e.Handled = true;
-            await SubmitDictionarySearchAsync();
-        };
-
-        var searchButton = new Button
-        {
-            Content = "Search",
-            MinWidth = 90
-        };
-        ToolTip.SetTip(searchButton, "Search headwords, word forms, transliterations, identifiers and definitions");
-        searchButton.Click += async (_, _) => await SubmitDictionarySearchAsync();
-
-        _dictionarySearchScopeBox = new ComboBox
-        {
-            MinWidth = 260,
-            ItemsSource = new[] { new DictionarySearchScopeOption(null, "All dictionaries") },
-            SelectedIndex = 0
-        };
-        _dictionarySearchScopeBox.SelectionChanged += (_, _) =>
-        {
-            if (_dictionarySearchScopeBox.SelectedItem is not DictionarySearchScopeOption option) return;
-            _dictionarySelectedLexiconId = option.LexiconId;
-            _dictionaryStatusText = $"Search scope: {option.Label}.";
-            ApplyDictionaryTabHeaderState(syncLookupBox: false);
-        };
-
-        _dictionaryLookupReference = new TextBlock
-        {
-            Text = _dictionaryCurrentReference,
-            Foreground = new SolidColorBrush(Color.Parse("#667085")),
-            TextWrapping = TextWrapping.Wrap,
-            IsVisible = !string.IsNullOrWhiteSpace(_dictionaryCurrentReference)
-        };
-
-        _dictionaryLookupStatus = new TextBlock
-        {
-            Text = string.IsNullOrWhiteSpace(_dictionaryCurrentWord)
-                ? "Type a word, or right-click a word in the reader and choose Dictionary."
-                : _dictionaryStatusText,
-            Foreground = new SolidColorBrush(Color.Parse("#475467")),
-            TextWrapping = TextWrapping.Wrap
-        };
-
-        _dictionaryLookupResultsPanel = new StackPanel
-        {
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            Spacing = 8
-        };
+        ResetDictionaryNavigationHistory();
+        _dictionaryLookupBox = null;
+        _dictionaryLookupReference = null;
+        _dictionaryLookupStatus = null;
+        _dictionaryLookupResultsPanel = null;
+        _dictionarySearchResultsExpander = null;
+        _dictionarySearchModeBox = null;
 
         var header = new StackPanel
         {
@@ -210,111 +159,269 @@ public partial class MainWindow
                 },
                 new TextBlock
                 {
-                    Text = "Search headwords, word forms, transliterations, identifiers and definitions.",
+                    Text = "Read an installed dictionary in entry order. Use Search to find a particular headword or words within entries.",
                     Foreground = new SolidColorBrush(Color.Parse("#475467")),
                     TextWrapping = TextWrapping.Wrap
-                },
-                new StackPanel
-                {
-                    Orientation = Orientation.Horizontal,
-                    Spacing = 8,
-                    Children =
-                    {
-                        _dictionaryLookupBox,
-                        searchButton
-                    }
-                },
-                new StackPanel
-                {
-                    Orientation = Orientation.Horizontal,
-                    Spacing = 8,
-                    Children =
-                    {
-                        new TextBlock { Text = "Dictionary:", VerticalAlignment = VerticalAlignment.Center },
-                        _dictionarySearchScopeBox
-                    }
-                },
-                _dictionaryLookupReference,
-                _dictionaryLookupStatus
+                }
             }
         };
 
-        var content = new StackPanel
-        {
-            Spacing = 18,
-            Margin = new Thickness(18),
-            Children =
-            {
-                header,
-                CreateDictionaryCatalogueControl(),
-                _dictionaryLookupResultsPanel
-            }
-        };
+        var dictionaryReader = CreateDictionaryCatalogueControl();
 
-        return new ScrollViewer
+        var root = new Grid
         {
             Background = Brushes.White,
-            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
-            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
-            Content = content
+            RowDefinitions = new RowDefinitions("Auto,*"),
+            RowSpacing = 14,
+            Margin = new Thickness(18),
+            Children = { header, dictionaryReader }
         };
+        Grid.SetRow(dictionaryReader, 1);
+
+        _ = LoadDictionaryCatalogueAsync();
+        return root;
+    }
+
+    private static Button CreateDictionaryHistoryButton(
+        string glyph,
+        string tooltip,
+        Func<Task> navigate)
+    {
+        var button = new Button
+        {
+            Content = glyph,
+            Width = 38,
+            Height = 34,
+            Padding = new Thickness(0),
+            FontSize = 20,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center
+        };
+        ToolTip.SetTip(button, tooltip);
+        button.Click += async (_, _) => await navigate();
+        return button;
+    }
+
+    private void ResetDictionaryNavigationHistory(long? entryId = null)
+    {
+        _dictionaryNavigationHistory.Clear();
+        _dictionaryNavigationHistoryIndex = -1;
+        if (entryId is > 0)
+        {
+            _dictionaryNavigationHistory.Add(entryId.Value);
+            _dictionaryNavigationHistoryIndex = 0;
+        }
+        UpdateDictionaryHistoryButtons();
+    }
+
+    private void PushDictionaryNavigationHistory(long sourceEntryId, long targetEntryId)
+    {
+        TrimDictionaryForwardHistory();
+        if (sourceEntryId > 0 &&
+            (_dictionaryNavigationHistoryIndex < 0 ||
+             _dictionaryNavigationHistory[_dictionaryNavigationHistoryIndex] != sourceEntryId))
+        {
+            _dictionaryNavigationHistory.Add(sourceEntryId);
+            _dictionaryNavigationHistoryIndex = _dictionaryNavigationHistory.Count - 1;
+        }
+
+        TrimDictionaryForwardHistory();
+        if (targetEntryId > 0 &&
+            (_dictionaryNavigationHistoryIndex < 0 ||
+             _dictionaryNavigationHistory[_dictionaryNavigationHistoryIndex] != targetEntryId))
+        {
+            _dictionaryNavigationHistory.Add(targetEntryId);
+            _dictionaryNavigationHistoryIndex = _dictionaryNavigationHistory.Count - 1;
+        }
+        UpdateDictionaryHistoryButtons();
+    }
+
+    private void TrimDictionaryForwardHistory()
+    {
+        var firstForwardIndex = _dictionaryNavigationHistoryIndex + 1;
+        if (firstForwardIndex >= 0 && firstForwardIndex < _dictionaryNavigationHistory.Count)
+        {
+            _dictionaryNavigationHistory.RemoveRange(
+                firstForwardIndex,
+                _dictionaryNavigationHistory.Count - firstForwardIndex);
+        }
+    }
+
+    private void UpdateDictionaryHistoryButtons()
+    {
+        if (_dictionaryHistoryBackButton is not null)
+        {
+            _dictionaryHistoryBackButton.IsEnabled = _dictionaryNavigationHistoryIndex > 0;
+        }
+        if (_dictionaryHistoryForwardButton is not null)
+        {
+            _dictionaryHistoryForwardButton.IsEnabled =
+                _dictionaryNavigationHistoryIndex >= 0 &&
+                _dictionaryNavigationHistoryIndex < _dictionaryNavigationHistory.Count - 1;
+        }
+    }
+
+    private async Task NavigateBackInDictionaryHistoryAsync()
+    {
+        await NavigateDictionaryHistoryAsync(_dictionaryNavigationHistoryIndex - 1);
+    }
+
+    private async Task NavigateForwardInDictionaryHistoryAsync()
+    {
+        await NavigateDictionaryHistoryAsync(_dictionaryNavigationHistoryIndex + 1);
+    }
+
+    private async Task NavigateDictionaryHistoryAsync(int targetIndex)
+    {
+        if (targetIndex < 0 || targetIndex >= _dictionaryNavigationHistory.Count)
+        {
+            return;
+        }
+
+        var entry = await _sefariaLibrary.GetOfflineDictionaryEntryAsync(
+            _dictionaryNavigationHistory[targetIndex]);
+        if (entry is null)
+        {
+            return;
+        }
+
+        _dictionaryNavigationHistoryIndex = targetIndex;
+        UpdateDictionaryHistoryButtons();
+        await OpenDictionaryEntryInBookAsync(entry, preserveNavigationHistory: true);
+    }
+
+    private bool TryHandleDictionaryHistoryShortcut(KeyEventArgs e)
+    {
+        if (_centerTabs?.SelectedItem is not TabItem selectedTab ||
+            !string.Equals(selectedTab.Tag as string, DictionaryTabTitle, StringComparison.Ordinal) ||
+            !e.KeyModifiers.HasFlag(KeyModifiers.Alt) ||
+            e.KeyModifiers.HasFlag(KeyModifiers.Control) ||
+            e.KeyModifiers.HasFlag(KeyModifiers.Shift))
+        {
+            return false;
+        }
+
+        if (e.Key == Key.Left && _dictionaryNavigationHistoryIndex > 0)
+        {
+            _ = NavigateBackInDictionaryHistoryAsync();
+            return true;
+        }
+        if (e.Key == Key.Right &&
+            _dictionaryNavigationHistoryIndex >= 0 &&
+            _dictionaryNavigationHistoryIndex < _dictionaryNavigationHistory.Count - 1)
+        {
+            _ = NavigateForwardInDictionaryHistoryAsync();
+            return true;
+        }
+
+        return false;
     }
 
     private Control CreateDictionaryCatalogueControl()
     {
-        _dictionaryCatalogueStatus = new TextBlock
+        _dictionaryBrowseTitle = new TextBlock
+        {
+            Text = "Dictionary reader",
+            FontSize = 20,
+            FontWeight = FontWeight.SemiBold,
+            TextWrapping = TextWrapping.Wrap
+        };
+        _dictionaryBrowseStatus = new TextBlock
         {
             Text = "Loading installed dictionaries...",
             Foreground = new SolidColorBrush(Color.Parse("#667085")),
             TextWrapping = TextWrapping.Wrap
         };
-        _dictionaryCataloguePanel = new StackPanel { Spacing = 8, Children = { _dictionaryCatalogueStatus } };
-        _dictionaryCatalogueExpander = new Expander
+        _dictionaryBrowseInitialsPanel = null;
+        _dictionaryBrowseEntriesPanel = new StackPanel
         {
-            Header = "Navigation — browse installed dictionaries",
-            IsExpanded = true,
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            Content = new Border
+            Spacing = 10,
+            Margin = new Thickness(16)
+        };
+        _dictionaryBrowseScrollViewer = new ScrollViewer
+        {
+            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+            Content = _dictionaryBrowseEntriesPanel
+        };
+        _dictionaryBrowseScrollViewer.ScrollChanged += async (_, _) =>
+            await LoadMoreDictionaryBrowseEntriesIfNeededAsync();
+
+        _dictionaryHistoryBackButton = CreateDictionaryHistoryButton(
+            "←",
+            "Back (Alt+Left)",
+            NavigateBackInDictionaryHistoryAsync);
+        _dictionaryHistoryForwardButton = CreateDictionaryHistoryButton(
+            "→",
+            "Forward (Alt+Right)",
+            NavigateForwardInDictionaryHistoryAsync);
+        var historyButtons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 6,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Top,
+            Children =
             {
-                BorderBrush = new SolidColorBrush(Color.Parse("#EAECF0")),
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(6),
-                Padding = new Thickness(12),
-                Child = _dictionaryCataloguePanel
+                _dictionaryHistoryBackButton,
+                _dictionaryHistoryForwardButton
             }
         };
-        _ = LoadDictionaryCatalogueAsync();
-        return _dictionaryCatalogueExpander;
+        var heading = new StackPanel
+        {
+            Spacing = 6,
+            Children =
+            {
+                _dictionaryBrowseTitle,
+                _dictionaryBrowseStatus
+            }
+        };
+        var header = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            ColumnSpacing = 12,
+            Margin = new Thickness(16, 12),
+            Children = { heading, historyButtons }
+        };
+        Grid.SetColumn(historyButtons, 1);
+        UpdateDictionaryHistoryButtons();
+
+        var grid = new Grid
+        {
+            RowDefinitions = new RowDefinitions("Auto,*"),
+            Children = { header, _dictionaryBrowseScrollViewer }
+        };
+        Grid.SetRow(_dictionaryBrowseScrollViewer, 1);
+        return new Border
+        {
+            BorderBrush = new SolidColorBrush(Color.Parse("#D0D5DD")),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Child = grid
+        };
     }
 
     private async Task LoadDictionaryCatalogueAsync()
     {
-        // Dictionary tab may not be open yet (created lazily). Opening it later loads itself.
-        if (_dictionaryCataloguePanel is null)
+        var loadGeneration = ++_dictionaryCatalogueLoadGeneration;
+        if (_dictionaryBrowseEntriesPanel is null)
         {
             return;
         }
 
         try
         {
-            if (_dictionaryCatalogueStatus is not null)
-            {
-                _dictionaryCataloguePanel.Children.Clear();
-                _dictionaryCatalogueStatus.Text = "Loading installed dictionaries...";
-                _dictionaryCataloguePanel.Children.Add(_dictionaryCatalogueStatus);
-            }
-
             var lexicons = await _sefariaLibrary.GetOfflineLexiconsAsync();
-            if (_dictionaryCataloguePanel is null)
+            if (_dictionaryBrowseEntriesPanel is null || loadGeneration != _dictionaryCatalogueLoadGeneration)
             {
                 return;
             }
 
-            _dictionaryCataloguePanel.Children.Clear();
-            _dictionaryLexiconExpanders.Clear();
+            _dictionaryLexicons = lexicons;
             if (lexicons.Count == 0)
             {
-                _dictionaryCataloguePanel.Children.Add(new TextBlock
+                _dictionaryBrowseEntriesPanel.Children.Clear();
+                _dictionaryBrowseEntriesPanel.Children.Add(new TextBlock
                 {
                     Text = _sefariaLibrary.HasOfflineLibrary
                         ? "No dictionaries were found in the offline library."
@@ -325,39 +432,29 @@ public partial class MainWindow
                 return;
             }
 
-            _dictionaryCataloguePanel.Children.Add(new TextBlock
+            if (!string.IsNullOrWhiteSpace(_dictionaryRequestedLexiconName))
             {
-                Text = $"{lexicons.Count} dictionaries · {lexicons.Sum(item => item.EntryCount):N0} entries. Expand a dictionary, then drill down by initial letters.",
-                Foreground = new SolidColorBrush(Color.Parse("#475467")),
-                TextWrapping = TextWrapping.Wrap
-            });
-            if (_dictionarySearchScopeBox is not null)
-            {
-                var options = new List<DictionarySearchScopeOption> { new(null, "All dictionaries") };
-                options.AddRange(lexicons.Select(item => new DictionarySearchScopeOption(item.Id, item.Name)));
-                _dictionarySearchScopeBox.ItemsSource = options;
-                _dictionarySearchScopeBox.SelectedItem =
-                    options.FirstOrDefault(option => option.LexiconId == _dictionarySelectedLexiconId) ?? options[0];
+                ApplyRequestedDictionarySelection();
             }
-
-            foreach (var lexicon in lexicons)
+            else if (_dictionarySelectedLexiconId is long selectedId &&
+                     lexicons.FirstOrDefault(item => item.Id == selectedId) is { } selectedLexicon)
             {
-                var expander = CreateLexiconNavigationExpander(lexicon);
-                _dictionaryLexiconExpanders[lexicon.Name] = expander;
-                _dictionaryCataloguePanel.Children.Add(expander);
+                await LoadDictionaryFromStartAsync(selectedLexicon);
             }
-
-            ApplyRequestedDictionarySelection();
+            else
+            {
+                ShowDictionaryChooser();
+            }
         }
         catch (Exception ex)
         {
-            if (_dictionaryCataloguePanel is null)
+            if (_dictionaryBrowseEntriesPanel is null)
             {
                 return;
             }
 
-            _dictionaryCataloguePanel.Children.Clear();
-            _dictionaryCataloguePanel.Children.Add(new TextBlock
+            _dictionaryBrowseEntriesPanel.Children.Clear();
+            _dictionaryBrowseEntriesPanel.Children.Add(new TextBlock
             {
                 Text = $"Could not load dictionaries: {ex.Message}",
                 TextWrapping = TextWrapping.Wrap
@@ -365,73 +462,377 @@ public partial class MainWindow
         }
     }
 
-    private Expander CreateLexiconNavigationExpander(SefariaLexiconInfo lexicon)
+    private void ShowDictionaryChooser()
     {
-        var panel = new StackPanel { Spacing = 8, Margin = new Thickness(8) };
-        var loaded = false;
-        var language = string.Join(" → ", new[] { lexicon.Language, lexicon.ToLanguage }.Where(value => !string.IsNullOrWhiteSpace(value)));
-        var expander = new Expander
+        ResetDictionaryNavigationHistory();
+        CancelDictionaryBrowseInFlight();
+        _dictionaryBrowseLexiconId = null;
+        _dictionaryBrowseHighlightedEntryId = null;
+        _dictionaryBrowseEntries.Clear();
+        if (_dictionaryBrowseTitle is not null)
         {
-            Header = $"{lexicon.Name}  ({lexicon.EntryCount:N0} entries{(language.Length > 0 ? $", {language}" : "")})",
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            Content = panel
-        };
-        expander.PropertyChanged += (_, e) =>
+            _dictionaryBrowseTitle.Text = "Choose a dictionary to browse";
+        }
+        if (_dictionaryBrowseStatus is not null)
         {
-            if (e.Property != Expander.IsExpandedProperty || !expander.IsExpanded || loaded) return;
-            loaded = true;
-            _ = LoadDictionaryPrefixLevelAsync(lexicon, "", panel);
-        };
-        return expander;
+            _dictionaryBrowseStatus.Text =
+                $"{_dictionaryLexicons.Count:N0} dictionaries · {_dictionaryLexicons.Sum(item => item.EntryCount):N0} entries installed.";
+        }
+        if (_dictionaryBrowseInitialsPanel is not null)
+        {
+            _dictionaryBrowseInitialsPanel.IsVisible = false;
+            _dictionaryBrowseInitialsPanel.Children.Clear();
+        }
+        if (_dictionaryBrowseEntriesPanel is null)
+        {
+            return;
+        }
+
+        _dictionaryBrowseEntriesPanel.Children.Clear();
+        foreach (var lexicon in _dictionaryLexicons)
+        {
+            var language = string.Join(" → ", new[] { lexicon.Language, lexicon.ToLanguage }
+                .Where(value => !string.IsNullOrWhiteSpace(value)));
+            var button = new Button
+            {
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Left,
+                Padding = new Thickness(12, 9),
+                Content = new StackPanel
+                {
+                    Spacing = 3,
+                    Children =
+                    {
+                        new TextBlock { Text = lexicon.Name, FontWeight = FontWeight.SemiBold },
+                        new TextBlock
+                        {
+                            Text = $"{lexicon.EntryCount:N0} entries{(language.Length > 0 ? $" · {language}" : "")}",
+                            Foreground = new SolidColorBrush(Color.Parse("#667085"))
+                        }
+                    }
+                }
+            };
+            button.Click += async (_, _) => await LoadDictionaryFromStartAsync(lexicon);
+            _dictionaryBrowseEntriesPanel.Children.Add(button);
+        }
     }
 
-    private async Task LoadDictionaryPrefixLevelAsync(SefariaLexiconInfo lexicon, string prefix, StackPanel panel)
+    private async Task LoadDictionaryFromStartAsync(SefariaLexiconInfo lexicon, string prefix = "")
     {
-        panel.Children.Clear();
-        panel.Children.Add(new TextBlock { Text = "Loading headwords...", Foreground = new SolidColorBrush(Color.Parse("#667085")) });
+        ResetDictionaryNavigationHistory();
+        _dictionaryCatalogueLoadGeneration++;
+        CancelDictionaryBrowseInFlight();
+        var cts = _dictionaryBrowseCts;
+        _isDictionaryBrowseLoading = true;
+        _dictionaryBrowseLexiconId = lexicon.Id;
+        _dictionarySelectedLexiconId = lexicon.Id;
+        _dictionaryDrillDownPrefix = prefix;
+        _dictionaryBrowseHighlightedEntryId = null;
+        ApplyDictionaryBrowseHeading(lexicon, "Loading entries...");
         try
         {
-            var prefixes = await _sefariaLibrary.GetOfflineDictionaryPrefixesAsync(lexicon.Id, prefix, prefix.Length + 1);
-            var entries = await _sefariaLibrary.BrowseOfflineDictionaryAsync(lexicon.Id, prefix, 0, 60);
-            panel.Children.Clear();
-            var heading = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-            if (prefix.Length > 0)
+            var entries = await _sefariaLibrary.BrowseOfflineDictionaryAsync(
+                lexicon.Id, prefix, 0, 30, cts.Token);
+            if (cts.IsCancellationRequested)
             {
-                var back = new Button { Content = "← Back" };
-                back.Click += (_, _) => _ = LoadDictionaryPrefixLevelAsync(lexicon, prefix[..^1], panel);
-                heading.Children.Add(back);
-            }
-            heading.Children.Add(new TextBlock
-            {
-                Text = prefix.Length == 0 ? "Initial letter" : $"Prefix: {prefix}",
-                FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center
-            });
-            panel.Children.Add(heading);
-
-            if (prefixes.Count > 1 || (prefixes.Count == 1 && prefixes[0].Prefix.Length > prefix.Length))
-            {
-                var buttons = new WrapPanel { Orientation = Orientation.Horizontal };
-                foreach (var item in prefixes)
-                {
-                    var button = new Button { Content = $"{item.Prefix}  {item.EntryCount:N0}", Margin = new Thickness(0, 0, 6, 6) };
-                    button.Click += (_, _) => _ = LoadDictionaryPrefixLevelAsync(lexicon, item.Prefix, panel);
-                    buttons.Children.Add(button);
-                }
-                panel.Children.Add(buttons);
+                return;
             }
 
-            panel.Children.Add(new TextBlock
-            {
-                Text = entries.Count == 60 ? "First 60 matching headwords (refine the prefix to narrow the list)" : $"{entries.Count:N0} matching headwords",
-                Foreground = new SolidColorBrush(Color.Parse("#667085"))
-            });
-            foreach (var entry in entries) panel.Children.Add(CreateDictionaryResultExpander(entry, false));
+            SetDictionaryBrowseEntries(entries, null);
+            var location = prefix.Length == 0 ? "the beginning" : $"{prefix}";
+            ApplyDictionaryBrowseHeading(
+                lexicon,
+                entries.Count == 0
+                    ? $"No entries begin with {prefix}."
+                    : $"Browsing from {location}. Scroll to load nearby entries.");
+            UpdateReaderTools();
+        }
+        catch (OperationCanceledException)
+        {
+            return;
         }
         catch (Exception ex)
         {
-            panel.Children.Clear();
-            panel.Children.Add(new TextBlock { Text = $"Could not browse this dictionary: {ex.Message}", TextWrapping = TextWrapping.Wrap });
+            ApplyDictionaryBrowseHeading(lexicon, $"Could not browse this dictionary: {ex.Message}");
         }
+        finally
+        {
+            if (ReferenceEquals(_dictionaryBrowseCts, cts))
+            {
+                _isDictionaryBrowseLoading = false;
+            }
+        }
+    }
+
+    private async Task OpenDictionaryEntryInBookAsync(
+        SefariaDictionaryEntry entry,
+        bool preserveNavigationHistory = false)
+    {
+        if (!entry.IsOffline || entry.LexiconId <= 0)
+        {
+            return;
+        }
+
+        if (!preserveNavigationHistory)
+        {
+            ResetDictionaryNavigationHistory(entry.EntryId);
+        }
+
+        _dictionaryCatalogueLoadGeneration++;
+        var lexicon = _dictionaryLexicons.FirstOrDefault(item => item.Id == entry.LexiconId)
+            ?? new SefariaLexiconInfo(entry.LexiconId, entry.LexiconName, "", "", 0);
+
+        CancelDictionaryBrowseInFlight();
+        var cts = _dictionaryBrowseCts;
+        _isDictionaryBrowseLoading = true;
+        _dictionaryBrowseLexiconId = entry.LexiconId;
+        _dictionarySelectedLexiconId = entry.LexiconId;
+        _dictionaryDrillDownPrefix = string.Empty;
+        _dictionaryBrowseHighlightedEntryId = entry.EntryId;
+        ApplyDictionaryBrowseHeading(lexicon, $"Opening {entry.Headword} in context...");
+        try
+        {
+            var entries = await _sefariaLibrary.GetOfflineDictionaryContextAsync(entry.EntryId, 20, 20, cts.Token);
+            if (cts.IsCancellationRequested)
+            {
+                return;
+            }
+
+            SetDictionaryBrowseEntries(entries, entry.EntryId);
+            ApplyDictionaryBrowseHeading(lexicon, $"{entry.Headword} · Scroll up or down for nearby entries.");
+            UpdateReaderTools();
+            ScrollDictionaryBrowseEntryIntoView(entry.EntryId);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            ApplyDictionaryBrowseHeading(lexicon, $"Could not open this entry: {ex.Message}");
+        }
+        finally
+        {
+            if (ReferenceEquals(_dictionaryBrowseCts, cts))
+            {
+                _isDictionaryBrowseLoading = false;
+            }
+        }
+    }
+
+    private void ApplyDictionaryBrowseHeading(SefariaLexiconInfo lexicon, string status)
+    {
+        if (_dictionaryBrowseTitle is not null)
+        {
+            _dictionaryBrowseTitle.Text = lexicon.EntryCount > 0
+                ? $"{lexicon.Name} · {lexicon.EntryCount:N0} entries"
+                : lexicon.Name;
+        }
+        if (_dictionaryBrowseStatus is not null)
+        {
+            _dictionaryBrowseStatus.Text = status;
+        }
+    }
+
+    private async Task LoadDictionaryAtPrefixAsync(SefariaLexiconInfo lexicon, string prefix)
+    {
+        ResetDictionaryNavigationHistory();
+        _dictionaryCatalogueLoadGeneration++;
+        CancelDictionaryBrowseInFlight();
+        var cts = _dictionaryBrowseCts;
+        _isDictionaryBrowseLoading = true;
+        _dictionaryBrowseLexiconId = lexicon.Id;
+        _dictionarySelectedLexiconId = lexicon.Id;
+        _dictionaryDrillDownPrefix = prefix;
+        ApplyDictionaryBrowseHeading(lexicon, $"Opening {prefix}...");
+        try
+        {
+            var first = (await _sefariaLibrary.BrowseOfflineDictionaryAsync(
+                lexicon.Id, prefix, 0, 1, cts.Token)).FirstOrDefault();
+            if (cts.IsCancellationRequested)
+            {
+                return;
+            }
+            if (first is null)
+            {
+                ApplyDictionaryBrowseHeading(lexicon, $"No entries begin with {prefix}.");
+                return;
+            }
+
+            var entries = await _sefariaLibrary.GetOfflineDictionaryContextAsync(
+                first.EntryId, 20, 20, cts.Token);
+            if (cts.IsCancellationRequested)
+            {
+                return;
+            }
+
+            SetDictionaryBrowseEntries(entries, first.EntryId);
+            ApplyDictionaryBrowseHeading(lexicon, $"Browsing from {prefix}. Scroll up or down for nearby entries.");
+            UpdateReaderTools();
+            ScrollDictionaryBrowseEntryIntoView(first.EntryId);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            ApplyDictionaryBrowseHeading(lexicon, $"Could not browse this dictionary: {ex.Message}");
+        }
+        finally
+        {
+            if (ReferenceEquals(_dictionaryBrowseCts, cts))
+            {
+                _isDictionaryBrowseLoading = false;
+            }
+        }
+    }
+
+    private void ScrollDictionaryBrowseEntryIntoView(long entryId)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            var target = _dictionaryBrowseEntriesPanel?.Children
+                .OfType<Control>()
+                .FirstOrDefault(control => control.Tag is long id && id == entryId);
+            if (target is null || _dictionaryBrowseEntriesPanel is null ||
+                _dictionaryBrowseScrollViewer is null)
+            {
+                return;
+            }
+
+            var location = target.TranslatePoint(new Point(0, 0), _dictionaryBrowseEntriesPanel);
+            if (location is { } point)
+            {
+                _dictionaryBrowseScrollViewer.Offset = new Vector(
+                    _dictionaryBrowseScrollViewer.Offset.X,
+                    Math.Max(0, point.Y - (_dictionaryBrowseScrollViewer.Viewport.Height * 0.25)));
+            }
+        }, DispatcherPriority.Background);
+    }
+
+    private void SetDictionaryBrowseEntries(IReadOnlyList<SefariaDictionaryEntry> entries, long? highlightedEntryId)
+    {
+        _dictionaryBrowseEntries.Clear();
+        _dictionaryBrowseEntries.AddRange(entries);
+        _dictionaryBrowseHighlightedEntryId = highlightedEntryId;
+        if (_dictionaryBrowseEntriesPanel is null)
+        {
+            return;
+        }
+
+        _dictionaryBrowseEntriesPanel.Children.Clear();
+        foreach (var entry in entries)
+        {
+            _dictionaryBrowseEntriesPanel.Children.Add(CreateDictionaryBookEntry(entry, entry.EntryId == highlightedEntryId));
+        }
+        if (_dictionaryBrowseScrollViewer is not null && highlightedEntryId is null)
+        {
+            _dictionaryBrowseScrollViewer.Offset = new Vector(0, 0);
+            _dictionaryBrowseLastScrollOffset = 0;
+        }
+    }
+
+    private Control CreateDictionaryBookEntry(SefariaDictionaryEntry entry, bool highlighted)
+    {
+        return new Border
+        {
+            Tag = entry.EntryId,
+            Background = highlighted ? new SolidColorBrush(Color.Parse("#FFF8E7")) : Brushes.Transparent,
+            BorderBrush = highlighted ? new SolidColorBrush(Color.Parse("#F2C94C")) : Brushes.Transparent,
+            BorderThickness = highlighted ? new Thickness(2) : new Thickness(0),
+            CornerRadius = new CornerRadius(6),
+            Padding = highlighted ? new Thickness(6) : new Thickness(0),
+            Child = CreateDictionaryResultExpander(entry, expanded: true, showOpenInDictionary: false)
+        };
+    }
+
+    private async Task LoadMoreDictionaryBrowseEntriesIfNeededAsync()
+    {
+        if (_dictionaryBrowseScrollViewer is null)
+        {
+            return;
+        }
+
+        var viewer = _dictionaryBrowseScrollViewer;
+        var currentOffset = viewer.Offset.Y;
+        var movingUp = currentOffset < _dictionaryBrowseLastScrollOffset - 1;
+        var movingDown = currentOffset > _dictionaryBrowseLastScrollOffset + 1;
+        _dictionaryBrowseLastScrollOffset = currentOffset;
+        if (_isDictionaryBrowseLoading || _dictionaryBrowseEntries.Count == 0 ||
+            _dictionaryBrowseEntriesPanel is null || (!movingUp && !movingDown))
+        {
+            return;
+        }
+
+        var nearTop = viewer.Offset.Y < 120;
+        var nearBottom = viewer.Extent.Height - viewer.Offset.Y - viewer.Viewport.Height < 240;
+        var before = nearTop && movingUp;
+        var after = nearBottom && movingDown;
+        if (!before && !after)
+        {
+            return;
+        }
+
+        var anchor = before ? _dictionaryBrowseEntries[0] : _dictionaryBrowseEntries[^1];
+        _isDictionaryBrowseLoading = true;
+        var cts = _dictionaryBrowseCts;
+        var oldExtent = viewer.Extent.Height;
+        var oldOffset = viewer.Offset.Y;
+        try
+        {
+            var adjacent = await _sefariaLibrary.GetOfflineAdjacentDictionaryEntriesAsync(
+                anchor.EntryId, before, 20, cts.Token);
+            if (cts.IsCancellationRequested || adjacent.Count == 0)
+            {
+                return;
+            }
+
+            var existingIds = _dictionaryBrowseEntries.Select(item => item.EntryId).ToHashSet();
+            var additions = adjacent.Where(item => existingIds.Add(item.EntryId)).ToList();
+            if (before)
+            {
+                _dictionaryBrowseEntries.InsertRange(0, additions);
+                for (var index = additions.Count - 1; index >= 0; index--)
+                {
+                    var item = additions[index];
+                    _dictionaryBrowseEntriesPanel.Children.Insert(
+                        0, CreateDictionaryBookEntry(item, item.EntryId == _dictionaryBrowseHighlightedEntryId));
+                }
+                Dispatcher.UIThread.Post(() =>
+                {
+                    var addedHeight = Math.Max(0, viewer.Extent.Height - oldExtent);
+                    viewer.Offset = new Vector(viewer.Offset.X, oldOffset + addedHeight);
+                }, DispatcherPriority.Background);
+            }
+            else
+            {
+                _dictionaryBrowseEntries.AddRange(additions);
+                foreach (var item in additions)
+                {
+                    _dictionaryBrowseEntriesPanel.Children.Add(
+                        CreateDictionaryBookEntry(item, item.EntryId == _dictionaryBrowseHighlightedEntryId));
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        finally
+        {
+            if (ReferenceEquals(_dictionaryBrowseCts, cts))
+            {
+                _isDictionaryBrowseLoading = false;
+            }
+        }
+    }
+
+    private void CancelDictionaryBrowseInFlight()
+    {
+        _dictionaryBrowseCts.Cancel();
+        _dictionaryBrowseCts.Dispose();
+        _dictionaryBrowseCts = new CancellationTokenSource();
     }
 
     private Task SubmitDictionarySearchAsync() =>
@@ -443,57 +844,55 @@ public partial class MainWindow
         var value = (_dictionaryLookupBox?.Text ?? query)?.Trim() ?? "";
         if (value.Length == 0)
         {
-            _dictionaryStatusText = "Enter a headword, word form, identifier, transliteration, or definition term.";
+            _dictionaryTabStatusText = "Enter a headword, word form, identifier, transliteration, or definition term.";
             ApplyDictionaryTabHeaderState(syncLookupBox: false);
             return;
         }
 
-        // Cancel any in-flight reader/right-click lookup so it cannot overwrite this search.
-        CancelDictionaryLookupInFlight();
-        CollapseDictionaryCatalogue();
+        CancelDictionaryTabLookupInFlight();
 
-        _dictionaryCurrentWord = value;
-        _dictionaryCurrentReference = string.Empty;
-        _dictionaryPrimaryGloss = string.Empty;
-        _dictionaryStatusText = $"Searching installed dictionaries for {value}...";
+        _dictionaryTabCurrentWord = value;
+        _dictionaryTabCurrentReference = string.Empty;
+        _dictionaryTabStatusText = $"Searching installed dictionaries for {value}...";
         ClearDictionaryTabResults();
         ApplyDictionaryTabHeaderState();
-        RefreshDictionarySurface();
         try
         {
-            var entries = await _sefariaLibrary.SearchOfflineDictionaryAsync(value, _dictionarySelectedLexiconId, 100);
-            // Ignore stale completions if the user started another search/lookup.
-            if (!string.Equals(_dictionaryCurrentWord, value, StringComparison.Ordinal))
+            var mode = (_dictionarySearchModeBox?.SelectedItem as DictionarySearchModeOption)?.Mode
+                ?? SefariaDictionarySearchMode.Everything;
+            var entries = await _sefariaLibrary.SearchOfflineDictionaryAsync(
+                value,
+                _dictionarySelectedLexiconId,
+                100,
+                mode: mode);
+            if (!string.Equals(_dictionaryTabCurrentWord, value, StringComparison.Ordinal))
             {
                 return;
             }
 
-            _dictionaryStatusText = entries.Count == 0
+            _dictionaryTabStatusText = entries.Count == 0
                 ? "No installed dictionary entries matched this search."
-                : $"{entries.Count:N0} matching entr{(entries.Count == 1 ? "y" : "ies")} in {(_dictionarySelectedLexiconId is null ? "all dictionaries" : "the selected dictionary")}.";
+                : $"{entries.Count:N0} matching entr{(entries.Count == 1 ? "y" : "ies")}. Open a result to browse nearby entries.";
             ApplyDictionaryTabHeaderState();
             RenderDictionaryTabResults(entries);
-            RefreshDictionarySurface();
         }
         catch (Exception ex)
         {
-            if (!string.Equals(_dictionaryCurrentWord, value, StringComparison.Ordinal))
+            if (!string.Equals(_dictionaryTabCurrentWord, value, StringComparison.Ordinal))
             {
                 return;
             }
 
-            _dictionaryStatusText = $"Dictionary search failed: {ex.Message}";
+            _dictionaryTabStatusText = $"Dictionary search failed: {ex.Message}";
             ApplyDictionaryTabHeaderState();
-            RefreshDictionarySurface();
         }
     }
 
-    private void CollapseDictionaryCatalogue()
+    private void CancelDictionaryTabLookupInFlight()
     {
-        if (_dictionaryCatalogueExpander is not null)
-        {
-            _dictionaryCatalogueExpander.IsExpanded = false;
-        }
+        _dictionaryTabLookupCts.Cancel();
+        _dictionaryTabLookupCts.Dispose();
+        _dictionaryTabLookupCts = new CancellationTokenSource();
     }
 
     private void CancelDictionaryLookupInFlight()
@@ -527,15 +926,11 @@ public partial class MainWindow
     private void ApplyRequestedDictionarySelection()
     {
         if (string.IsNullOrWhiteSpace(_dictionaryRequestedLexiconName)) return;
-        if (_dictionarySearchScopeBox?.ItemsSource is IEnumerable<DictionarySearchScopeOption> options &&
-            options.FirstOrDefault(option => string.Equals(option.Label, _dictionaryRequestedLexiconName, StringComparison.Ordinal)) is { } selected)
+        if (_dictionaryLexicons.FirstOrDefault(option =>
+                string.Equals(option.Name, _dictionaryRequestedLexiconName, StringComparison.Ordinal)) is { } selected)
         {
-            _dictionarySearchScopeBox.SelectedItem = selected;
-        }
-        if (_dictionaryLexiconExpanders.TryGetValue(_dictionaryRequestedLexiconName, out var expander))
-        {
-            expander.IsExpanded = true;
             _dictionaryRequestedLexiconName = string.Empty;
+            _ = LoadDictionaryFromStartAsync(selected);
         }
     }
 
@@ -575,6 +970,18 @@ public partial class MainWindow
             e.Handled = true;
         };
 
+        var openButton = new Button
+        {
+            Content = "Open in tab",
+            Padding = new Thickness(8, 2),
+            MinHeight = 26
+        };
+        openButton.Click += async (_, e) =>
+        {
+            await OpenCurrentOnPageDictionaryInTabAsync();
+            e.Handled = true;
+        };
+
         var closeButton = new Button
         {
             Content = "✕",
@@ -592,7 +999,7 @@ public partial class MainWindow
 
         var header = new Grid
         {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"),
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto"),
             ColumnSpacing = 6,
             Children =
             {
@@ -602,12 +1009,14 @@ public partial class MainWindow
                     FontWeight = FontWeight.SemiBold,
                     VerticalAlignment = VerticalAlignment.Center
                 },
+                openButton,
                 popoutButton,
                 closeButton
             }
         };
-        Grid.SetColumn(popoutButton, 1);
-        Grid.SetColumn(closeButton, 2);
+        Grid.SetColumn(openButton, 1);
+        Grid.SetColumn(popoutButton, 2);
+        Grid.SetColumn(closeButton, 3);
 
         var content = new Border
         {
@@ -686,6 +1095,35 @@ public partial class MainWindow
         _dictionaryToolsStatus = null;
     }
 
+    private async Task OpenCurrentOnPageDictionaryInTabAsync()
+    {
+        OpenOrSelectTab(DictionaryTabTitle);
+        if (_dictionaryLexicons.Count == 0)
+        {
+            await LoadDictionaryCatalogueAsync();
+        }
+
+        var entry = _dictionaryDisplayedEntries.FirstOrDefault(item => item.IsOffline && item.LexiconId > 0);
+        if (entry is not null)
+        {
+            await OpenDictionaryEntryInBookAsync(entry);
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(_dictionaryCurrentWord))
+        {
+            var entries = await LookupDictionaryEntriesRoutedAsync(
+                NormalizeDictionaryLookupWord(_dictionaryCurrentWord),
+                _dictionaryCurrentReference,
+                CancellationToken.None);
+            var offlineEntry = entries.FirstOrDefault(item => item.IsOffline && item.LexiconId > 0);
+            if (offlineEntry is not null)
+            {
+                await OpenDictionaryEntryInBookAsync(offlineEntry);
+            }
+        }
+    }
+
     private void ShowDictionaryEntry(string? word, string? reference, PixelPoint? screenAnchor = null)
     {
         _dictionaryCurrentWord = NormalizeDictionaryWord(word, reference);
@@ -705,65 +1143,47 @@ public partial class MainWindow
 
         var lookupWord = NormalizeDictionaryLookupWord(word);
         _dictionaryPrimaryGloss = string.Empty;
+        _dictionaryDisplayedEntries = Array.Empty<SefariaDictionaryEntry>();
         _dictionaryStatusText = string.IsNullOrWhiteSpace(lookupWord)
             ? "Select a single word to look it up."
             : "Looking up dictionary entry...";
 
         RefreshDictionarySurface();
-        // Right-click looks up into the floating popup window (anchored at the click) rather than
-        // yanking the user to the full Dictionary tab. When docked, ShowDictionaryPopupWindow no-ops
-        // and the docked reader-tools surface updates via RefreshDictionarySurface above. The tab's
-        // result panel is still populated by RunDictionaryTabLookupAsync, so opening the Dictionary
-        // tab manually shows the full ranked list.
+        // Reader lookups update only the floating/docked on-page dictionary surface.
         ShowDictionaryPopupWindow(repositionToAnchor: true);
-        ApplyDictionaryTabHeaderState();
-        _ = RunDictionaryTabLookupAsync(lookupWord, _dictionaryCurrentReference);
+        _ = RunOnPageDictionaryLookupAsync(lookupWord, _dictionaryCurrentReference);
         SaveLayoutState();
     }
 
     private void ApplyDictionaryTabHeaderState(bool syncLookupBox = true)
     {
-        // Only push the canonical word into the textbox when the caller intentionally
-        // updated _dictionaryCurrentWord. Status-only updates pass syncLookupBox: false
-        // so typing a new term is not overwritten by a previous right-click lookup.
         if (syncLookupBox && _dictionaryLookupBox is not null)
         {
-            _dictionaryLookupBox.Text = _dictionaryCurrentWord;
+            _dictionaryLookupBox.Text = _dictionaryTabCurrentWord;
         }
 
         if (_dictionaryLookupReference is not null)
         {
-            _dictionaryLookupReference.Text = _dictionaryCurrentReference;
-            _dictionaryLookupReference.IsVisible = !string.IsNullOrWhiteSpace(_dictionaryCurrentReference);
+            _dictionaryLookupReference.Text = _dictionaryTabCurrentReference;
+            _dictionaryLookupReference.IsVisible = !string.IsNullOrWhiteSpace(_dictionaryTabCurrentReference);
         }
 
         if (_dictionaryLookupStatus is not null)
         {
-            _dictionaryLookupStatus.Text = _dictionaryStatusText;
+            _dictionaryLookupStatus.Text = _dictionaryTabStatusText;
         }
     }
 
-    private async Task RunDictionaryTabLookupAsync(string? word, string? reference)
+    private async Task RunOnPageDictionaryLookupAsync(string? word, string? reference)
     {
         var lookupWord = NormalizeDictionaryLookupWord(word);
-        var displayQuery = string.IsNullOrWhiteSpace(word) ? lookupWord : word.Trim();
-        _dictionaryCurrentWord = NormalizeDictionaryWord(displayQuery, reference);
-        _dictionaryCurrentReference = reference?.Trim() ?? string.Empty;
-        _dictionaryPrimaryGloss = string.Empty;
-
         if (string.IsNullOrWhiteSpace(lookupWord))
         {
-            _dictionaryStatusText = "Type or select a single word to look it up.";
-            ClearDictionaryTabResults();
-            ApplyDictionaryTabHeaderState();
+            _dictionaryStatusText = "Select a single word to look it up.";
+            _dictionaryDisplayedEntries = Array.Empty<SefariaDictionaryEntry>();
             RefreshDictionarySurface();
             return;
         }
-
-        _dictionaryStatusText = $"Looking up {lookupWord}...";
-        ClearDictionaryTabResults();
-        ApplyDictionaryTabHeaderState();
-        RefreshDictionarySurface();
 
         CancelDictionaryLookupInFlight();
         var cts = _dictionaryLookupCts;
@@ -771,26 +1191,25 @@ public partial class MainWindow
 
         try
         {
-            var entries = await LookupDictionaryEntriesRoutedAsync(lookupWord, _dictionaryCurrentReference, cts.Token);
+            var entries = await LookupDictionaryEntriesRoutedAsync(lookupWord, reference ?? string.Empty, cts.Token);
             if (cts.IsCancellationRequested ||
                 !string.Equals(_dictionaryCurrentWord, lookupGeneration, StringComparison.Ordinal))
             {
                 return;
             }
 
+            _dictionaryDisplayedEntries = entries;
             if (entries.Count == 0)
             {
+                _dictionaryPrimaryGloss = string.Empty;
                 _dictionaryStatusText = "No dictionary entries found.";
-                ApplyDictionaryTabHeaderState();
-                RefreshDictionarySurface();
-                return;
+            }
+            else
+            {
+                _dictionaryPrimaryGloss = BuildPrimaryDictionaryGloss(entries[0]);
+                _dictionaryStatusText = $"{entries.Count} dictionary entr{(entries.Count == 1 ? "y" : "ies")} found.";
             }
 
-            var best = entries[0];
-            _dictionaryPrimaryGloss = BuildPrimaryDictionaryGloss(best);
-            _dictionaryStatusText = $"{entries.Count} dictionary entr{(entries.Count == 1 ? "y" : "ies")} found.";
-            ApplyDictionaryTabHeaderState();
-            RenderDictionaryTabResults(entries);
             RefreshDictionarySurface();
             SaveLayoutState();
         }
@@ -806,8 +1225,8 @@ public partial class MainWindow
             }
 
             _dictionaryPrimaryGloss = string.Empty;
+            _dictionaryDisplayedEntries = Array.Empty<SefariaDictionaryEntry>();
             _dictionaryStatusText = "Dictionary lookup failed. Check your internet connection and try again.";
-            ApplyDictionaryTabHeaderState();
             RefreshDictionarySurface();
         }
         catch (System.Text.Json.JsonException)
@@ -818,33 +1237,131 @@ public partial class MainWindow
             }
 
             _dictionaryPrimaryGloss = string.Empty;
+            _dictionaryDisplayedEntries = Array.Empty<SefariaDictionaryEntry>();
             _dictionaryStatusText = "Dictionary lookup failed due to an unexpected response.";
-            ApplyDictionaryTabHeaderState();
             RefreshDictionarySurface();
+        }
+    }
+
+    private async Task RunDictionaryTabLookupAsync(string? word, string? reference)
+    {
+        var lookupWord = NormalizeDictionaryLookupWord(word);
+        var displayQuery = string.IsNullOrWhiteSpace(word) ? lookupWord : word.Trim();
+        _dictionaryTabCurrentWord = NormalizeDictionaryWord(displayQuery, reference);
+        _dictionaryTabCurrentReference = reference?.Trim() ?? string.Empty;
+
+        if (string.IsNullOrWhiteSpace(lookupWord))
+        {
+            _dictionaryTabStatusText = "Type a single word to look it up.";
+            ClearDictionaryTabResults();
+            ApplyDictionaryTabHeaderState();
+            return;
+        }
+
+        _dictionaryTabStatusText = $"Looking up {lookupWord}...";
+        ClearDictionaryTabResults();
+        ApplyDictionaryTabHeaderState();
+
+        CancelDictionaryTabLookupInFlight();
+        var cts = _dictionaryTabLookupCts;
+        var lookupGeneration = _dictionaryTabCurrentWord;
+
+        try
+        {
+            var entries = await LookupDictionaryEntriesRoutedAsync(lookupWord, _dictionaryTabCurrentReference, cts.Token);
+            if (cts.IsCancellationRequested ||
+                !string.Equals(_dictionaryTabCurrentWord, lookupGeneration, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            if (entries.Count == 0)
+            {
+                _dictionaryTabStatusText = "No dictionary entries found.";
+                ApplyDictionaryTabHeaderState();
+                return;
+            }
+
+            _dictionaryTabStatusText = $"{entries.Count} dictionary entr{(entries.Count == 1 ? "y" : "ies")} found.";
+            ApplyDictionaryTabHeaderState();
+            RenderDictionaryTabResults(entries);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (HttpRequestException)
+        {
+            if (!string.Equals(_dictionaryTabCurrentWord, lookupGeneration, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _dictionaryTabStatusText = "Dictionary lookup failed. Check your internet connection and try again.";
+            ApplyDictionaryTabHeaderState();
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            if (!string.Equals(_dictionaryTabCurrentWord, lookupGeneration, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _dictionaryTabStatusText = "Dictionary lookup failed due to an unexpected response.";
+            ApplyDictionaryTabHeaderState();
         }
     }
 
     private void ClearDictionaryTabResults()
     {
-        _dictionaryDisplayedEntries = Array.Empty<SefariaDictionaryEntry>();
+        _dictionaryTabDisplayedEntries = Array.Empty<SefariaDictionaryEntry>();
         _dictionaryLookupResultsPanel?.Children.Clear();
+        if (_dictionarySearchResultsExpander is not null)
+        {
+            _dictionarySearchResultsExpander.IsExpanded = true;
+        }
     }
 
     private void RenderDictionaryTabResults(IReadOnlyList<SefariaDictionaryEntry> entries)
     {
-        // Set first so the dock/popup surfaces can render the full list even when the Dictionary tab
-        // (and thus its results panel) was never created.
-        _dictionaryDisplayedEntries = entries;
+        _dictionaryTabDisplayedEntries = entries;
+        if (_dictionarySearchResultsExpander is not null)
+        {
+            _dictionarySearchResultsExpander.IsExpanded = true;
+        }
 
         if (_dictionaryLookupResultsPanel is null)
         {
             return;
         }
 
-        _dictionaryLookupResultsPanel.Children.Clear();
-        foreach (var entry in entries)
+        PopulateDictionaryTabResults(_dictionaryLookupResultsPanel, entries);
+    }
+
+    private void PopulateDictionaryTabResults(
+        StackPanel panel,
+        IReadOnlyList<SefariaDictionaryEntry> entries,
+        IReadOnlyDictionary<string, bool>? expandedByKey = null)
+    {
+        panel.Children.Clear();
+        foreach (var group in entries.GroupBy(entry => entry.LexiconName, StringComparer.Ordinal))
         {
-            _dictionaryLookupResultsPanel.Children.Add(CreateDictionaryResultExpander(entry));
+            panel.Children.Add(new TextBlock
+            {
+                Text = string.IsNullOrWhiteSpace(group.Key) ? "Dictionary" : group.Key,
+                FontWeight = FontWeight.SemiBold,
+                FontSize = 15,
+                Margin = new Thickness(0, 8, 0, 2),
+                Foreground = new SolidColorBrush(Color.Parse("#344054"))
+            });
+
+            foreach (var entry in group)
+            {
+                var key = GetDictionaryEntryKey(entry);
+                var expanded = expandedByKey is null ||
+                    !expandedByKey.TryGetValue(key, out var wasExpanded) || wasExpanded;
+                panel.Children.Add(CreateDictionaryResultExpander(entry, expanded));
+            }
         }
     }
 
@@ -872,7 +1389,7 @@ public partial class MainWindow
             _dictionaryToolsStatus.FontSize = dictionaryFontSize;
         }
 
-        if (_dictionaryLookupResultsPanel is not null && _dictionaryDisplayedEntries.Count > 0)
+        if (_dictionaryLookupResultsPanel is not null && _dictionaryTabDisplayedEntries.Count > 0)
         {
             var expandedByKey = new Dictionary<string, bool>(StringComparer.Ordinal);
             foreach (var child in _dictionaryLookupResultsPanel.Children.OfType<Expander>())
@@ -883,13 +1400,7 @@ public partial class MainWindow
                 }
             }
 
-            _dictionaryLookupResultsPanel.Children.Clear();
-            foreach (var entry in _dictionaryDisplayedEntries)
-            {
-                var key = GetDictionaryEntryKey(entry);
-                var expanded = !expandedByKey.TryGetValue(key, out var wasExpanded) || wasExpanded;
-                _dictionaryLookupResultsPanel.Children.Add(CreateDictionaryResultExpander(entry, expanded));
-            }
+            PopulateDictionaryTabResults(_dictionaryLookupResultsPanel, _dictionaryTabDisplayedEntries, expandedByKey);
         }
 
         _dictionaryPopupWindow?.ApplyFontSize(dictionaryFontSize);
@@ -968,10 +1479,13 @@ public partial class MainWindow
     private static string GetDictionaryEntryKey(SefariaDictionaryEntry entry) =>
         $"{entry.LexiconName}\u001f{entry.Headword}\u001f{entry.EntryId}\u001f{entry.StrongNumber}";
 
-    private Control CreateDictionaryResultExpander(SefariaDictionaryEntry entry, bool expanded = true)
+    private Control CreateDictionaryResultExpander(
+        SefariaDictionaryEntry entry,
+        bool expanded = true,
+        bool showOpenInDictionary = true)
     {
         var dictionaryFontSize = GetDictionaryFontSize();
-        var titleText = string.IsNullOrWhiteSpace(entry.LexiconName)
+        var titleText = !showOpenInDictionary || string.IsNullOrWhiteSpace(entry.LexiconName)
             ? entry.Headword
             : $"{entry.Headword} - {entry.LexiconName}";
         var panel = new StackPanel
@@ -1025,7 +1539,9 @@ public partial class MainWindow
         AddDictionaryLinkedTextBlock(
             panel,
             string.IsNullOrWhiteSpace(definition) ? "Entry returned without a plain-text definition." : definition,
-            FlowDirection.LeftToRight);
+            FlowDirection.LeftToRight,
+            entry,
+            openHeadwordInDictionary: !showOpenInDictionary);
 
         if (entry.Refs.Count > 0)
         {
@@ -1050,7 +1566,8 @@ public partial class MainWindow
             panel.Children.Add(refsPanel);
         }
 
-        if (!string.IsNullOrWhiteSpace(entry.PreviousHeadword) || !string.IsNullOrWhiteSpace(entry.NextHeadword))
+        if (showOpenInDictionary &&
+            (!string.IsNullOrWhiteSpace(entry.PreviousHeadword) || !string.IsNullOrWhiteSpace(entry.NextHeadword)))
         {
             var navigation = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 6, 0, 0) };
             if (!string.IsNullOrWhiteSpace(entry.PreviousHeadword))
@@ -1096,7 +1613,7 @@ public partial class MainWindow
 
         var header = new Grid
         {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"),
             ColumnSpacing = 8,
             HorizontalAlignment = HorizontalAlignment.Stretch,
             Children =
@@ -1106,6 +1623,27 @@ public partial class MainWindow
             }
         };
         Grid.SetColumn(copyButton, 1);
+
+        if (showOpenInDictionary && entry.IsOffline && entry.LexiconId > 0)
+        {
+            var openButton = new Button
+            {
+                Content = "Open in dictionary",
+                Padding = new Thickness(8, 2),
+                MinHeight = 26,
+                FontSize = Math.Max(11, dictionaryFontSize - 2),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            ToolTip.SetTip(openButton, "Browse this entry with the entries before and after it");
+            openButton.Click += async (_, e) =>
+            {
+                e.Handled = true;
+                await OpenDictionaryEntryInBookAsync(entry);
+            };
+            openButton.PointerPressed += (_, e) => e.Handled = true;
+            header.Children.Add(openButton);
+            Grid.SetColumn(openButton, 2);
+        }
 
         return new Expander
         {
@@ -1258,35 +1796,105 @@ public partial class MainWindow
         AddDictionaryLinkedTextBlock(panel, normalized, flowDirection);
     }
 
-    private void AddDictionaryLinkedTextBlock(StackPanel panel, string text, FlowDirection flowDirection)
+    private void AddDictionaryLinkedTextBlock(
+        StackPanel panel,
+        string text,
+        FlowDirection flowDirection,
+        SefariaDictionaryEntry? sourceEntry = null,
+        bool openHeadwordInDictionary = false)
     {
         var citations = FindDictionaryCitations(text);
-        if (citations.Count == 0)
-        {
-            panel.Children.Add(new SelectableTextBlock
-            {
-                Text = text,
-                FontSize = GetDictionaryFontSize(),
-                FlowDirection = flowDirection,
-                TextAlignment = flowDirection == FlowDirection.RightToLeft ? TextAlignment.Right : TextAlignment.Left,
-                TextWrapping = TextWrapping.Wrap
-            });
-            return;
-        }
-
-        panel.Children.Add(new DictionaryLinkedTextView(
-            text,
-            citations.Select(citation => new DictionaryCitationLink(
+        var links = citations
+            .Select(citation => new DictionaryTextLink(
                 citation.Start,
                 citation.Length,
                 citation.DisplayText,
                 citation.FullReference,
-                citation.WorkTitle)),
+                citation.WorkTitle,
+                DictionaryTextLinkKind.Citation))
+            .ToList();
+        if (sourceEntry is not null)
+        {
+            foreach (var crossReference in DictionaryHeadwordCrossReferenceParser.Find(text))
+            {
+                if (links.Any(link =>
+                        crossReference.Start < link.Start + link.Length &&
+                        crossReference.Start + crossReference.Length > link.Start))
+                {
+                    continue;
+                }
+
+                links.Add(new DictionaryTextLink(
+                    crossReference.Start,
+                    crossReference.Length,
+                    crossReference.DisplayText,
+                    crossReference.Headword,
+                    sourceEntry.LexiconName,
+                    DictionaryTextLinkKind.Headword));
+            }
+        }
+
+        panel.Children.Add(new DictionaryLinkedTextView(
+            text,
+            links,
             flowDirection,
-            citation => _ = OpenDictionaryCitationAsync(citation.FullReference, citation.WorkTitle))
+            link =>
+            {
+                if (link.Kind == DictionaryTextLinkKind.Citation)
+                {
+                    _ = OpenDictionaryCitationAsync(link.Target, link.Context);
+                }
+                else if (sourceEntry is not null && openHeadwordInDictionary)
+                {
+                    _ = OpenDictionaryHeadwordCrossReferenceAsync(link.Target, sourceEntry);
+                }
+                else
+                {
+                    ShowDictionaryEntry(link.Target, null);
+                }
+            })
         {
             FontSize = GetDictionaryFontSize()
         });
+    }
+
+    private async Task OpenDictionaryHeadwordCrossReferenceAsync(
+        string headword,
+        SefariaDictionaryEntry sourceEntry)
+    {
+        if (string.IsNullOrWhiteSpace(headword) || sourceEntry.LexiconId <= 0)
+        {
+            return;
+        }
+
+        var query = headword.Trim();
+        var entries = await _sefariaLibrary.SearchOfflineDictionaryAsync(
+            query,
+            sourceEntry.LexiconId,
+            20,
+            mode: SefariaDictionarySearchMode.Headwords);
+        if (entries.Count == 0)
+        {
+            query = Regex.Replace(query, @"\s+(?:IV|V|I{1,3})$", string.Empty, RegexOptions.IgnoreCase);
+            entries = await _sefariaLibrary.SearchOfflineDictionaryAsync(
+                query,
+                sourceEntry.LexiconId,
+                20,
+                mode: SefariaDictionarySearchMode.Headwords);
+        }
+
+        var targetKey = SefariaOfflineLibraryImporter.NormalizeDictionaryKey(query, keepSpaces: true);
+        var target = entries.FirstOrDefault(entry =>
+                string.Equals(
+                    SefariaOfflineLibraryImporter.NormalizeDictionaryKey(entry.Headword, keepSpaces: true),
+                    targetKey,
+                    StringComparison.Ordinal))
+            ?? entries.FirstOrDefault();
+        if (target is not null)
+        {
+            PushDictionaryNavigationHistory(sourceEntry.EntryId, target.EntryId);
+            await OpenDictionaryEntryInBookAsync(target, preserveNavigationHistory: true);
+        }
     }
 
     private async Task OpenDictionaryCitationAsync(string fullReference, string workTitle)
@@ -1978,6 +2586,7 @@ public partial class MainWindow
         _dictionaryCurrentWord = string.Empty;
         _dictionaryCurrentReference = string.Empty;
         _dictionaryPrimaryGloss = string.Empty;
+        _dictionaryDisplayedEntries = Array.Empty<SefariaDictionaryEntry>();
         _dictionaryStatusText = "Right-click a word in the reader and choose Dictionary.";
         _dictionaryLookupCts.Cancel();
         _dictionaryLookupCts.Dispose();
@@ -2086,6 +2695,7 @@ public partial class MainWindow
 
         var popup = new DictionaryPopupWindow();
         popup.DockRequested += (_, _) => DockDictionaryToReaderTools();
+        popup.OpenInDictionaryRequested += async (_, _) => await OpenCurrentOnPageDictionaryInTabAsync();
         popup.DismissRequested += (_, _) => CloseDictionarySurface();
         // Click-away / focus-away dismissal. Guards: docking sets _isDictionaryDocked
         // BEFORE closing the popup, and CloseDictionaryPopupWindow nulls the field before

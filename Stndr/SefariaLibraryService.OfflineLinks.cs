@@ -118,32 +118,41 @@ public sealed partial class SefariaLibraryService
         Dictionary<string, List<ReaderTextUnit>?> cache, CancellationToken token)
     {
         if (string.IsNullOrWhiteSpace(title)) return "";
-        var cacheKey = $"{title}|{language}";
-        if (!cache.TryGetValue(cacheKey, out var units))
-        {
-            // Prefer exact language, then any version for this title (many commentaries are Hebrew-only).
-            var books = GetOfflineLibraryBooks()
-                .Where(item => string.Equals(item.Title, title, StringComparison.Ordinal))
-                .ToList();
-            var book = books.FirstOrDefault(item =>
-                    string.Equals(item.LanguageCode, language, StringComparison.OrdinalIgnoreCase))
-                ?? books.FirstOrDefault(item =>
-                    language.StartsWith("he", StringComparison.OrdinalIgnoreCase)
-                        ? IsHebrew(item)
-                        : !IsHebrew(item))
-                ?? books.FirstOrDefault();
-            units = book is null ? null : ReadInstalledBookUnits(book, token);
-            cache[cacheKey] = units;
-        }
-        if (units is null || units.Count == 0) return "";
 
         var relative = fullReference.StartsWith(title, StringComparison.OrdinalIgnoreCase)
             ? fullReference[title.Length..].TrimStart(' ', ',')
             : fullReference;
         if (string.IsNullOrWhiteSpace(relative)) return "";
 
-        var match = FindUnitForSefariaRelative(units, relative);
-        return match?.Text ?? "";
+        var preferHebrew = language.StartsWith("he", StringComparison.OrdinalIgnoreCase);
+        var books = GetOfflineLibraryBooks()
+            .Where(item => string.Equals(item.Title, title, StringComparison.Ordinal))
+            .OrderBy(item => string.Equals(item.LanguageCode, language, StringComparison.OrdinalIgnoreCase)
+                ? 0
+                : IsHebrew(item) == preferHebrew ? 1 : 2)
+            .ThenByDescending(item => item.SegmentCount);
+
+        // Commentary editions are often complementary rather than complete. Try each suitable
+        // version until one actually contains this reference instead of trusting one edition.
+        foreach (var book in books)
+        {
+            token.ThrowIfCancellationRequested();
+            var cacheKey = $"{title}|{language}|{book.OfflineVersionId}";
+            if (!cache.TryGetValue(cacheKey, out var units))
+            {
+                units = ReadInstalledBookUnits(book, token);
+                cache[cacheKey] = units;
+            }
+
+            if (units is null || units.Count == 0) continue;
+            var match = FindUnitForSefariaRelative(units, relative);
+            if (!string.IsNullOrWhiteSpace(match?.Text))
+            {
+                return match.Text;
+            }
+        }
+
+        return "";
     }
 
     /// <summary>

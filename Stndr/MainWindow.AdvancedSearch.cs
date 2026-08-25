@@ -32,6 +32,7 @@ public partial class MainWindow
     private const string SameUnitTemplateId = "same-unit";
     private const string NearExcludingTemplateId = "near-excluding";
     private const string SefariaTextSearchTemplateId = "sefaria-text-search";
+    private const string DictionarySearchTemplateId = "dictionary-search";
     private static readonly Regex HtmlTagRegex = new("<.*?>", RegexOptions.Compiled);
 
     private static readonly List<AdvancedSearchTemplate> AdvancedSearchTemplates = new()
@@ -41,7 +42,8 @@ public partial class MainWindow
         new(ProximityTemplateId, "Find [A] within [N] [words/letters] of [B] in [scope] matching [Exact/Loose]", true),
         new(SameUnitTemplateId, "Find [A] and [B] in the same [segment/chapter]", true),
         new(NearExcludingTemplateId, "Find [A] near [B], excluding [C]", true),
-        new(SefariaTextSearchTemplateId, "Search Sefaria for [query] in [corpus] matching [Exact/Lemmatized/Nearby]", true)
+        new(SefariaTextSearchTemplateId, "Search Sefaria for [query] in [corpus] matching [Exact/Lemmatized/Nearby]", true),
+        new(DictionarySearchTemplateId, "Search dictionaries for [query] in [dictionary] matching [Everything/Headwords/Entry text]", true)
     };
 
     private Control CreateAdvancedSearchView()
@@ -122,7 +124,7 @@ public partial class MainWindow
             resultList.IsVisible = resultItems.Count > 0;
             resultEmptyState.IsVisible = resultItems.Count == 0;
             resultEmptyState.Text = !hasSearchRun
-                ? "Run a search to see matching installed texts here."
+                ? "Run a search to see matching texts or dictionary entries here."
                 : "No results found. Try widening the scope or loosening the match mode.";
         }
 
@@ -220,9 +222,12 @@ public partial class MainWindow
             isSearchRunning = true;
             runButton.Content = "Cancel";
             saveButton.IsEnabled = false;
-            status.Text = query.TemplateId == SefariaTextSearchTemplateId
-                ? "Searching Sefaria..."
-                : "Searching installed books...";
+            status.Text = query.TemplateId switch
+            {
+                SefariaTextSearchTemplateId => "Searching Sefaria...",
+                DictionarySearchTemplateId => "Searching installed dictionaries...",
+                _ => "Searching installed books..."
+            };
             hasSearchRun = true;
             currentQuery = query;
             lastElapsed = null;
@@ -278,9 +283,11 @@ public partial class MainWindow
             try
             {
                 var stopwatch = Stopwatch.StartNew();
-                var results = query.TemplateId == SefariaTextSearchTemplateId
-                    ? await RunSefariaAdvancedSearchAsync(query, cancellationToken)
-                    : await Task.Run(() => RunInstalledAdvancedSearch(
+                var results = query.TemplateId switch
+                {
+                    SefariaTextSearchTemplateId => await RunSefariaAdvancedSearchAsync(query, cancellationToken),
+                    DictionarySearchTemplateId => await RunDictionaryAdvancedSearchAsync(query, cancellationToken),
+                    _ => await Task.Run(() => RunInstalledAdvancedSearch(
                         query,
                         result =>
                         {
@@ -290,7 +297,8 @@ public partial class MainWindow
                                 SchedulePendingResultFlush();
                             }
                         },
-                        cancellationToken), cancellationToken);
+                        cancellationToken), cancellationToken)
+                };
                 stopwatch.Stop();
                 while (!pendingResults.IsEmpty)
                 {
@@ -477,7 +485,8 @@ public partial class MainWindow
                     HebrewLabel = scope.HebrewLabel
                 })
                 .ToList(),
-            MatchMode = query.MatchMode
+            MatchMode = query.MatchMode,
+            DictionaryLexiconId = query.DictionaryLexiconId
         };
     }
 
@@ -522,6 +531,14 @@ public partial class MainWindow
                 Width = 120,
                 ItemsSource = new[] { "Exact", "Loose", "Ignore spaces" },
                 SelectedItem = values.MatchMode
+            },
+            DictionaryScopeBox = new ComboBox
+            {
+                Width = 280,
+                ItemsSource = new[] { new DictionarySearchScopeOption(null, "All dictionaries") },
+                SelectedIndex = 0,
+                ItemTemplate = new FuncDataTemplate<DictionarySearchScopeOption>((option, _) =>
+                    new TextBlock { Text = option?.Label ?? string.Empty })
             }
         };
 
@@ -535,7 +552,22 @@ public partial class MainWindow
             fields.DistanceBox.Text = string.IsNullOrWhiteSpace(values.Distance) ? "10" : values.Distance;
             fields.DistanceBox.IsVisible = string.Equals(fields.MatchBox.SelectedItem as string, "Nearby", StringComparison.OrdinalIgnoreCase);
         }
-        RefreshAdvancedSearchScopePanel(fields);
+        else if (template.Id == DictionarySearchTemplateId)
+        {
+            fields.TermABox.Width = 240;
+            fields.TermABox.PlaceholderText = "headword or entry text";
+            fields.MatchBox.Width = 140;
+            fields.MatchBox.ItemsSource = new[] { "Everything", "Headwords", "Entry text" };
+            fields.MatchBox.SelectedItem = values.MatchMode is "Everything" or "Headwords" or "Entry text"
+                ? values.MatchMode
+                : "Everything";
+            _ = PopulateAdvancedSearchDictionaryScopesAsync(fields.DictionaryScopeBox, values.DictionaryLexiconId);
+        }
+
+        if (template.Id != DictionarySearchTemplateId)
+        {
+            RefreshAdvancedSearchScopePanel(fields);
+        }
 
         if (template.Id == NearExcludingTemplateId)
         {
@@ -570,6 +602,20 @@ public partial class MainWindow
                 })
                 .ToList();
         values.MatchMode = fields.MatchBox.SelectedItem as string ?? values.MatchMode;
+        values.DictionaryLexiconId =
+            (fields.DictionaryScopeBox.SelectedItem as DictionarySearchScopeOption)?.LexiconId;
+    }
+
+    private async Task PopulateAdvancedSearchDictionaryScopesAsync(ComboBox scopeBox, long? selectedLexiconId)
+    {
+        var lexicons = _dictionaryLexicons.Count > 0
+            ? _dictionaryLexicons
+            : await _sefariaLibrary.GetOfflineLexiconsAsync();
+        _dictionaryLexicons = lexicons;
+        var options = new List<DictionarySearchScopeOption> { new(null, "All dictionaries") };
+        options.AddRange(lexicons.Select(lexicon => new DictionarySearchScopeOption(lexicon.Id, lexicon.Name)));
+        scopeBox.ItemsSource = options;
+        scopeBox.SelectedItem = options.FirstOrDefault(option => option.LexiconId == selectedLexiconId) ?? options[0];
     }
 
     private void RefreshAdvancedSearchScopePanel(AdvancedSearchFormFields fields)
@@ -1427,6 +1473,15 @@ public partial class MainWindow
                     fields.DistanceBox,
                     distancePhrase);
                 break;
+            case DictionarySearchTemplateId:
+                AddAdvancedSearchControls(line,
+                    CreateAdvancedSearchPhrase("Search dictionaries for"),
+                    fields.TermABox,
+                    CreateAdvancedSearchPhrase("in"),
+                    fields.DictionaryScopeBox,
+                    CreateAdvancedSearchPhrase("matching"),
+                    fields.MatchBox);
+                break;
             default:
                 AddAdvancedSearchControls(line,
                     CreateAdvancedSearchPhrase("Find"),
@@ -1490,7 +1545,16 @@ public partial class MainWindow
                 .ToList(),
             MatchMode = fields.MatchBox.SelectedItem as string ?? "Exact"
         };
-        query.Scope = FormatAdvancedSearchScopeSummary(query.SelectedScopes);
+        if (template.Id == DictionarySearchTemplateId &&
+            fields.DictionaryScopeBox.SelectedItem is DictionarySearchScopeOption dictionaryScope)
+        {
+            query.DictionaryLexiconId = dictionaryScope.LexiconId;
+            query.Scope = dictionaryScope.Label;
+        }
+        else
+        {
+            query.Scope = FormatAdvancedSearchScopeSummary(query.SelectedScopes);
+        }
 
         if (string.IsNullOrWhiteSpace(query.TermA))
         {
@@ -1672,6 +1736,38 @@ public partial class MainWindow
         }
 
         return results;
+    }
+
+    private async Task<List<AdvancedSearchResult>> RunDictionaryAdvancedSearchAsync(
+        AdvancedSearchQuery query,
+        CancellationToken cancellationToken)
+    {
+        var mode = query.MatchMode switch
+        {
+            "Headwords" => SefariaDictionarySearchMode.Headwords,
+            "Entry text" => SefariaDictionarySearchMode.EntryText,
+            _ => SefariaDictionarySearchMode.Everything
+        };
+        var entries = await _sefariaLibrary.SearchOfflineDictionaryAsync(
+            query.TermA,
+            query.DictionaryLexiconId,
+            AdvancedSearchResultLimit,
+            cancellationToken,
+            mode);
+        return entries.Select(entry => new AdvancedSearchResult
+        {
+            Reference = entry.Headword,
+            WorkTitle = entry.LexiconName,
+            VersionTitle = entry.LexiconName,
+            Source = "Dictionary",
+            Snippet = BuildAdvancedSearchSnippet(
+                NormalizeDictionaryText(entry.Definition),
+                query.TermA),
+            MatchedTerms = new List<string> { query.TermA },
+            IsDictionaryEntry = true,
+            DictionaryEntryId = entry.EntryId,
+            DictionaryLexiconId = entry.LexiconId
+        }).ToList();
     }
 
     private static SefariaTextSearchRequest BuildSefariaTextSearchRequest(AdvancedSearchQuery query)
@@ -2129,12 +2225,64 @@ public partial class MainWindow
         return value.Replace(" ", string.Empty, StringComparison.Ordinal);
     }
 
-    private static string BuildAdvancedSearchSnippet(string text)
+    private static string BuildAdvancedSearchSnippet(string text, string? focusTerm = null)
     {
         var cleaned = WebUtility.HtmlDecode(HtmlTagRegex.Replace(text ?? string.Empty, " "));
         cleaned = ApplyHebrewMarksModeForWeb(cleaned, HebrewMarksMode.TextOnly);
         cleaned = Regex.Replace(cleaned, @"\s+", " ").Trim();
-        return cleaned.Length <= 220 ? cleaned : cleaned[..220] + "...";
+        if (cleaned.Length <= 220)
+        {
+            return cleaned;
+        }
+
+        var focusIndex = FindAdvancedSearchSnippetFocus(cleaned, focusTerm);
+        if (focusIndex < 0)
+        {
+            return cleaned[..220] + "...";
+        }
+
+        var start = Math.Max(0, focusIndex - 80);
+        if (start > 0)
+        {
+            var nextSpace = cleaned.IndexOf(' ', start);
+            if (nextSpace >= 0 && nextSpace < focusIndex)
+            {
+                start = nextSpace + 1;
+            }
+        }
+
+        var length = Math.Min(220, cleaned.Length - start);
+        var end = start + length;
+        if (end < cleaned.Length)
+        {
+            var previousSpace = cleaned.LastIndexOf(' ', end - 1, length);
+            if (previousSpace > start)
+            {
+                end = previousSpace;
+            }
+        }
+
+        return (start > 0 ? "..." : string.Empty) +
+            cleaned[start..end] +
+            (end < cleaned.Length ? "..." : string.Empty);
+    }
+
+    private static int FindAdvancedSearchSnippetFocus(string text, string? focusTerm)
+    {
+        if (string.IsNullOrWhiteSpace(focusTerm))
+        {
+            return -1;
+        }
+
+        var normalizedFocus = ApplyHebrewMarksModeForWeb(
+            WebUtility.HtmlDecode(focusTerm),
+            HebrewMarksMode.TextOnly);
+        return normalizedFocus
+            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
+            .Select(term => text.IndexOf(term, StringComparison.OrdinalIgnoreCase))
+            .Where(index => index >= 0)
+            .DefaultIfEmpty(-1)
+            .Min();
     }
 
     private static string FirstNonEmptyAdvancedSearchValue(params string[] values)
@@ -2205,6 +2353,8 @@ public partial class MainWindow
     {
         return query.TemplateId switch
         {
+            DictionarySearchTemplateId =>
+                $"Search dictionaries for {query.TermA} in {query.Scope} matching {query.MatchMode}",
             SefariaTextSearchTemplateId =>
                 $"Search Sefaria for {query.TermA} in {FormatSefariaSearchScopeSummary(query)} matching {query.MatchMode}",
             WordOrLettersTemplateId =>
@@ -2335,6 +2485,11 @@ public partial class MainWindow
 
     private Control CreateAdvancedSearchResultRow(AdvancedSearchResult result)
     {
+        if (result.IsDictionaryEntry)
+        {
+            return CreateAdvancedDictionarySearchResultRow(result);
+        }
+
         var button = new Button
         {
             Background = Brushes.Transparent,
@@ -2365,6 +2520,48 @@ public partial class MainWindow
 
         button.Click += (_, _) => OpenAdvancedSearchResult(result);
         return button;
+    }
+
+    private Control CreateAdvancedDictionarySearchResultRow(AdvancedSearchResult result)
+    {
+        var openButton = new Button
+        {
+            Content = "Open in Dictionary",
+            MinWidth = 132,
+            Margin = new Thickness(8),
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        openButton.Click += (_, e) =>
+        {
+            e.Handled = true;
+            OpenAdvancedSearchResult(result);
+        };
+
+        var grid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("220,160,90,*,Auto"),
+            MinHeight = 58,
+            Children =
+            {
+                CreateAdvancedSearchResultCell(result.Reference, true),
+                CreateAdvancedSearchResultCell(result.VersionTitle, false),
+                CreateAdvancedSearchResultCell(result.Source, false),
+                CreateAdvancedSearchSnippetCell(result),
+                openButton
+            }
+        };
+        for (var column = 1; column < grid.Children.Count; column++)
+        {
+            Grid.SetColumn(grid.Children[column], column);
+        }
+
+        return new Border
+        {
+            BorderBrush = new SolidColorBrush(Color.Parse("#EAECF0")),
+            BorderThickness = new Thickness(0, 0, 0, 1),
+            Child = grid
+        };
     }
 
     private string FormatAdvancedSearchResultReference(AdvancedSearchResult result)
@@ -2530,6 +2727,12 @@ public partial class MainWindow
 
     private async void OpenAdvancedSearchResult(AdvancedSearchResult result)
     {
+        if (result.IsDictionaryEntry)
+        {
+            await OpenAdvancedDictionarySearchResultAsync(result);
+            return;
+        }
+
         var book = _sefariaLibrary.GetInstalledBookByKey(result.BookKey) ??
             _sefariaLibrary.GetInstalledVersionsForTitle(result.WorkTitle).FirstOrDefault();
         if (book is null)
@@ -2553,6 +2756,29 @@ public partial class MainWindow
         Dispatcher.UIThread.Post(
             () => ScrollReaderStateToReference(pair.Value, result.ReferenceWithinWork),
             DispatcherPriority.Background);
+    }
+
+    private async Task OpenAdvancedDictionarySearchResultAsync(AdvancedSearchResult result)
+    {
+        if (result.DictionaryEntryId <= 0)
+        {
+            return;
+        }
+
+        OpenOrSelectTab(DictionaryTabTitle);
+        if (_dictionaryLexicons.Count == 0)
+        {
+            _dictionaryLexicons = await _sefariaLibrary.GetOfflineLexiconsAsync();
+        }
+
+        var entry = await _sefariaLibrary.GetOfflineDictionaryEntryAsync(result.DictionaryEntryId);
+        if (entry is null)
+        {
+            return;
+        }
+
+        await OpenDictionaryEntryInBookAsync(entry);
+        UpdateReaderTools();
     }
 
     private async Task ShowAdvancedSearchRemoteResultDialogAsync(AdvancedSearchResult result)
@@ -3018,7 +3244,12 @@ public partial class MainWindow
             return;
         }
 
-        var results = await Task.Run(() => RunInstalledAdvancedSearch(savedSearch.Query));
+        var results = savedSearch.Query.TemplateId switch
+        {
+            SefariaTextSearchTemplateId => await RunSefariaAdvancedSearchAsync(savedSearch.Query, CancellationToken.None),
+            DictionarySearchTemplateId => await RunDictionaryAdvancedSearchAsync(savedSearch.Query, CancellationToken.None),
+            _ => await Task.Run(() => RunInstalledAdvancedSearch(savedSearch.Query))
+        };
         savedSearch.CompletedAtUtc = DateTime.UtcNow;
         savedSearch.Results = results;
         savedSearch.Name = BuildAdvancedSearchName(savedSearch.Query, results.Count);
@@ -3110,6 +3341,7 @@ public partial class MainWindow
         public string Unit { get; set; } = "words";
         public string SameUnit { get; set; } = "segment";
         public string Scope { get; set; } = "Installed books";
+        public long? DictionaryLexiconId { get; set; }
         public List<AdvancedSearchScopeSelection> SelectedScopes { get; set; } = new();
         public string MatchMode { get; set; } = "Exact";
     }
@@ -3135,6 +3367,7 @@ public partial class MainWindow
         public WrapPanel ScopePanel { get; init; } = new();
         public List<AdvancedSearchScopeSelection> SelectedScopes { get; init; } = new();
         public ComboBox MatchBox { get; init; } = new();
+        public ComboBox DictionaryScopeBox { get; init; } = new();
     }
 
     private sealed class AdvancedSearchFieldValues
@@ -3146,6 +3379,7 @@ public partial class MainWindow
         public string Unit { get; set; } = "words";
         public string SameUnit { get; set; } = "segment";
         public string Scope { get; set; } = "Installed books";
+        public long? DictionaryLexiconId { get; set; }
         public List<AdvancedSearchScopeSelection> SelectedScopes { get; set; } = new();
         public string MatchMode { get; set; } = "Exact";
     }
