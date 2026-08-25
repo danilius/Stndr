@@ -149,6 +149,35 @@ public sealed class OfflineCommentaryLookupTests
     }
 
     [Fact]
+    public async Task Shulchan_Arukh_anchor_resolves_Mishnah_Berurah_text()
+    {
+        var dataFolder = TryFindDataFolder();
+        if (dataFolder is null)
+        {
+            return;
+        }
+
+        var library = new SefariaLibraryService(dataFolder);
+        var anchor = SefariaReferenceFormatting.BuildFullAnchorRef(
+            "Shulchan Arukh, Orach Chayim",
+            "3.1");
+        Assert.Equal("Shulchan Arukh, Orach Chayim 3:1", anchor);
+
+        var commentaries = await library.GetCommentariesAsync(anchor, CancellationToken.None);
+        var mishnahBerurah = commentaries
+            .Where(item => item.IndexTitle.Contains("Mishnah Berurah", StringComparison.OrdinalIgnoreCase) ||
+                           item.Ref.Contains("Mishnah Berurah", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        Assert.NotEmpty(mishnahBerurah);
+
+        Assert.All(
+            mishnahBerurah,
+            item => Assert.False(
+                string.IsNullOrWhiteSpace(item.HebrewText),
+                $"Hebrew Mishnah Berurah text should resolve for {item.Ref}."));
+    }
+
+    [Fact]
     public async Task Wrong_comma_form_for_Berakhot_finds_nothing()
     {
         var dataFolder = TryFindDataFolder();

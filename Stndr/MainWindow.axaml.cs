@@ -65,14 +65,35 @@ public partial class MainWindow : Window
     private TextBlock? _dictionaryLookupReference;
     private TextBlock? _dictionaryLookupStatus;
     private StackPanel? _dictionaryLookupResultsPanel;
-    private IReadOnlyList<SefariaDictionaryEntry> _dictionaryDisplayedEntries = Array.Empty<SefariaDictionaryEntry>();
-    private StackPanel? _dictionaryCataloguePanel;
-    private TextBlock? _dictionaryCatalogueStatus;
-    private Expander? _dictionaryCatalogueExpander;
-    private ComboBox? _dictionarySearchScopeBox;
+    private Expander? _dictionarySearchResultsExpander;
+    private ComboBox? _dictionarySearchModeBox;
+    private TextBlock? _dictionaryBrowseTitle;
+    private TextBlock? _dictionaryBrowseStatus;
+    private WrapPanel? _dictionaryBrowseInitialsPanel;
+    private ScrollViewer? _dictionaryBrowseScrollViewer;
+    private StackPanel? _dictionaryBrowseEntriesPanel;
+    private IReadOnlyList<SefariaDictionaryEntry> _dictionaryTabDisplayedEntries = Array.Empty<SefariaDictionaryEntry>();
+    private IReadOnlyList<SefariaLexiconInfo> _dictionaryLexicons = Array.Empty<SefariaLexiconInfo>();
+    private readonly List<SefariaDictionaryEntry> _dictionaryBrowseEntries = new();
+    private long? _dictionaryBrowseLexiconId;
+    private long? _dictionaryBrowseHighlightedEntryId;
+    private readonly List<long> _dictionaryNavigationHistory = new();
+    private int _dictionaryNavigationHistoryIndex = -1;
+    private Button? _dictionaryHistoryBackButton;
+    private Button? _dictionaryHistoryForwardButton;
+    private string _dictionaryDrillDownPrefix = string.Empty;
+    private int _dictionaryDrillDownGeneration;
+    private bool _isDictionaryDrillDownExpanded = true;
+    private bool _isDictionaryBrowseLoading;
+    private double _dictionaryBrowseLastScrollOffset;
+    private int _dictionaryCatalogueLoadGeneration;
+    private CancellationTokenSource _dictionaryBrowseCts = new();
+    private string _dictionaryTabCurrentWord = string.Empty;
+    private string _dictionaryTabCurrentReference = string.Empty;
+    private string _dictionaryTabStatusText = "Enter a word to search the installed dictionaries.";
+    private CancellationTokenSource _dictionaryTabLookupCts = new();
     private long? _dictionarySelectedLexiconId;
     private string _dictionaryRequestedLexiconName = string.Empty;
-    private readonly Dictionary<string, Expander> _dictionaryLexiconExpanders = new(StringComparer.Ordinal);
     private bool _isDictionaryToolsExpanded = true;
     private TextBlock? _rightPanelTitle;
     private StackPanel? _rightPanelBody;
@@ -120,6 +141,7 @@ public partial class MainWindow : Window
     private string _dictionaryPrimaryGloss = string.Empty;
     private string _dictionaryStatusText = "Right-click a word in the reader and choose Dictionary.";
     private CancellationTokenSource _dictionaryLookupCts = new();
+    private IReadOnlyList<SefariaDictionaryEntry> _dictionaryDisplayedEntries = Array.Empty<SefariaDictionaryEntry>();
     private readonly Dictionary<string, IReadOnlyList<SefariaDictionaryEntry>> _dictionaryLookupCache = new(StringComparer.Ordinal);
     private double _dictionaryPopupLeft = 360;
     private double _dictionaryPopupTop = 140;
@@ -227,7 +249,7 @@ public partial class MainWindow : Window
 
     private void OnWindowKeyDown(object? sender, KeyEventArgs e)
     {
-        if (TryHandleCenterTabShortcut(e))
+        if (TryHandleDictionaryHistoryShortcut(e) || TryHandleCenterTabShortcut(e))
         {
             e.Handled = true;
         }

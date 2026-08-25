@@ -68,6 +68,13 @@ public partial class MainWindow
         ClearDictionaryToolsControls();
         _rightPanelTitle.Text = "Reader Tools";
 
+        if (_centerTabs?.SelectedItem is TabItem dictionaryTab &&
+            string.Equals(dictionaryTab.Tag as string, DictionaryTabTitle, StringComparison.Ordinal))
+        {
+            _rightPanelBody.Children.Add(CreateDictionaryDrillDownToolsControl());
+            return;
+        }
+
         if (_isDictionaryDocked)
         {
             _rightPanelBody.Children.Add(CreateDockedDictionaryToolsControl());
@@ -299,8 +306,242 @@ public partial class MainWindow
                 {
                     readerState.IsLicensesExpanded = value;
                     SaveLayoutState();
-                }));
+            }));
         }
+    }
+
+    private Control CreateDictionaryDrillDownToolsControl()
+    {
+        var generation = ++_dictionaryDrillDownGeneration;
+        var content = new StackPanel { Spacing = 8 };
+
+        if (_dictionaryLexicons.Count == 0)
+        {
+            content.Children.Add(new TextBlock
+            {
+                Text = "Loading installed dictionaries...",
+                Foreground = new SolidColorBrush(Color.Parse("#667085")),
+                TextWrapping = TextWrapping.Wrap
+            });
+            _ = LoadDictionaryDrillDownCatalogueAsync(generation);
+        }
+        else
+        {
+            var options = new List<DictionarySearchScopeOption>
+            {
+                new(null, "Choose a dictionary")
+            };
+            options.AddRange(_dictionaryLexicons.Select(lexicon =>
+                new DictionarySearchScopeOption(lexicon.Id, lexicon.Name)));
+            var dictionaryBox = new ComboBox
+            {
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                ItemsSource = options,
+                ItemTemplate = new FuncDataTemplate<DictionarySearchScopeOption>((option, _) =>
+                    new TextBlock { Text = option?.Label ?? string.Empty }),
+                SelectedItem = options.FirstOrDefault(option =>
+                    option.LexiconId == _dictionaryBrowseLexiconId) ?? options[0]
+            };
+            dictionaryBox.SelectionChanged += async (_, _) =>
+            {
+                if (dictionaryBox.SelectedItem is not DictionarySearchScopeOption { LexiconId: long lexiconId })
+                {
+                    return;
+                }
+
+                var lexicon = _dictionaryLexicons.FirstOrDefault(item => item.Id == lexiconId);
+                if (lexicon is null)
+                {
+                    return;
+                }
+
+                _dictionaryDrillDownPrefix = string.Empty;
+                await LoadDictionaryFromStartAsync(lexicon);
+                UpdateReaderTools();
+            };
+            content.Children.Add(dictionaryBox);
+
+            if (_dictionaryBrowseLexiconId is long selectedLexiconId &&
+                _dictionaryLexicons.FirstOrDefault(item => item.Id == selectedLexiconId) is { } selectedLexicon)
+            {
+                var prefixRow = new Grid
+                {
+                    ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
+                    Children =
+                    {
+                        CreateDictionaryDrillDownBackButton(selectedLexicon),
+                        new TextBlock
+                        {
+                            Text = string.IsNullOrWhiteSpace(_dictionaryDrillDownPrefix)
+                                ? "Choose the first letter"
+                                : _dictionaryDrillDownPrefix,
+                            FontSize = 18,
+                            FontWeight = FontWeight.SemiBold,
+                            FlowDirection = FlowDirection.RightToLeft,
+                            TextAlignment = TextAlignment.Center,
+                            HorizontalAlignment = HorizontalAlignment.Stretch,
+                            VerticalAlignment = VerticalAlignment.Center
+                        },
+                        CreateDictionaryDrillDownResetButton(selectedLexicon)
+                    }
+                };
+                Grid.SetColumn(prefixRow.Children[1], 1);
+                Grid.SetColumn(prefixRow.Children[2], 2);
+                content.Children.Add(prefixRow);
+
+                var choices = new WrapPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    FlowDirection = FlowDirection.RightToLeft,
+                    HorizontalAlignment = HorizontalAlignment.Stretch
+                };
+                content.Children.Add(choices);
+                _ = PopulateDictionaryDrillDownChoicesAsync(
+                    choices,
+                    selectedLexicon,
+                    _dictionaryDrillDownPrefix,
+                    generation);
+            }
+            else
+            {
+                content.Children.Add(new TextBlock
+                {
+                    Text = "Choose a dictionary, then narrow the headword one letter at a time.",
+                    Foreground = new SolidColorBrush(Color.Parse("#667085")),
+                    TextWrapping = TextWrapping.Wrap
+                });
+            }
+        }
+
+        return CreateReaderToolsGroup(
+            "Headword drill-down",
+            content,
+            _isDictionaryDrillDownExpanded,
+            value => _isDictionaryDrillDownExpanded = value);
+    }
+
+    private async Task LoadDictionaryDrillDownCatalogueAsync(int generation)
+    {
+        var lexicons = await _sefariaLibrary.GetOfflineLexiconsAsync();
+        if (generation != _dictionaryDrillDownGeneration ||
+            _centerTabs?.SelectedItem is not TabItem selectedTab ||
+            !string.Equals(selectedTab.Tag as string, DictionaryTabTitle, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _dictionaryLexicons = lexicons;
+        UpdateReaderTools();
+    }
+
+    private Button CreateDictionaryDrillDownBackButton(SefariaLexiconInfo lexicon)
+    {
+        var button = new Button
+        {
+            Content = "Back",
+            MinWidth = 54,
+            IsEnabled = _dictionaryDrillDownPrefix.Length > 0,
+            HorizontalContentAlignment = HorizontalAlignment.Center
+        };
+        button.Click += async (_, _) =>
+        {
+            if (_dictionaryDrillDownPrefix.Length == 0)
+            {
+                return;
+            }
+
+            _dictionaryDrillDownPrefix = _dictionaryDrillDownPrefix[..^1];
+            if (_dictionaryDrillDownPrefix.Length == 0)
+            {
+                await LoadDictionaryFromStartAsync(lexicon);
+            }
+            else
+            {
+                await LoadDictionaryAtPrefixAsync(lexicon, _dictionaryDrillDownPrefix);
+            }
+            UpdateReaderTools();
+        };
+        return button;
+    }
+
+    private Button CreateDictionaryDrillDownResetButton(SefariaLexiconInfo lexicon)
+    {
+        var button = new Button
+        {
+            Content = "Reset",
+            MinWidth = 54,
+            IsEnabled = _dictionaryDrillDownPrefix.Length > 0,
+            HorizontalContentAlignment = HorizontalAlignment.Center
+        };
+        button.Click += async (_, _) =>
+        {
+            _dictionaryDrillDownPrefix = string.Empty;
+            await LoadDictionaryFromStartAsync(lexicon);
+            UpdateReaderTools();
+        };
+        return button;
+    }
+
+    private async Task PopulateDictionaryDrillDownChoicesAsync(
+        WrapPanel choices,
+        SefariaLexiconInfo lexicon,
+        string prefix,
+        int generation)
+    {
+        var prefixes = await _sefariaLibrary.GetOfflineDictionaryPrefixesAsync(
+            lexicon.Id,
+            prefix,
+            prefix.Length + 1);
+        if (generation != _dictionaryDrillDownGeneration ||
+            _dictionaryBrowseLexiconId != lexicon.Id ||
+            !string.Equals(prefix, _dictionaryDrillDownPrefix, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        choices.FlowDirection = prefixes.Any(item => item.Prefix.Any(IsHebrewDictionaryCharacter))
+            ? FlowDirection.RightToLeft
+            : FlowDirection.LeftToRight;
+        foreach (var item in prefixes)
+        {
+            var next = item.Prefix.Length > prefix.Length
+                ? item.Prefix[prefix.Length..]
+                : item.Prefix;
+            var button = new Button
+            {
+                Content = next,
+                MinWidth = 38,
+                MinHeight = 34,
+                Padding = new Thickness(7, 3),
+                Margin = new Thickness(3),
+                FlowDirection = FlowDirection.RightToLeft,
+                HorizontalContentAlignment = HorizontalAlignment.Center,
+                VerticalContentAlignment = VerticalAlignment.Center
+            };
+            ToolTip.SetTip(button, $"{item.EntryCount:N0} entries beginning {item.Prefix}");
+            button.Click += async (_, _) =>
+            {
+                _dictionaryDrillDownPrefix = item.Prefix;
+                await LoadDictionaryAtPrefixAsync(lexicon, item.Prefix);
+                UpdateReaderTools();
+            };
+            choices.Children.Add(button);
+        }
+
+        if (prefixes.Count == 0)
+        {
+            choices.Children.Add(new TextBlock
+            {
+                Text = "No further letters. The matching entry is shown in the dictionary.",
+                Foreground = new SolidColorBrush(Color.Parse("#667085")),
+                TextWrapping = TextWrapping.Wrap
+            });
+        }
+    }
+
+    private static bool IsHebrewDictionaryCharacter(char character)
+    {
+        return character is >= '\u0590' and <= '\u05FF';
     }
 
     private static Control CreateReaderLicenceTools(ReaderTabState readerState)

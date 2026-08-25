@@ -260,6 +260,9 @@ public partial class MainWindow
         public string ReferenceWithinWork { get; set; } = string.Empty;
         public string RemoteUrl { get; set; } = string.Empty;
         public bool IsRemote { get; set; }
+        public bool IsDictionaryEntry { get; set; }
+        public long DictionaryEntryId { get; set; }
+        public long DictionaryLexiconId { get; set; }
         public List<string> MatchedTerms { get; set; } = new();
     }
 
