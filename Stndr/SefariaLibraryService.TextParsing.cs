@@ -42,8 +42,18 @@ public sealed partial class SefariaLibraryService
         cancellationToken.ThrowIfCancellationRequested();
         var root = document.RootElement;
         var schema = GetBookSchema(book.Title);
+        if (TryReadYerushalmiVilnaTextUnits(
+                book,
+                root,
+                schema,
+                cancellationToken,
+                out var yerushalmiUnits))
+        {
+            return yerushalmiUnits;
+        }
+
         // Tractates and Talmud-addressed commentaries (Rashi on Berakhot, etc.) use daf labels.
-        if (IsTalmud(book) || schema?.HasTalmudDafAddressing == true)
+        if (UsesTalmudDafAddressing(book, schema))
         {
             return ReadTalmudTextUnits(book, root, schema, cancellationToken);
         }
@@ -85,7 +95,23 @@ public sealed partial class SefariaLibraryService
 
         var root = document.RootElement;
         var schema = GetBookSchema(book.Title);
-        if (IsTalmud(book) || schema?.HasTalmudDafAddressing == true)
+        if (TryReadYerushalmiVilnaTextUnits(
+                book,
+                root,
+                schema,
+                cancellationToken,
+                out var yerushalmiUnits))
+        {
+            foreach (var unit in yerushalmiUnits)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                yield return unit;
+            }
+
+            yield break;
+        }
+
+        if (UsesTalmudDafAddressing(book, schema))
         {
             foreach (var unit in EnumerateTalmudTextUnits(book, root, schema, cancellationToken))
             {
@@ -137,6 +163,15 @@ public sealed partial class SefariaLibraryService
             {
                 return shulchanPages;
             }
+        }
+
+        if (TryBuildYerushalmiVilnaNavigation(
+                book,
+                schema,
+                out var yerushalmiPages,
+                out _))
+        {
+            return yerushalmiPages;
         }
 
         if (TryReadSupportedComplexSchemaUnits(root, schema, CancellationToken.None, out var structuredUnits))
@@ -235,7 +270,7 @@ public sealed partial class SefariaLibraryService
 
     private static List<ReaderNavigationPage> ReadDirectTalmudNavigationPages(InstalledSefariaBook book, JsonElement root, BookSchema? schema = null)
     {
-        if (!IsTalmud(book) ||
+        if (!UsesTalmudDafAddressing(book, schema) ||
             !root.TryGetProperty("text", out var textElement) ||
             textElement.ValueKind != JsonValueKind.Array ||
             !textElement.EnumerateArray().Any(item => item.ValueKind == JsonValueKind.Array))
@@ -256,12 +291,238 @@ public sealed partial class SefariaLibraryService
         return navigationPages;
     }
 
+    private sealed record YerushalmiNavigationRange(
+        string Page,
+        string ChapterTitle,
+        string HebrewChapterTitle,
+        int[] Start,
+        int[] End);
+
+    private static bool TryReadYerushalmiVilnaTextUnits(
+        InstalledSefariaBook book,
+        JsonElement root,
+        BookSchema? schema,
+        CancellationToken cancellationToken,
+        out List<ReaderTextUnit> units)
+    {
+        units = new List<ReaderTextUnit>();
+        if (!TryBuildYerushalmiVilnaNavigation(book, schema, out _, out var ranges) ||
+            !TryGetPrimaryTextElement(root, out var textElement))
+        {
+            return false;
+        }
+
+        foreach (var unit in EnumerateTextUnits(
+                     textElement,
+                     new List<string>(),
+                     cancellationToken))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!TryParseYerushalmiAddress(unit.Reference, out var address))
+            {
+                units.Add(unit);
+                continue;
+            }
+
+            // Sefaria page ranges intentionally overlap at segments that cross a page
+            // boundary. Anchor the shared segment to the later page so every page starts
+            // at the segment containing its first words.
+            var range = ranges.LastOrDefault(candidate =>
+                CompareYerushalmiAddresses(address, candidate.Start) >= 0 &&
+                CompareYerushalmiAddresses(address, candidate.End) <= 0);
+            // A few source texts contain canonical segments omitted from Sefaria's
+            // alternate pagination map (for example, Peah 3:8:1-3). Keep those
+            // segments visible on the most recent preceding page.
+            range ??= ranges.LastOrDefault(candidate =>
+                CompareYerushalmiAddresses(address, candidate.Start) >= 0);
+            range ??= ranges.FirstOrDefault();
+            units.Add(range is null
+                ? unit
+                : unit with
+                {
+                    ChapterTitle = range.ChapterTitle,
+                    HebrewChapterTitle = range.HebrewChapterTitle,
+                    NavigationKey = range.Page
+                });
+        }
+
+        return units.Count > 0;
+    }
+
+    private static bool TryBuildYerushalmiVilnaNavigation(
+        InstalledSefariaBook book,
+        BookSchema? schema,
+        out List<ReaderNavigationPage> pages,
+        out List<YerushalmiNavigationRange> ranges)
+    {
+        pages = new List<ReaderNavigationPage>();
+        ranges = new List<YerushalmiNavigationRange>();
+        if (!IsYerushalmi(book) ||
+            schema is null ||
+            !schema.AltStructures.TryGetValue("Vilna", out var chapters))
+        {
+            return false;
+        }
+
+        foreach (var chapter in chapters)
+        {
+            if (chapter.Refs.Count == 0 ||
+                chapter.AddressTypes.Count == 0 ||
+                !string.Equals(
+                    chapter.AddressTypes[0],
+                    "Talmud",
+                    StringComparison.OrdinalIgnoreCase) ||
+                !TryParseTalmudPageAddress(chapter.StartingAddress, out var pageAddress))
+            {
+                continue;
+            }
+
+            foreach (var referenceRange in chapter.Refs)
+            {
+                if (TryParseYerushalmiReferenceRange(referenceRange, out var start, out var end))
+                {
+                    var page = FormatTalmudPageFromAddress(pageAddress);
+                    if (!pages.Any(candidate =>
+                            string.Equals(candidate.Page, page, StringComparison.Ordinal)))
+                    {
+                        pages.Add(new ReaderNavigationPage(
+                            page,
+                            chapter.Title,
+                            chapter.HeTitle));
+                    }
+
+                    ranges.Add(new YerushalmiNavigationRange(
+                        page,
+                        chapter.Title,
+                        chapter.HeTitle,
+                        start,
+                        end));
+                }
+
+                pageAddress++;
+            }
+        }
+
+        return ranges.Count > 0;
+    }
+
+    private static bool TryParseTalmudPageAddress(string page, out int address)
+    {
+        address = 0;
+        if (string.IsNullOrWhiteSpace(page))
+        {
+            return false;
+        }
+
+        var normalized = page.Trim().ToLowerInvariant();
+        var digitCount = 0;
+        while (digitCount < normalized.Length && char.IsDigit(normalized[digitCount]))
+        {
+            digitCount++;
+        }
+
+        if (digitCount == 0 ||
+            digitCount >= normalized.Length ||
+            !int.TryParse(normalized[..digitCount], out var daf) ||
+            daf <= 0 ||
+            normalized[digitCount] is not ('a' or 'b'))
+        {
+            return false;
+        }
+
+        address = (daf - 1) * 2 + (normalized[digitCount] == 'b' ? 1 : 0);
+        return true;
+    }
+
+    private static bool TryParseYerushalmiReferenceRange(
+        string referenceRange,
+        out int[] start,
+        out int[] end)
+    {
+        start = Array.Empty<int>();
+        end = Array.Empty<int>();
+        if (string.IsNullOrWhiteSpace(referenceRange))
+        {
+            return false;
+        }
+
+        var lastSpace = referenceRange.LastIndexOf(' ');
+        var addressRange = lastSpace >= 0
+            ? referenceRange[(lastSpace + 1)..]
+            : referenceRange;
+        var separator = addressRange.IndexOf('-');
+        var startText = separator >= 0 ? addressRange[..separator] : addressRange;
+        var endText = separator >= 0 ? addressRange[(separator + 1)..] : startText;
+        if (!TryParseYerushalmiAddress(startText, out start) ||
+            !TryParseYerushalmiAddress(endText, out var abbreviatedEnd))
+        {
+            return false;
+        }
+
+        if (abbreviatedEnd.Length > start.Length)
+        {
+            return false;
+        }
+
+        end = new int[start.Length];
+        var retainedParts = start.Length - abbreviatedEnd.Length;
+        Array.Copy(start, end, retainedParts);
+        Array.Copy(abbreviatedEnd, 0, end, retainedParts, abbreviatedEnd.Length);
+        return CompareYerushalmiAddresses(start, end) <= 0;
+    }
+
+    private static bool TryParseYerushalmiAddress(string address, out int[] parts)
+    {
+        parts = Array.Empty<int>();
+        if (string.IsNullOrWhiteSpace(address))
+        {
+            return false;
+        }
+
+        var rawParts = address.Split(
+            new[] { ':', '.' },
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (rawParts.Length == 0)
+        {
+            return false;
+        }
+
+        var parsed = new int[rawParts.Length];
+        for (var index = 0; index < rawParts.Length; index++)
+        {
+            if (!int.TryParse(rawParts[index], out parsed[index]) || parsed[index] <= 0)
+            {
+                return false;
+            }
+        }
+
+        parts = parsed;
+        return true;
+    }
+
+    private static int CompareYerushalmiAddresses(IReadOnlyList<int> left, IReadOnlyList<int> right)
+    {
+        var length = Math.Max(left.Count, right.Count);
+        for (var index = 0; index < length; index++)
+        {
+            var leftPart = index < left.Count ? left[index] : 0;
+            var rightPart = index < right.Count ? right[index] : 0;
+            var comparison = leftPart.CompareTo(rightPart);
+            if (comparison != 0)
+            {
+                return comparison;
+            }
+        }
+
+        return 0;
+    }
+
     private static (string ChapterTitle, string HebrewChapterTitle) GetChapterTitleFromSchema(BookSchema? schema, string page)
     {
         if (schema != null && schema.AltStructures.TryGetValue("Chapters", out var chs) && chs.Count > 0)
         {
             double current = ToDafNumber(page);
-            SchemaAltNode best = null;
+            SchemaAltNode? best = null;
             double bestStart = -1;
             foreach (var node in chs)
             {
@@ -467,6 +728,26 @@ public sealed partial class SefariaLibraryService
     private static bool IsMishnah(InstalledSefariaBook book)
     {
         return book.Categories.Any(category => string.Equals(category, "Mishnah", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool UsesTalmudDafAddressing(
+        InstalledSefariaBook book,
+        BookSchema? schema)
+    {
+        if (schema?.AddressTypes.Count > 0)
+        {
+            return schema.HasTalmudDafAddressing;
+        }
+
+        return IsTalmud(book);
+    }
+
+    private static bool IsYerushalmi(InstalledSefariaBook book)
+    {
+        return book.Categories.Count == 3 &&
+            string.Equals(book.Categories[0], "Talmud", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(book.Categories[1], "Yerushalmi", StringComparison.OrdinalIgnoreCase) &&
+            book.Categories[2].StartsWith("Seder ", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsTalmud(InstalledSefariaBook book)

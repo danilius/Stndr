@@ -316,8 +316,15 @@ public sealed partial class SefariaLibraryService
                 Title = GetPrimaryNodeTitle(node, "en"),
                 HeTitle = GetPrimaryNodeTitle(node, "he"),
                 WholeRef = wholeRef,
-                NumericEquivalent = node.TryGetProperty("numeric_equivalent", out var numeric) && numeric.TryGetInt32(out var number) ? number : 0
+                NumericEquivalent = node.TryGetProperty("numeric_equivalent", out var numeric) && numeric.TryGetInt32(out var number) ? number : 0,
+                StartingAddress = node.TryGetProperty("startingAddress", out var startingAddress)
+                    ? GetOfflineScalarText(startingAddress)
+                    : ""
             });
+
+            AddOfflineStrings(node, "addressTypes", destination[^1].AddressTypes);
+            AddOfflineStrings(node, "sectionNames", destination[^1].SectionNames);
+            AddOfflineStrings(node, "refs", destination[^1].Refs);
         }
 
         if (node.TryGetProperty("nodes", out var children) && children.ValueKind == JsonValueKind.Array)
@@ -328,6 +335,27 @@ public sealed partial class SefariaLibraryService
             }
         }
     }
+
+    private static void AddOfflineStrings(
+        JsonElement node,
+        string propertyName,
+        List<string> destination)
+    {
+        if (!node.TryGetProperty(propertyName, out var values) ||
+            values.ValueKind != JsonValueKind.Array)
+        {
+            return;
+        }
+
+        destination.AddRange(values.EnumerateArray().Select(GetOfflineScalarText));
+    }
+
+    private static string GetOfflineScalarText(JsonElement value) => value.ValueKind switch
+    {
+        JsonValueKind.String => value.GetString() ?? "",
+        JsonValueKind.Number => value.GetRawText(),
+        _ => ""
+    };
 
     private static string GetPrimaryNodeTitle(JsonElement node, string language)
     {

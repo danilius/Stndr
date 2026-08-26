@@ -623,15 +623,26 @@ public sealed class BookSchema
                 : root;
             schema.RootNode = SefariaSchemaNode.Parse(recursiveRoot);
 
-            if (root.TryGetProperty("sectionNames", out var sn))
+            var flattenedRoot = recursiveRoot.ValueKind == JsonValueKind.Object
+                ? recursiveRoot
+                : root;
+            if (flattenedRoot.TryGetProperty("sectionNames", out var sn) &&
+                sn.ValueKind == JsonValueKind.Array)
             {
                 foreach (var item in sn.EnumerateArray())
                     schema.SectionNames.Add(item.GetString() ?? "");
             }
-            if (root.TryGetProperty("heSectionNames", out var hsn))
+            if (flattenedRoot.TryGetProperty("heSectionNames", out var hsn) &&
+                hsn.ValueKind == JsonValueKind.Array)
             {
                 foreach (var item in hsn.EnumerateArray())
                     schema.HeSectionNames.Add(item.GetString() ?? "");
+            }
+            if (flattenedRoot.TryGetProperty("addressTypes", out var addressTypes) &&
+                addressTypes.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in addressTypes.EnumerateArray())
+                    schema.AddressTypes.Add(item.GetString() ?? "");
             }
 
             if (root.TryGetProperty("alts", out var alts))
@@ -669,7 +680,12 @@ public sealed class BookSchema
                 HeTitle = GetString(node, "heTitle"),
                 WholeRef = wholeRef,
                 NumericEquivalent = GetInt(node, "numeric_equivalent"),
+                StartingAddress = GetString(node, "startingAddress"),
             });
+
+            AddStrings(node, "addressTypes", destination[^1].AddressTypes);
+            AddStrings(node, "sectionNames", destination[^1].SectionNames);
+            AddStrings(node, "refs", destination[^1].Refs);
         }
 
         if (node.TryGetProperty("nodes", out var children) && children.ValueKind == JsonValueKind.Array)
@@ -699,6 +715,25 @@ public sealed class BookSchema
             if (!current.TryGetProperty(p, out current)) return 0;
         }
         return current.ValueKind == JsonValueKind.Number && current.TryGetInt32(out var v) ? v : 0;
+    }
+
+    private static void AddStrings(JsonElement element, string propertyName, List<string> destination)
+    {
+        if (!element.TryGetProperty(propertyName, out var values) ||
+            values.ValueKind != JsonValueKind.Array)
+        {
+            return;
+        }
+
+        foreach (var value in values.EnumerateArray())
+        {
+            destination.Add(value.ValueKind switch
+            {
+                JsonValueKind.String => value.GetString() ?? string.Empty,
+                JsonValueKind.Number => value.GetRawText(),
+                _ => string.Empty
+            });
+        }
     }
 }
 
@@ -807,4 +842,8 @@ public sealed class SchemaAltNode
     public string HeTitle { get; set; } = string.Empty;
     public string WholeRef { get; set; } = string.Empty;
     public int NumericEquivalent { get; set; }
+    public string StartingAddress { get; set; } = string.Empty;
+    public List<string> AddressTypes { get; set; } = new();
+    public List<string> SectionNames { get; set; } = new();
+    public List<string> Refs { get; set; } = new();
 }
