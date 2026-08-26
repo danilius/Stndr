@@ -76,7 +76,7 @@ public partial class MainWindow
 
             if (SefariaLibraryService.IsHebrew(book))
             {
-                var selectedHebrewText = installedVersions.FirstOrDefault(version => string.Equals(version.Key, book.Key, StringComparison.Ordinal));
+                var selectedHebrewText = existing.Value.HebrewTexts.FirstOrDefault(version => string.Equals(version.Key, book.Key, StringComparison.Ordinal));
                 if (selectedHebrewText is not null)
                 {
                     existing.Value.Primary = selectedHebrewText;
@@ -194,6 +194,24 @@ public partial class MainWindow
         SavedTabState? savedState)
     {
         var hebrewTexts = installedVersions.Where(SefariaLibraryService.IsHebrew).ToList();
+        var complexSections = _sefariaLibrary.GetComplexVersionSections(book.Title, "he");
+        if (complexSections.Count >= 2)
+        {
+            var preferredVersions = GetSavedComplexSectionVersions(book.Title, "he", complexSections);
+            var composite = _sefariaLibrary.CreateBestAvailableComplexVersion(
+                book.Title,
+                "he",
+                preferredVersions);
+            if (composite is not null)
+            {
+                hebrewTexts = new[] { composite }
+                    .Concat(FindWholeComplexVersions(complexSections))
+                    .GroupBy(version => version.Key, StringComparer.Ordinal)
+                    .Select(group => group.First())
+                    .ToList();
+            }
+        }
+
         var primary = GetSavedHebrewText(book.Title, hebrewTexts)
             ?? hebrewTexts.FirstOrDefault()
             ?? installedVersions.FirstOrDefault(version => string.Equals(version.Key, book.Key, StringComparison.Ordinal))
@@ -210,6 +228,7 @@ public partial class MainWindow
             Primary = primary,
             Versions = installedVersions,
             HebrewTexts = hebrewTexts,
+            HebrewVersionSections = complexSections,
             Translations = translations,
             SelectedTranslation = selectedTranslation,
             PinnedCommentarySourceKeys = GetPinnedCommentarySourceKeysForBook(book.Title),
@@ -222,6 +241,54 @@ public partial class MainWindow
         SaveSelectedTranslation(state);
         state.Schema = _sefariaLibrary.GetBookSchema(book.Title);
         return state;
+    }
+
+    private Dictionary<string, string> GetSavedComplexSectionVersions(
+        string workTitle,
+        string languageCode,
+        IEnumerable<ComplexVersionSection> sections)
+    {
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var section in sections)
+        {
+            var preferenceKey = SefariaLibraryService.ComplexSectionPreferenceKey(
+                workTitle,
+                languageCode,
+                section.Key);
+            if (_settings.SelectedComplexVersionsBySection.TryGetValue(preferenceKey, out var versionKey))
+            {
+                result[section.Key] = versionKey;
+            }
+        }
+
+        return result;
+    }
+
+    private static List<InstalledSefariaBook> FindWholeComplexVersions(
+        IReadOnlyList<ComplexVersionSection> sections)
+    {
+        if (sections.Count == 0)
+        {
+            return new();
+        }
+
+        var completeIds = new HashSet<long>(
+            sections[0].Versions.Select(version => version.OfflineVersionId));
+        foreach (var section in sections.Skip(1))
+        {
+            completeIds.IntersectWith(section.Versions.Select(version => version.OfflineVersionId));
+        }
+
+        return sections
+            .SelectMany(section => section.Versions)
+            .Where(version => completeIds.Contains(version.OfflineVersionId))
+            .GroupBy(version => version.OfflineVersionId)
+            .Select(group => group.First())
+            .OrderByDescending(version => version.OfflineIsPrimary)
+            .ThenByDescending(version => version.OfflineIsSource)
+            .ThenByDescending(version => version.OfflinePriority)
+            .ThenByDescending(version => version.SegmentCount)
+            .ToList();
     }
 
     private void RestoreReaderTab(
@@ -2498,6 +2565,21 @@ public partial class MainWindow
         state.Versions = installedVersions;
         state.HebrewTexts = installedVersions.Where(SefariaLibraryService.IsHebrew).ToList();
         state.Translations = installedVersions.Where(version => !SefariaLibraryService.IsHebrew(version)).ToList();
+        state.HebrewVersionSections = _sefariaLibrary.GetComplexVersionSections(book.Title, "he");
+        if (state.HebrewVersionSections.Count >= 2)
+        {
+            var preferredVersions = GetSavedComplexSectionVersions(
+                book.Title,
+                "he",
+                state.HebrewVersionSections);
+            var composite = _sefariaLibrary.CreateBestAvailableComplexVersion(book.Title, "he", preferredVersions);
+            if (composite is not null)
+            {
+                state.HebrewTexts = new[] { composite }
+                    .Concat(FindWholeComplexVersions(state.HebrewVersionSections))
+                    .ToList();
+            }
+        }
 
         var downloadedHebrewText = book.SelectedVersion is null
             ? null

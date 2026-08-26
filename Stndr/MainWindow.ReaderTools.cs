@@ -209,6 +209,24 @@ public partial class MainWindow
             }
         }
 
+        if (readerState.HebrewVersionSections.Count > 0)
+        {
+            if (textTools.Children.Count > 0)
+            {
+                textTools.Children.Add(new Border { Height = 6 });
+            }
+
+            textTools.Children.Add(new TextBlock
+            {
+                Text = "Hebrew versions by section",
+                FontWeight = FontWeight.SemiBold
+            });
+            foreach (var section in readerState.HebrewVersionSections)
+            {
+                textTools.Children.Add(CreateComplexSectionVersionExpander(readerState, section));
+            }
+        }
+
         if (readerState.Translations.Count == 0)
         {
             textTools.Children.Add(new TextBlock
@@ -308,6 +326,115 @@ public partial class MainWindow
                     SaveLayoutState();
             }));
         }
+    }
+
+    private Expander CreateComplexSectionVersionExpander(
+        ReaderTabState readerState,
+        ComplexVersionSection section)
+    {
+        var panel = new StackPanel { Spacing = 4 };
+        if (section.Versions.Count == 0)
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = "No Hebrew text is available for this section.",
+                TextWrapping = TextWrapping.Wrap
+            });
+        }
+        else
+        {
+            var maximumSegments = section.Versions.Max(version =>
+                version.NodeCoverage[section.Key].Segments);
+            foreach (var version in section.Versions)
+            {
+                var selectedVersionId = readerState.Primary.IsCompositeOfflineVersion &&
+                                        readerState.Primary.CompositeSectionVersionIds.TryGetValue(
+                                            section.Key,
+                                            out var compositeVersionId)
+                    ? compositeVersionId
+                    : readerState.Primary.OfflineVersionId;
+                var option = new RadioButton
+                {
+                    Content = FormatComplexVersionCoverage(version, section.Key, maximumSegments),
+                    GroupName = $"hebrew-section-{readerState.WorkTitle}-{section.Key}",
+                    IsChecked = selectedVersionId == version.OfflineVersionId,
+                    Tag = version
+                };
+                option.IsCheckedChanged += (_, _) =>
+                {
+                    if (option.IsChecked == true &&
+                        option.Tag is InstalledSefariaBook selectedVersion)
+                    {
+                        SelectComplexSectionVersion(readerState, section, selectedVersion);
+                    }
+                };
+                panel.Children.Add(option);
+            }
+        }
+
+        return new Expander
+        {
+            Header = FormatTitle(section.Title, section.HebrewTitle),
+            Content = panel,
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+    }
+
+    private static string FormatComplexVersionCoverage(
+        InstalledSefariaBook version,
+        string nodeKey,
+        long maximumSegments)
+    {
+        var coverage = version.NodeCoverage[nodeKey];
+        var qualifier = maximumSegments > 0 && coverage.Segments * 10 < maximumSegments
+            ? "; fragment"
+            : maximumSegments > 0 && coverage.Segments * 4 < maximumSegments * 3
+                ? "; partial"
+                : string.Empty;
+        var segmentLabel = coverage.Segments == 1 ? "segment" : "segments";
+        return $"{version.VersionTitle} ({coverage.Segments:N0} {segmentLabel}{qualifier})";
+    }
+
+    private void SelectComplexSectionVersion(
+        ReaderTabState readerState,
+        ComplexVersionSection section,
+        InstalledSefariaBook selectedVersion)
+    {
+        var preferenceKey = SefariaLibraryService.ComplexSectionPreferenceKey(
+            readerState.WorkTitle,
+            "he",
+            section.Key);
+        _settings.SelectedComplexVersionsBySection[preferenceKey] = selectedVersion.StableVersionKey;
+        var preferredVersions = GetSavedComplexSectionVersions(
+            readerState.WorkTitle,
+            "he",
+            readerState.HebrewVersionSections);
+        var composite = _sefariaLibrary.CreateBestAvailableComplexVersion(
+            readerState.WorkTitle,
+            "he",
+            preferredVersions);
+        if (composite is null)
+        {
+            return;
+        }
+
+        readerState.Primary = composite;
+        var compositeIndex = readerState.HebrewTexts.FindIndex(version =>
+            string.Equals(version.VersionTitle, "Best available", StringComparison.Ordinal));
+        if (compositeIndex >= 0)
+        {
+            readerState.HebrewTexts[compositeIndex] = composite;
+        }
+        else
+        {
+            readerState.HebrewTexts.Insert(0, composite);
+        }
+
+        NormalizeHebrewMarksMode(readerState);
+        SaveSelectedHebrewText(readerState);
+        RenderReaderContent(readerState);
+        Dispatcher.UIThread.Post(UpdateReaderTools, DispatcherPriority.Background);
+        SaveLayoutState();
     }
 
     private Control CreateDictionaryDrillDownToolsControl()

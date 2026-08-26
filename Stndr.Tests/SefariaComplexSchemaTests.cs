@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -149,6 +150,80 @@ public sealed class SefariaComplexSchemaTests
         Assert.NotEmpty(units);
         Assert.All(units.Take(50), unit => Assert.Empty(unit.NavigationKey));
         Assert.Empty(library.ReadInstalledBookNavigationPages(cassuto));
+    }
+
+    [Fact]
+    public void Tur_composite_selects_substantial_sources_and_builds_four_part_navigation()
+    {
+        var dataFolder = TryFindDataFolder();
+        if (dataFolder is null)
+        {
+            return;
+        }
+
+        var library = new SefariaLibraryService(dataFolder);
+        var sections = library.GetComplexVersionSections("Tur", "he");
+
+        Assert.Equal(
+            ["Orach Chaim", "Yoreh Deah", "Even HaEzer", "Choshen Mishpat"],
+            sections.Select(section => section.Key));
+        Assert.All(sections, section => Assert.NotEmpty(section.Versions));
+        Assert.Equal(
+            ["Orach Chaim, Vilna, 1923", "Yoreh Deah, Vilna, 1923",
+             "Even HaEzer, Vilna, 1923", "Choshen Mishpat, Vilna, 1923"],
+            sections.Select(section => section.Versions[0].VersionTitle));
+
+        var composite = Assert.IsType<InstalledSefariaBook>(
+            library.CreateBestAvailableComplexVersion("Tur", "he"));
+        Assert.True(composite.IsCompositeOfflineVersion);
+        Assert.Equal(4, composite.CompositeSectionVersionIds.Count);
+
+        var units = library.ReadInstalledBookUnits(composite);
+        var navigation = library.ReadInstalledBookNavigationPages(composite);
+
+        Assert.True(units.Count > 5_000);
+        Assert.True(navigation.Count > 400);
+        var navigationGroups = navigation.Select(page => page.ChapterTitle).Distinct().ToList();
+        Assert.True(navigationGroups.Count > 20);
+        Assert.Contains(navigationGroups, title => title.StartsWith("Orach Chayim — ", StringComparison.Ordinal));
+        Assert.Contains(navigationGroups, title => title.StartsWith("Yoreh De'ah — ", StringComparison.Ordinal));
+        Assert.Contains(navigationGroups, title => title.StartsWith("Even HaEzer — ", StringComparison.Ordinal));
+        Assert.Contains(navigationGroups, title => title.StartsWith("Choshen Mishpat — ", StringComparison.Ordinal));
+        Assert.Contains(navigationGroups, title => title.EndsWith("Laws of Tzitzit", StringComparison.Ordinal));
+        Assert.Contains(navigation, page =>
+            page.Page.StartsWith("Orach Chaim.", StringComparison.Ordinal) &&
+            page.Label == "1");
+        Assert.Contains(units, unit =>
+            unit.Reference.StartsWith("Choshen Mishpat.default.", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Tur_composite_honours_stable_per_section_preferences()
+    {
+        var dataFolder = TryFindDataFolder();
+        if (dataFolder is null)
+        {
+            return;
+        }
+
+        var library = new SefariaLibraryService(dataFolder);
+        var sections = library.GetComplexVersionSections("Tur", "he");
+        var yorehDeah = sections.Single(section => section.Key == "Yoreh Deah");
+        var warsaw = yorehDeah.Versions.Single(version => version.VersionTitle == "Warsaw 1861");
+        var preferred = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["Yoreh Deah"] = warsaw.StableVersionKey
+        };
+
+        var composite = Assert.IsType<InstalledSefariaBook>(
+            library.CreateBestAvailableComplexVersion("Tur", "he", preferred));
+
+        Assert.Equal(
+            warsaw.OfflineVersionId,
+            composite.CompositeSectionVersionIds["Yoreh Deah"]);
+        Assert.NotEqual(
+            warsaw.OfflineVersionId,
+            composite.CompositeSectionVersionIds["Choshen Mishpat"]);
     }
 
     private static string? TryFindDataFolder()

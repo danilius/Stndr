@@ -285,7 +285,8 @@ public sealed partial class SefariaLibraryService
 
     private static (string ChapterTitle, string HebrewChapterTitle) GetTopicTitleFromSchema(
         IReadOnlyList<SchemaAltNode> topics,
-        string section)
+        string section,
+        string? divisionTitle = null)
     {
         if (!int.TryParse(section, out var sectionNumber))
         {
@@ -294,7 +295,9 @@ public sealed partial class SefariaLibraryService
 
         foreach (var topic in topics)
         {
-            if (TryParseWholeRefSimanRange(topic.WholeRef, out var start, out var end) &&
+            if ((string.IsNullOrWhiteSpace(divisionTitle) ||
+                 topic.WholeRef.Contains($", {divisionTitle} ", StringComparison.OrdinalIgnoreCase)) &&
+                TryParseWholeRefSimanRange(topic.WholeRef, out var start, out var end) &&
                 sectionNumber >= start &&
                 sectionNumber <= end)
             {
@@ -602,6 +605,11 @@ public sealed partial class SefariaLibraryService
         out List<ReaderTextUnit> units)
     {
         units = new List<ReaderTextUnit>();
+        if (TryReadNamedSimanSeifProfile(root, schema, cancellationToken, out units))
+        {
+            return true;
+        }
+
         // Require a genuine multi-part commentary. A two-node work can share this
         // shape while having different navigation expectations; keep those on the
         // established fallback until they have their own regression coverage.
@@ -675,6 +683,111 @@ public sealed partial class SefariaLibraryService
                     NavigationLabel = $"{chapter}:{verse}"
                 });
             }
+        }
+
+        return units.Count > 0;
+    }
+
+    private static bool TryReadNamedSimanSeifProfile(
+        JsonElement root,
+        BookSchema? schema,
+        CancellationToken cancellationToken,
+        out List<ReaderTextUnit> units)
+    {
+        units = new List<ReaderTextUnit>();
+        if (schema?.RootNode is not { Children.Count: >= 2 } schemaRoot ||
+            !root.TryGetProperty("text", out var rawText) ||
+            rawText.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        var schemaKeys = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var container in schemaRoot.Children)
+        {
+            var body = container.Children.FirstOrDefault(node =>
+                node.IsDefault &&
+                node.Children.Count == 0 &&
+                node.Depth == 2 &&
+                node.SectionNames.Count == 2 &&
+                string.Equals(node.SectionNames[0], "Siman", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(node.SectionNames[1], "Seif", StringComparison.OrdinalIgnoreCase));
+            if (body is null ||
+                string.IsNullOrWhiteSpace(container.Key) ||
+                !rawText.TryGetProperty(container.Key, out var content) ||
+                content.ValueKind != JsonValueKind.Object)
+            {
+                units.Clear();
+                return false;
+            }
+
+            schemaKeys.Add(container.Key);
+            var groupTitle = FirstSchemaNodeTitle(container);
+            var hebrewGroupTitle = container.HeTitle;
+            schema.AltStructures.TryGetValue("Topic", out var topics);
+            var introduction = container.Children.FirstOrDefault(IsIntroductionLeaf);
+            if (introduction is not null &&
+                content.TryGetProperty(introduction.Key, out var introductionText) &&
+                HasTextContent(introductionText))
+            {
+                foreach (var unit in EnumerateTextUnits(
+                             introductionText,
+                             new List<string> { container.Key, introduction.Key },
+                             cancellationToken))
+                {
+                    units.Add(unit with
+                    {
+                        ChapterTitle = groupTitle,
+                        HebrewChapterTitle = hebrewGroupTitle,
+                        NavigationKey = $"{container.Key}.{introduction.Key}",
+                        NavigationLabel = FirstSchemaNodeTitle(introduction),
+                        HebrewNavigationLabel = introduction.HeTitle
+                    });
+                }
+            }
+
+            if (!content.TryGetProperty(body.Key, out var bodyText) || !HasTextContent(bodyText))
+            {
+                continue;
+            }
+
+            foreach (var unit in EnumerateTextUnits(
+                         bodyText,
+                         new List<string> { container.Key, body.Key },
+                         cancellationToken))
+            {
+                var parts = unit.Reference.Split(
+                    '.',
+                    StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                if (parts.Length < 4)
+                {
+                    units.Clear();
+                    return false;
+                }
+
+                var siman = parts[2];
+                var (topicTitle, hebrewTopicTitle) = topics is { Count: > 0 }
+                    ? GetTopicTitleFromSchema(topics, siman, container.Key)
+                    : (string.Empty, string.Empty);
+                units.Add(unit with
+                {
+                    ChapterTitle = string.IsNullOrWhiteSpace(topicTitle)
+                        ? groupTitle
+                        : $"{groupTitle} — {topicTitle}",
+                    HebrewChapterTitle = string.IsNullOrWhiteSpace(hebrewTopicTitle)
+                        ? hebrewGroupTitle
+                        : $"{hebrewGroupTitle} — {hebrewTopicTitle}",
+                    NavigationKey = $"{container.Key}.{siman}",
+                    NavigationLabel = siman
+                });
+            }
+        }
+
+        if (rawText.EnumerateObject().Any(property =>
+                HasTextContent(property.Value) && !schemaKeys.Contains(property.Name)))
+        {
+            units.Clear();
+            return false;
         }
 
         return units.Count > 0;

@@ -66,6 +66,7 @@ public partial class MainWindow
         {
             Content = "Run Search",
             MinWidth = 108,
+            IsDefault = true,
             VerticalAlignment = VerticalAlignment.Center
         };
         var saveButton = new Button
@@ -1901,19 +1902,19 @@ public partial class MainWindow
         });
     }
 
-    private static bool MatchesAdvancedSearchCategoryScope(InstalledSefariaBook book, string scopeKey)
+    internal static bool MatchesAdvancedSearchCategoryScope(InstalledSefariaBook book, string scopeKey)
     {
         var scopePath = SplitAdvancedSearchScopePath(scopeKey);
         if (scopePath.Count > 1)
         {
             if (IsMishnahSederScope(scopePath))
             {
-                return IsBaseMishnahTractateInSeder(book, scopePath[^1]);
+                return IsBaseTractateAtScopePath(book, scopePath);
             }
 
             if (IsTalmudSederScope(scopePath))
             {
-                return IsBaseTalmudTractateInSeder(book, scopePath[^1]);
+                return IsBaseTractateAtScopePath(book, scopePath);
             }
 
             return BookCategoryPathStartsWith(book, scopePath);
@@ -1973,6 +1974,15 @@ public partial class MainWindow
         }
 
         return true;
+    }
+
+    private static bool IsBaseTractateAtScopePath(
+        InstalledSefariaBook book,
+        IReadOnlyList<string> scopePath)
+    {
+        return book.Categories.Count == scopePath.Count &&
+            BookCategoryPathStartsWith(book, scopePath) &&
+            !book.Title.Contains(" on ", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsBaseMishnahTractateInSeder(InstalledSefariaBook book, string seder)

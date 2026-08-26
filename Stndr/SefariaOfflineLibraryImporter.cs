@@ -26,7 +26,7 @@ namespace Stndr;
 /// </summary>
 public sealed class SefariaOfflineLibraryImporter
 {
-    public const int SchemaVersion = 4;
+    public const int SchemaVersion = 5;
     private const int ProgressInterval = 50_000;
     private static readonly JsonWriterSettings CompactJson = new()
     {
@@ -185,6 +185,7 @@ public sealed class SefariaOfflineLibraryImporter
             CREATE TABLE categories(id INTEGER PRIMARY KEY,data_json TEXT NOT NULL);
             CREATE TABLE people(id INTEGER PRIMARY KEY,data_json TEXT NOT NULL);
             CREATE TABLE versions(id INTEGER PRIMARY KEY,upstream_id TEXT NOT NULL,work_id INTEGER NOT NULL,language TEXT NOT NULL,actual_language TEXT NOT NULL,language_family TEXT NOT NULL,version_title TEXT NOT NULL,version_title_hebrew TEXT NOT NULL,version_source TEXT NOT NULL,license TEXT NOT NULL,status TEXT NOT NULL,direction TEXT NOT NULL,is_primary INTEGER NOT NULL,is_source INTEGER NOT NULL,priority REAL NOT NULL,text_shape TEXT NOT NULL,segment_count INTEGER NOT NULL,character_count INTEGER NOT NULL,uncompressed_bytes INTEGER NOT NULL,compressed_bytes INTEGER NOT NULL,text_sha256 BLOB NOT NULL,content_zlib BLOB NOT NULL,metadata_json TEXT NOT NULL,UNIQUE(work_id,language,version_title));
+            CREATE TABLE version_node_coverage(version_id INTEGER NOT NULL,node_path TEXT NOT NULL,segment_count INTEGER NOT NULL,character_count INTEGER NOT NULL,PRIMARY KEY(version_id,node_path)) WITHOUT ROWID;
             CREATE TABLE refs(id INTEGER PRIMARY KEY,reference TEXT NOT NULL UNIQUE);
             CREATE TABLE links(id INTEGER PRIMARY KEY,upstream_id TEXT NOT NULL,ref0_id INTEGER NOT NULL,ref1_id INTEGER NOT NULL,work0_id INTEGER,work1_id INTEGER,link_type TEXT NOT NULL,anchor_text TEXT NOT NULL,is_auto INTEGER NOT NULL,generated_by TEXT NOT NULL,available0 INTEGER NOT NULL,available1 INTEGER NOT NULL,inline_citation INTEGER NOT NULL,extra_json TEXT NOT NULL);
             CREATE TABLE link_endpoints(ref_id INTEGER NOT NULL,link_id INTEGER NOT NULL,side INTEGER NOT NULL,PRIMARY KEY(ref_id,link_id,side)) WITHOUT ROWID;
@@ -447,6 +448,8 @@ public sealed class SefariaOfflineLibraryImporter
         using var transaction = connection.BeginTransaction();
         using var insert = new PreparedInsert(connection, transaction,
             "INSERT INTO versions VALUES($p0,$p1,$p2,$p3,$p4,$p5,$p6,$p7,$p8,$p9,$p10,$p11,$p12,$p13,$p14,$p15,$p16,$p17,$p18,$p19,$p20,$p21,$p22)", 23);
+        using var insertCoverage = new PreparedInsert(connection, transaction,
+            "INSERT INTO version_node_coverage VALUES($p0,$p1,$p2,$p3)", 4);
         await foreach (var document in ReadBsonDocumentsAsync(stream, token))
         {
             var title = String(document, "title");
@@ -463,12 +466,24 @@ public sealed class SefariaOfflineLibraryImporter
             document.Remove("_id");
             document.Remove("chapter");
             var language = String(document, "language");
+            var versionId = ++_nextVersionId;
             await insert.ExecuteAsync(token,
-                ++_nextVersionId, upstreamId, workId, language, String(document, "actualLanguage", language), String(document, "languageFamilyName"),
+                versionId, upstreamId, workId, language, String(document, "actualLanguage", language), String(document, "languageFamilyName"),
                 String(document, "versionTitle"), String(document, "versionTitleInHebrew"), String(document, "versionSource"),
                 String(document, "license"), String(document, "status"), String(document, "direction"), Bool(document, "isPrimary"),
                 Bool(document, "isSource"), Double(document, "priority"), stats.Shape, stats.Segments, stats.Characters,
                 jsonBytes.Length, compressed.Length, SHA256.HashData(jsonBytes), compressed, Json(document));
+
+            foreach (var nodeCoverage in ExtractNodeCoverage(content))
+            {
+                await insertCoverage.ExecuteAsync(
+                    token,
+                    versionId,
+                    nodeCoverage.Key,
+                    nodeCoverage.Value.Segments,
+                    nodeCoverage.Value.Characters);
+            }
+
             if (_nextVersionId % 250 == 0)
             {
                 progress?.Report(new(SefariaOfflineLibraryStage.ImportingTexts,
@@ -614,6 +629,7 @@ public sealed class SefariaOfflineLibraryImporter
             CREATE INDEX ix_versions_work_language ON versions(work_id,language,priority DESC);
             CREATE UNIQUE INDEX ix_versions_upstream_id ON versions(upstream_id) WHERE upstream_id<>'';
             CREATE UNIQUE INDEX ix_works_upstream_id ON works(upstream_id) WHERE upstream_id<>'';
+            CREATE INDEX ix_version_node_coverage_path ON version_node_coverage(node_path,segment_count DESC);
             CREATE UNIQUE INDEX ix_links_upstream_id ON links(upstream_id) WHERE upstream_id<>'';
             CREATE INDEX ix_versions_license ON versions(license);
             CREATE INDEX ix_links_work0 ON links(work0_id);
@@ -750,6 +766,26 @@ public sealed class SefariaOfflineLibraryImporter
         foreach (var language in languages.Select(item => (item?.ToString() ?? "").ToLowerInvariant()))
             mask |= language switch { "en" => 1, "he" => 2, _ when language.Length > 0 => 4, _ => 0 };
         return mask;
+    }
+
+    internal static Dictionary<string, VersionNodeCoverage> ExtractNodeCoverage(BsonValue value)
+    {
+        var result = new Dictionary<string, VersionNodeCoverage>(StringComparer.Ordinal);
+        if (value is not BsonDocument document)
+        {
+            return result;
+        }
+
+        foreach (var element in document)
+        {
+            var stats = TextStats(element.Value);
+            if (stats.Segments > 0)
+            {
+                result[element.Name] = new VersionNodeCoverage(stats.Segments, stats.Characters);
+            }
+        }
+
+        return result;
     }
 
     private static (string Shape, long Segments, long Characters) TextStats(BsonValue value)

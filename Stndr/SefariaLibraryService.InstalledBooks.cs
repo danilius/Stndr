@@ -1215,10 +1215,14 @@ public sealed partial class SefariaLibraryService
         return new InstalledSefariaBook
         {
             OfflineVersionId = book.OfflineVersionId,
+            UpstreamVersionId = book.UpstreamVersionId,
             OfflineIsPrimary = book.OfflineIsPrimary,
             OfflineIsSource = book.OfflineIsSource,
             OfflinePriority = book.OfflinePriority,
             SegmentCount = book.SegmentCount,
+            CharacterCount = book.CharacterCount,
+            NodeCoverage = new Dictionary<string, VersionNodeCoverage>(book.NodeCoverage, StringComparer.Ordinal),
+            CompositeSectionVersionIds = new Dictionary<string, long>(book.CompositeSectionVersionIds, StringComparer.Ordinal),
             Title = book.Title,
             HebrewTitle = book.HebrewTitle,
             Categories = new List<string>(book.Categories),
