@@ -238,10 +238,14 @@ public sealed class SefariaIndexJsonNode
 public sealed class InstalledSefariaBook
 {
     public long OfflineVersionId { get; set; }
+    public string UpstreamVersionId { get; set; } = string.Empty;
     public bool OfflineIsPrimary { get; set; }
     public bool OfflineIsSource { get; set; }
     public double OfflinePriority { get; set; }
     public long SegmentCount { get; set; }
+    public long CharacterCount { get; set; }
+    public Dictionary<string, VersionNodeCoverage> NodeCoverage { get; set; } = new(StringComparer.Ordinal);
+    public Dictionary<string, long> CompositeSectionVersionIds { get; set; } = new(StringComparer.Ordinal);
     public string Title { get; set; } = string.Empty;
     public string? HebrewTitle { get; set; }
     public List<string> Categories { get; set; } = new();
@@ -261,6 +265,9 @@ public sealed class InstalledSefariaBook
     public bool IsOfflineLibraryVersion => OfflineVersionId > 0;
 
     [JsonIgnore]
+    public bool IsCompositeOfflineVersion => CompositeSectionVersionIds.Count > 0;
+
+    [JsonIgnore]
     public string DisplayTitle => string.IsNullOrWhiteSpace(Title) ? "Untitled" : Title;
 
     [JsonIgnore]
@@ -270,7 +277,20 @@ public sealed class InstalledSefariaBook
 
     [JsonIgnore]
     public string Key => $"{Title}|{LanguageCode}|{VersionTitle}";
+
+    [JsonIgnore]
+    public string StableVersionKey => !string.IsNullOrWhiteSpace(UpstreamVersionId)
+        ? $"upstream:{UpstreamVersionId}"
+        : Key;
 }
+
+public sealed record VersionNodeCoverage(long Segments, long Characters);
+
+public sealed record ComplexVersionSection(
+    string Key,
+    string Title,
+    string HebrewTitle,
+    List<InstalledSefariaBook> Versions);
 
 public sealed class InstalledSefariaCategory
 {
@@ -335,6 +355,7 @@ public sealed class AppSettings
     public LinkOpenedTabPlacement LinkOpenedTabPlacement { get; set; } = LinkOpenedTabPlacement.AfterSourceTab;
     public Dictionary<string, string> SelectedHebrewTextsByBook { get; set; } = new();
     public Dictionary<string, string> SelectedTranslationsByBook { get; set; } = new();
+    public Dictionary<string, string> SelectedComplexVersionsBySection { get; set; } = new();
     public Dictionary<string, ReaderDisplayMode> ReaderDisplayModesByBook { get; set; } = new();
     public Dictionary<string, ReaderLinksPreferences> ReaderLinksPreferencesByBook { get; set; } = new();
     public Dictionary<string, List<string>> PinnedCommentarySourceKeysByBook { get; set; } = new();
@@ -622,13 +643,7 @@ public sealed class BookSchema
                     {
                         foreach (var n in nodesEl.EnumerateArray())
                         {
-                            nodes.Add(new SchemaAltNode
-                            {
-                                Title = GetString(n, "title"),
-                                HeTitle = GetString(n, "heTitle"),
-                                WholeRef = GetString(n, "wholeRef"),
-                                NumericEquivalent = GetInt(n, "numeric_equivalent"),
-                            });
+                            AppendAltNodes(n, nodes);
                         }
                     }
                     schema.AltStructures[altProp.Name] = nodes;
@@ -640,6 +655,29 @@ public sealed class BookSchema
         catch
         {
             return null;
+        }
+    }
+
+    private static void AppendAltNodes(JsonElement node, List<SchemaAltNode> destination)
+    {
+        var wholeRef = GetString(node, "wholeRef");
+        if (!string.IsNullOrWhiteSpace(wholeRef))
+        {
+            destination.Add(new SchemaAltNode
+            {
+                Title = GetString(node, "title"),
+                HeTitle = GetString(node, "heTitle"),
+                WholeRef = wholeRef,
+                NumericEquivalent = GetInt(node, "numeric_equivalent"),
+            });
+        }
+
+        if (node.TryGetProperty("nodes", out var children) && children.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var child in children.EnumerateArray())
+            {
+                AppendAltNodes(child, destination);
+            }
         }
     }
 

@@ -65,7 +65,7 @@ public sealed partial class SefariaLibraryService
         command.CommandText = $"""
             SELECT v.id,w.title,w.he_title,w.categories_json,{workOrderExpression},
                    v.actual_language,v.language,v.version_title,v.compressed_bytes,v.license,v.version_source,
-                   v.is_primary,v.is_source,v.priority,v.segment_count
+                   v.is_primary,v.is_source,v.priority,v.segment_count,v.upstream_id,v.character_count
             FROM versions v JOIN works w ON w.id=v.work_id
             WHERE v.segment_count>0
             ORDER BY w.id,v.is_primary DESC,v.is_source DESC,v.priority DESC,v.id
@@ -94,9 +94,13 @@ public sealed partial class SefariaLibraryService
                 OfflineIsPrimary = reader.GetInt64(11) != 0,
                 OfflineIsSource = reader.GetInt64(12) != 0,
                 OfflinePriority = reader.GetDouble(13),
-                SegmentCount = reader.GetInt64(14)
+                SegmentCount = reader.GetInt64(14),
+                UpstreamVersionId = reader.GetString(15),
+                CharacterCount = reader.GetInt64(16)
             });
         }
+        reader.Dispose();
+        LoadOfflineNodeCoverage(connection, books);
 
         lock (_offlineCacheGate)
         {
@@ -121,6 +125,38 @@ public sealed partial class SefariaLibraryService
         }
 
         return false;
+    }
+
+    private static void LoadOfflineNodeCoverage(
+        SqliteConnection connection,
+        IReadOnlyList<InstalledSefariaBook> books)
+    {
+        if (!OfflineTableExists(connection, "version_node_coverage"))
+        {
+            return;
+        }
+
+        var booksById = books.ToDictionary(book => book.OfflineVersionId);
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT version_id,node_path,segment_count,character_count FROM version_node_coverage";
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            if (booksById.TryGetValue(reader.GetInt64(0), out var book))
+            {
+                book.NodeCoverage[reader.GetString(1)] = new VersionNodeCoverage(
+                    reader.GetInt64(2),
+                    reader.GetInt64(3));
+            }
+        }
+    }
+
+    private static bool OfflineTableExists(SqliteConnection connection, string tableName)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT 1 FROM sqlite_master WHERE type='table' AND name=$name LIMIT 1";
+        command.Parameters.AddWithValue("$name", tableName);
+        return command.ExecuteScalar() is not null;
     }
 
     private bool HasImportedOfflineWorkOrder()
@@ -212,9 +248,11 @@ public sealed partial class SefariaLibraryService
         return $"{{\"text\":{chapterJson}}}";
     }
 
-    private string ReadBookJson(InstalledSefariaBook book) => book.IsOfflineLibraryVersion
-        ? ReadOfflineVersionJson(book.OfflineVersionId)
-        : ReadJsonTextFile(book.FilePath);
+    private string ReadBookJson(InstalledSefariaBook book) => book.IsCompositeOfflineVersion
+        ? ReadOfflineCompositeVersionJson(book)
+        : book.IsOfflineLibraryVersion
+            ? ReadOfflineVersionJson(book.OfflineVersionId)
+            : ReadJsonTextFile(book.FilePath);
 
     private BookSchema? GetOfflineBookSchema(string title)
     {
@@ -260,18 +298,35 @@ public sealed partial class SefariaLibraryService
                 var nodes = new List<SchemaAltNode>();
                 if (structure.Value.TryGetProperty("nodes", out var nodeArray) && nodeArray.ValueKind == JsonValueKind.Array)
                 foreach (var node in nodeArray.EnumerateArray())
-                    nodes.Add(new SchemaAltNode
-                    {
-                        Title = GetPrimaryNodeTitle(node, "en"),
-                        HeTitle = GetPrimaryNodeTitle(node, "he"),
-                        WholeRef = node.TryGetProperty("wholeRef", out var wholeRef) ? wholeRef.GetString() ?? "" : "",
-                        NumericEquivalent = node.TryGetProperty("numeric_equivalent", out var numeric) && numeric.TryGetInt32(out var number) ? number : 0
-                    });
+                    AppendOfflineAltNodes(node, nodes);
                 result.AltStructures[structure.Name] = nodes;
             }
             return result;
         }
         catch (JsonException) { return null; }
+    }
+
+    private static void AppendOfflineAltNodes(JsonElement node, List<SchemaAltNode> destination)
+    {
+        var wholeRef = node.TryGetProperty("wholeRef", out var reference) ? reference.GetString() ?? "" : "";
+        if (!string.IsNullOrWhiteSpace(wholeRef))
+        {
+            destination.Add(new SchemaAltNode
+            {
+                Title = GetPrimaryNodeTitle(node, "en"),
+                HeTitle = GetPrimaryNodeTitle(node, "he"),
+                WholeRef = wholeRef,
+                NumericEquivalent = node.TryGetProperty("numeric_equivalent", out var numeric) && numeric.TryGetInt32(out var number) ? number : 0
+            });
+        }
+
+        if (node.TryGetProperty("nodes", out var children) && children.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var child in children.EnumerateArray())
+            {
+                AppendOfflineAltNodes(child, destination);
+            }
+        }
     }
 
     private static string GetPrimaryNodeTitle(JsonElement node, string language)

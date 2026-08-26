@@ -91,6 +91,7 @@ public partial class MainWindow
         public InstalledSefariaBook Primary { get; set; } = new();
         public List<InstalledSefariaBook> Versions { get; set; } = new();
         public List<InstalledSefariaBook> HebrewTexts { get; set; } = new();
+        public List<ComplexVersionSection> HebrewVersionSections { get; set; } = new();
         public List<InstalledSefariaBook> Translations { get; set; } = new();
         public InstalledSefariaBook? SelectedTranslation { get; set; }
         public ReaderDisplayMode DisplayMode { get; set; }
