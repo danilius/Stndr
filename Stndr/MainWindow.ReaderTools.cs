@@ -4218,8 +4218,26 @@ public partial class MainWindow
 
         ReaderNavigationItem? target = null;
         ReaderNavigationChapter? targetChapter = null;
+        ReaderDisplayRow? targetRow = null;
 
-        if (TryResolveNavigationSimanNumber(query, out var simanNumber))
+        if (readerState.HasTalmudNavigation &&
+            TryParseTalmudNavigationJump(query, out var talmudPage, out var talmudSection))
+        {
+            target = readerState.NavigationItems.FirstOrDefault(item =>
+                string.Equals(item.Row.ChapterKey, talmudPage, StringComparison.OrdinalIgnoreCase));
+            targetRow = talmudSection.HasValue
+                ? readerState.ReaderRows.FirstOrDefault(row =>
+                    !row.IsChapterHeading &&
+                    string.Equals(row.ChapterKey, talmudPage, StringComparison.OrdinalIgnoreCase) &&
+                    NavigationRowHasSection(row, talmudSection.Value))
+                : target?.Row;
+
+            if (target is null || targetRow is null)
+            {
+                return;
+            }
+        }
+        else if (TryResolveNavigationSimanNumber(query, out var simanNumber))
         {
             var simanKey = simanNumber.ToString();
             target = readerState.NavigationItems.FirstOrDefault(item =>
@@ -4268,8 +4286,17 @@ public partial class MainWindow
             }
         }
 
-        ScrollReaderRowToTop(readerState, target.Row);
+        ScrollReaderRowToTop(readerState, targetRow ?? target.Row);
         SaveLayoutState();
+    }
+
+    private static bool NavigationRowHasSection(ReaderDisplayRow row, int section)
+    {
+        return new[] { row.Primary?.Reference, row.Translation?.Reference }
+            .Where(reference => !string.IsNullOrWhiteSpace(reference))
+            .Any(reference =>
+                int.TryParse(GetReferencePart(reference!, -1), out var rowSection) &&
+                rowSection == section);
     }
 
     private bool MatchesNavigationJumpQuery(ReaderNavigationItem item, string query)

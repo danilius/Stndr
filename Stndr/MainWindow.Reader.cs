@@ -2263,6 +2263,77 @@ public partial class MainWindow
         return TryParseHebrewNumber(query, out number);
     }
 
+    internal static bool TryParseTalmudNavigationJump(string query, out string page, out int? section)
+    {
+        page = string.Empty;
+        section = null;
+        var normalized = NormalizeHebrewNumeralInput(query).ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return false;
+        }
+
+        var digitCount = 0;
+        while (digitCount < normalized.Length && char.IsDigit(normalized[digitCount]))
+        {
+            digitCount++;
+        }
+
+        if (digitCount > 0 && digitCount < normalized.Length &&
+            normalized[digitCount] is 'a' or 'b' &&
+            int.TryParse(normalized[..digitCount], out var englishDaf) && englishDaf > 0)
+        {
+            var suffix = normalized[(digitCount + 1)..];
+            if (suffix.StartsWith('.') || suffix.StartsWith(':'))
+            {
+                suffix = suffix[1..];
+                if (suffix.Length == 0)
+                {
+                    return false;
+                }
+            }
+
+            if (!TryParseOptionalNavigationSection(suffix, out section))
+            {
+                return false;
+            }
+
+            page = $"{englishDaf}{normalized[digitCount]}";
+            return true;
+        }
+
+        var amudMarkerIndex = normalized.IndexOfAny(['.', ':']);
+        if (amudMarkerIndex <= 0 ||
+            !TryParseHebrewNumber(normalized[..amudMarkerIndex], out var hebrewDaf) ||
+            !TryParseOptionalNavigationSection(
+                normalized[(amudMarkerIndex + 1)..], out section, allowHebrew: true))
+        {
+            return false;
+        }
+
+        page = $"{hebrewDaf}{(normalized[amudMarkerIndex] == ':' ? 'b' : 'a')}";
+        return true;
+    }
+
+    private static bool TryParseOptionalNavigationSection(
+        string value, out int? section, bool allowHebrew = false)
+    {
+        section = null;
+        if (value.Length == 0)
+        {
+            return true;
+        }
+
+        if ((!int.TryParse(value, out var number) || number <= 0) &&
+            (!allowHebrew || !TryParseHebrewNumber(value, out number)))
+        {
+            return false;
+        }
+
+        section = number;
+        return true;
+    }
+
     private static bool TryParseHebrewNumber(string value, out int number)
     {
         number = 0;
