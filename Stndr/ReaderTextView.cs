@@ -552,38 +552,7 @@ public sealed class ReaderTextView : SelectableTextBlock
 
     private string ApplyHebrewMarksMode(string text)
     {
-        if (HebrewMarksMode == HebrewMarksMode.NikkudAndCantillation)
-        {
-            return text;
-        }
-
-        var builder = new StringBuilder(text.Length);
-        foreach (var character in text)
-        {
-            if (!ShouldSuppressHebrewMark(character))
-            {
-                builder.Append(character);
-            }
-        }
-
-        return builder.ToString();
-    }
-
-    private bool ShouldSuppressHebrewMark(char character)
-    {
-        var code = (int)character;
-        var isCantillation = code >= 0x0591 && code <= 0x05AF;
-        var isNikkud = (code >= 0x05B0 && code <= 0x05BC) ||
-            code == 0x05C1 ||
-            code == 0x05C2 ||
-            code == 0x05C7;
-
-        return HebrewMarksMode switch
-        {
-            HebrewMarksMode.TextOnly => isCantillation || isNikkud,
-            HebrewMarksMode.Nikkud => isCantillation,
-            _ => false
-        };
+        return HebrewTextFormatting.ApplyMarksMode(text, HebrewMarksMode);
     }
 
     private static void ApplyTag(

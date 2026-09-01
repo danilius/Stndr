@@ -886,6 +886,11 @@ public sealed partial class SefariaLibraryService
         out List<ReaderTextUnit> units)
     {
         units = new List<ReaderTextUnit>();
+        if (TryReadGuideSchemaUnits(root, schema, cancellationToken, out units))
+        {
+            return true;
+        }
+
         if (TryReadNamedSimanSeifProfile(root, schema, cancellationToken, out units))
         {
             return true;
@@ -964,6 +969,151 @@ public sealed partial class SefariaLibraryService
                     NavigationLabel = $"{chapter}:{verse}"
                 });
             }
+        }
+
+        return units.Count > 0;
+    }
+
+    private static bool TryReadGuideSchemaUnits(
+        JsonElement root,
+        BookSchema? schema,
+        CancellationToken cancellationToken,
+        out List<ReaderTextUnit> units)
+    {
+        units = new List<ReaderTextUnit>();
+        if (schema?.RootNode is not { } schemaRoot ||
+            (!string.Equals(schemaRoot.Key, "Guide for the Perplexed", StringComparison.Ordinal) &&
+             !string.Equals(schemaRoot.Title, "Guide for the Perplexed", StringComparison.Ordinal)) ||
+            !root.TryGetProperty("text", out var rawText) ||
+            rawText.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        const string frontMatterTitle = "Front Matter";
+        const string frontMatterHebrewTitle = "\u05d4\u05e7\u05d3\u05de\u05d5\u05ea";
+        var schemaKeys = new HashSet<string>(StringComparer.Ordinal);
+        var partCount = 0;
+
+        foreach (var node in schemaRoot.Children)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (node.Children.Count == 0 &&
+                node.Depth == 1 &&
+                node.SectionNames.Count == 1 &&
+                string.Equals(node.SectionNames[0], "Paragraph", StringComparison.OrdinalIgnoreCase))
+            {
+                schemaKeys.Add(node.Key);
+                if (!rawText.TryGetProperty(node.Key, out var frontMatter) ||
+                    !HasTextContent(frontMatter))
+                {
+                    continue;
+                }
+
+                foreach (var unit in EnumerateTextUnits(
+                             frontMatter,
+                             new List<string> { node.Key },
+                             cancellationToken))
+                {
+                    units.Add(unit with
+                    {
+                        ChapterTitle = frontMatterTitle,
+                        HebrewChapterTitle = frontMatterHebrewTitle,
+                        NavigationKey = node.Key,
+                        NavigationLabel = FirstSchemaNodeTitle(node),
+                        HebrewNavigationLabel = node.HeTitle
+                    });
+                }
+
+                continue;
+            }
+
+            var body = node.Children.FirstOrDefault(child =>
+                child.IsDefault &&
+                child.Children.Count == 0 &&
+                child.Depth == 2 &&
+                child.SectionNames.Count == 2 &&
+                string.Equals(child.SectionNames[0], "Chapter", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(child.SectionNames[1], "Paragraph", StringComparison.OrdinalIgnoreCase));
+            if (body is null ||
+                string.IsNullOrWhiteSpace(node.Key) ||
+                !rawText.TryGetProperty(node.Key, out var partText) ||
+                partText.ValueKind != JsonValueKind.Object)
+            {
+                units.Clear();
+                return false;
+            }
+
+            schemaKeys.Add(node.Key);
+            partCount++;
+            var groupTitle = FirstSchemaNodeTitle(node);
+            var hebrewGroupTitle = node.HeTitle;
+            foreach (var introduction in node.Children.Where(child =>
+                         !child.IsDefault &&
+                         child.Children.Count == 0 &&
+                         child.Depth == 1 &&
+                         child.SectionNames.Count == 1 &&
+                         string.Equals(child.SectionNames[0], "Paragraph", StringComparison.OrdinalIgnoreCase)))
+            {
+                if (!partText.TryGetProperty(introduction.Key, out var introductionText) ||
+                    !HasTextContent(introductionText))
+                {
+                    continue;
+                }
+
+                foreach (var unit in EnumerateTextUnits(
+                             introductionText,
+                             new List<string> { node.Key, introduction.Key },
+                             cancellationToken))
+                {
+                    units.Add(unit with
+                    {
+                        ChapterTitle = groupTitle,
+                        HebrewChapterTitle = hebrewGroupTitle,
+                        NavigationKey = $"{node.Key}.{introduction.Key}",
+                        NavigationLabel = FirstSchemaNodeTitle(introduction),
+                        HebrewNavigationLabel = introduction.HeTitle
+                    });
+                }
+            }
+
+            if (!partText.TryGetProperty(body.Key, out var bodyText) ||
+                !HasTextContent(bodyText))
+            {
+                continue;
+            }
+
+            foreach (var unit in EnumerateTextUnits(
+                         bodyText,
+                         new List<string> { node.Key, body.Key },
+                         cancellationToken))
+            {
+                var parts = unit.Reference.Split(
+                    '.',
+                    StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                if (parts.Length < 4)
+                {
+                    units.Clear();
+                    return false;
+                }
+
+                var chapter = parts[2];
+                units.Add(unit with
+                {
+                    ChapterTitle = groupTitle,
+                    HebrewChapterTitle = hebrewGroupTitle,
+                    NavigationKey = $"{node.Key}.{chapter}",
+                    NavigationLabel = chapter
+                });
+            }
+        }
+
+        if (partCount != 3 ||
+            rawText.EnumerateObject().Any(property =>
+                HasTextContent(property.Value) && !schemaKeys.Contains(property.Name)))
+        {
+            units.Clear();
+            return false;
         }
 
         return units.Count > 0;
