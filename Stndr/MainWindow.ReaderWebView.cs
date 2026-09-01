@@ -1208,7 +1208,7 @@ public partial class MainWindow
         return JsonSerializer.Serialize(value);
     }
 
-    private static string SanitizeReaderHtmlForWeb(
+    internal static string SanitizeReaderHtmlForWeb(
         string? text,
         bool isHebrew,
         HebrewMarksMode hebrewMarksMode,
@@ -1221,6 +1221,7 @@ public partial class MainWindow
 
         var builder = new StringBuilder(text.Length);
         var suppressedTags = new Stack<string>();
+        var openFormattingTags = new Stack<string>();
         var position = 0;
 
         while (position < text.Length)
@@ -1231,7 +1232,16 @@ public partial class MainWindow
                 if (tagEnd >= 0)
                 {
                     var tag = text.Substring(position + 1, tagEnd - position - 1);
-                    AppendSafeReaderTag(builder, tag, suppressedTags);
+                    if (TrySkipMalformedNumericFootnote(
+                            text,
+                            tag,
+                            tagEnd + 1,
+                            out position))
+                    {
+                        continue;
+                    }
+
+                    AppendSafeReaderTag(builder, tag, suppressedTags, openFormattingTags);
                     position = tagEnd + 1;
                     continue;
                 }
@@ -1251,6 +1261,11 @@ public partial class MainWindow
             }
 
             position += length;
+        }
+
+        while (openFormattingTags.Count > 0)
+        {
+            builder.Append("</").Append(openFormattingTags.Pop()).Append('>');
         }
 
         return builder.ToString();
@@ -1398,7 +1413,47 @@ public partial class MainWindow
         };
     }
 
-    private static void AppendSafeReaderTag(StringBuilder builder, string tag, Stack<string> suppressedTags)
+    private static bool TrySkipMalformedNumericFootnote(
+        string text,
+        string tag,
+        int contentStart,
+        out int nextPosition)
+    {
+        nextPosition = contentStart;
+        if (!string.Equals(tag.Trim(), "i", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var digitsEnd = contentStart;
+        while (digitsEnd < text.Length && char.IsAsciiDigit(text[digitsEnd]))
+        {
+            digitsEnd++;
+        }
+
+        if (digitsEnd == contentStart)
+        {
+            return false;
+        }
+
+        var digits = text[contentStart..digitsEnd];
+        var malformedClosingTag = $"</{digits}>";
+        if (!text.AsSpan(digitsEnd).StartsWith(
+                malformedClosingTag,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        nextPosition = digitsEnd + malformedClosingTag.Length;
+        return true;
+    }
+
+    private static void AppendSafeReaderTag(
+        StringBuilder builder,
+        string tag,
+        Stack<string> suppressedTags,
+        Stack<string> openFormattingTags)
     {
         var normalized = tag.Trim();
         if (normalized.Length == 0 || normalized[0] == '!')
@@ -1456,48 +1511,45 @@ public partial class MainWindow
                 break;
             case "b":
             case "strong":
-                builder.Append(isClosing ? "</strong>" : "<strong>");
+                AppendBalancedReaderFormattingTag(builder, "strong", isClosing, openFormattingTags);
                 break;
             case "i":
             case "em":
-                builder.Append(isClosing ? "</em>" : "<em>");
+                AppendBalancedReaderFormattingTag(builder, "em", isClosing, openFormattingTags);
                 break;
         }
+    }
+
+    private static void AppendBalancedReaderFormattingTag(
+        StringBuilder builder,
+        string tagName,
+        bool isClosing,
+        Stack<string> openFormattingTags)
+    {
+        if (isClosing)
+        {
+            if (openFormattingTags.Count == 0 ||
+                !string.Equals(openFormattingTags.Peek(), tagName, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            openFormattingTags.Pop();
+            builder.Append("</").Append(tagName).Append('>');
+            return;
+        }
+
+        openFormattingTags.Push(tagName);
+        builder.Append('<').Append(tagName).Append('>');
     }
 
     private static string ApplyHebrewMarksModeForWeb(string text, HebrewMarksMode mode)
     {
-        if (mode == HebrewMarksMode.NikkudAndCantillation)
-        {
-            return text;
-        }
-
-        var builder = new StringBuilder(text.Length);
-        foreach (var character in text)
-        {
-            if (!ShouldSuppressHebrewMarkForWeb(character, mode))
-            {
-                builder.Append(character);
-            }
-        }
-
-        return builder.ToString();
+        return HebrewTextFormatting.ApplyMarksMode(text, mode);
     }
 
     private static bool ShouldSuppressHebrewMarkForWeb(char character, HebrewMarksMode mode)
     {
-        var code = (int)character;
-        var isCantillation = code >= 0x0591 && code <= 0x05AF;
-        var isNikkud = (code >= 0x05B0 && code <= 0x05BC) ||
-            code == 0x05C1 ||
-            code == 0x05C2 ||
-            code == 0x05C7;
-
-        return mode switch
-        {
-            HebrewMarksMode.TextOnly => isCantillation || isNikkud,
-            HebrewMarksMode.Nikkud => isCantillation,
-            _ => false
-        };
+        return HebrewTextFormatting.ShouldSuppress(character, mode);
     }
 }

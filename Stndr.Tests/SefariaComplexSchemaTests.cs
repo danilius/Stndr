@@ -10,6 +10,58 @@ namespace Stndr.Tests;
 public sealed class SefariaComplexSchemaTests
 {
     [Fact]
+    public void Guide_profile_builds_front_matter_and_chapter_navigation()
+    {
+        var dataFolder = TryFindDataFolder();
+        if (dataFolder is null)
+        {
+            return;
+        }
+
+        var library = new SefariaLibraryService(dataFolder);
+        var book = library.GetInstalledVersionsForTitle("Guide for the Perplexed")
+            .Where(SefariaLibraryService.IsHebrew)
+            .OrderByDescending(version => version.SegmentCount)
+            .First();
+        var units = library.ReadInstalledBookUnits(book);
+        var navigation = library.ReadInstalledBookNavigationPages(book);
+
+        Assert.True(units.Count > 1_000);
+        Assert.True(navigation.Count > 150);
+        Assert.Equal(
+            ["Front Matter", "Part 1", "Part 2", "Part 3"],
+            navigation.Select(page => page.ChapterTitle).Distinct());
+        Assert.Equal(
+            ["Letter to R Joseph son of Judah", "Prefatory Remarks", "Part 1.Introduction",
+             "Part 1.1", "Part 1.2"],
+            navigation.Take(5).Select(page => page.Page));
+
+        var fourthWay = units.Single(unit => unit.Reference == "Part 1.default.75.6");
+        Assert.Equal("Part 1.75", fourthWay.NavigationKey);
+        Assert.Equal("75", fourthWay.NavigationLabel);
+        Assert.StartsWith("<b>", fourthWay.Text);
+        Assert.Contains(navigation, page =>
+            page.Page == "Part 1.75" &&
+            page.Label == "75" &&
+            page.ChapterTitle == "Part 1");
+
+        var makbili = library.GetInstalledVersionsForTitle("Guide for the Perplexed")
+            .Single(version => version.VersionTitle.StartsWith(
+                "Makbili Edition",
+                StringComparison.Ordinal));
+        var malformedFootnote = library.ReadInstalledBookUnits(makbili)
+            .Single(unit => unit.Reference == "Part 2.default.1.5");
+        Assert.StartsWith("<i>6</6>", malformedFootnote.Text);
+
+        var sanitized = MainWindow.SanitizeReaderHtmlForWeb(
+            malformedFootnote.Text,
+            isHebrew: true,
+            HebrewMarksMode.NikkudAndCantillation);
+        Assert.StartsWith("\u05d3)", sanitized);
+        Assert.DoesNotContain("<em>", sanitized);
+    }
+
+    [Fact]
     public void Recursive_schema_parser_preserves_named_and_default_nodes()
     {
         using var document = JsonDocument.Parse("""
