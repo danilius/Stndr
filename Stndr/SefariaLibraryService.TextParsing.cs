@@ -750,7 +750,7 @@ public sealed partial class SefariaLibraryService
             book.Categories[2].StartsWith("Seder ", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool IsTalmud(InstalledSefariaBook book)
+    internal static bool IsTalmud(InstalledSefariaBook book)
     {
         // Only daf-paginated tractates under Talmud. Guides, commentaries, and other works live
         // under Talmud in the TOC but use ordinary (non-Talmud) text shapes.

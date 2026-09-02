@@ -185,6 +185,12 @@ public partial class MainWindow
                         SelectAdjacentCenterTab(switchDirection);
                     }
                     break;
+
+                case "toggleSidePanels":
+                    SetBothSidePanelsCollapsed(ShouldCollapseBothSidePanels(
+                        _leftCollapsed,
+                        _rightCollapsed));
+                    break;
             }
         }
         catch (JsonException)
@@ -899,6 +905,16 @@ public partial class MainWindow
                     if (event.key === 'Escape') {
                         hideMenu();
                         send({ type: 'escapePressed' });
+                    }
+
+                    const target = event.target;
+                    const isTextEntry = target instanceof HTMLElement &&
+                        (target.isContentEditable || target.matches('input, textarea, select'));
+                    if (event.key === 'Tab' && !event.ctrlKey && !event.altKey &&
+                        !event.shiftKey && !event.metaKey && !isTextEntry) {
+                        event.preventDefault();
+                        send({ type: 'toggleSidePanels' });
+                        return;
                     }
 
                     // Native WebView focus does not bubble keys to Avalonia; forward tab shortcuts.

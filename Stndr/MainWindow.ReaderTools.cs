@@ -1681,6 +1681,12 @@ public partial class MainWindow
                 case "downloadLinkWork":
                     _ = DownloadLinkWorkForPreviewAsync(readerState);
                     break;
+
+                case "toggleSidePanels":
+                    SetBothSidePanelsCollapsed(ShouldCollapseBothSidePanels(
+                        _leftCollapsed,
+                        _rightCollapsed));
+                    break;
             }
         }
         catch (JsonException)
@@ -1889,6 +1895,17 @@ public partial class MainWindow
 
                     event.preventDefault();
                     send({ type: action });
+                });
+
+                document.addEventListener('keydown', (event) => {
+                    const target = event.target;
+                    const isTextEntry = target instanceof HTMLElement &&
+                        (target.isContentEditable || target.matches('input, textarea, select'));
+                    if (event.key === 'Tab' && !event.ctrlKey && !event.altKey &&
+                        !event.shiftKey && !event.metaKey && !isTextEntry) {
+                        event.preventDefault();
+                        send({ type: 'toggleSidePanels' });
+                    }
                 });
             })();
             """;
