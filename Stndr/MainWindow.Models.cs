@@ -97,6 +97,9 @@ public partial class MainWindow
         public ReaderDisplayMode DisplayMode { get; set; }
         public HebrewMarksMode HebrewMarksMode { get; set; } = HebrewMarksMode.NikkudAndCantillation;
         public bool HasTalmudNavigation { get; set; }
+        public bool HasSiddurNavigation { get; set; }
+        public List<SiddurNavigationNode> SiddurNavigation { get; set; } = new();
+        public Dictionary<string, Button> SiddurNavigationButtons { get; } = new(StringComparer.Ordinal);
         public List<ReaderDisplayRow> ReaderRows { get; set; } = new();
         public List<ReaderNavigationItem> NavigationItems { get; set; } = new();
         public List<ReaderNavigationChapter> NavigationChapters { get; set; } = new();
@@ -191,7 +194,8 @@ public partial class MainWindow
         string EnglishLabel = "",
         string HebrewLabel = "",
         string EnglishGroupTitle = "",
-        string HebrewGroupTitle = "");
+        string HebrewGroupTitle = "",
+        IReadOnlyList<ReaderNavigationPart>? NavigationPath = null);
 
     private sealed record TorahSedra(
         string Key,

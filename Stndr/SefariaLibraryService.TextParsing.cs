@@ -185,7 +185,8 @@ public sealed partial class SefariaLibraryService
                     unit.ChapterTitle,
                     unit.HebrewChapterTitle,
                     unit.NavigationLabel,
-                    unit.HebrewNavigationLabel))
+                    unit.HebrewNavigationLabel,
+                    unit.NavigationPath))
                 .ToList();
         }
 
@@ -886,6 +887,11 @@ public sealed partial class SefariaLibraryService
         out List<ReaderTextUnit> units)
     {
         units = new List<ReaderTextUnit>();
+        if (TryReadSiddurUnits(root, schema, cancellationToken, out units))
+        {
+            return true;
+        }
+
         if (TryReadGuideSchemaUnits(root, schema, cancellationToken, out units))
         {
             return true;

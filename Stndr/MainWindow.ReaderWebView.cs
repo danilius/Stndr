@@ -175,6 +175,33 @@ public partial class MainWindow
                     _ = CopyReaderWebSelectionAsync(copyText);
                     break;
 
+                case "addBookmark":
+                    AddReaderAnnotation(state, ReaderAnnotationKind.Bookmark, ReadAnnotationAnchor(root));
+                    break;
+
+                case "addHighlight":
+                    var highlightColorName = root.TryGetProperty("color", out var colorElement)
+                        ? colorElement.GetString()
+                        : string.Empty;
+                    var highlightColor = Enum.TryParse<ReaderHighlightColor>(highlightColorName, true, out var parsedColor)
+                        ? parsedColor
+                        : ReaderHighlightColor.Yellow;
+                    AddReaderAnnotation(
+                        state,
+                        ReaderAnnotationKind.Highlight,
+                        ReadAnnotationAnchor(root),
+                        highlightColor);
+                    break;
+
+                case "addNote":
+                    var noteAnchor = ReadAnnotationAnchor(root);
+                    _ = AddReaderNoteAsync(state, noteAnchor);
+                    break;
+
+                case "removeHighlight":
+                    RemoveHighlightAtAnchor(state, ReadAnnotationAnchor(root));
+                    break;
+
                 case "switchTab":
                     var switchDirection = root.TryGetProperty("direction", out var directionElement) &&
                         directionElement.TryGetInt32(out var parsedDirection)
@@ -242,6 +269,7 @@ public partial class MainWindow
         var isTargetRow = row is not null &&
             (IsReaderReferenceMatch(row.Primary?.Reference, pendingReference) ||
              IsReaderReferenceMatch(row.Translation?.Reference, pendingReference) ||
+             IsReaderReferenceMatch(GetReaderRowWebReference(state, row), pendingReference) ||
              string.Equals(row.ChapterKey, pendingReference, StringComparison.OrdinalIgnoreCase));
         if (!isTargetRow)
         {
@@ -287,7 +315,7 @@ public partial class MainWindow
 
         builder.AppendLine("</main>");
         builder.AppendLine("<script>");
-        builder.AppendLine(BuildReaderWebScript());
+        builder.AppendLine(BuildReaderWebScript(state));
         builder.AppendLine("</script>");
         builder.AppendLine("</body>");
         builder.AppendLine("</html>");
@@ -357,6 +385,7 @@ public partial class MainWindow
                 margin: 0 auto 16px;
                 max-width: var(--single-width);
                 padding: 0;
+                position: relative;
                 width: min(100%, var(--single-width));
             }
 
@@ -441,6 +470,10 @@ public partial class MainWindow
 
             .text-block {
                 box-sizing: border-box;
+                /* Skip offscreen text shaping during reader-width changes. Keep
+                   containment inside the row so its annotation rail is not clipped. */
+                content-visibility: auto;
+                contain-intrinsic-block-size: auto 120px;
                 line-height: 1.75;
                 padding: 8px 16px;
                 white-space: normal;
@@ -497,6 +530,49 @@ public partial class MainWindow
                 font-style: italic;
             }
 
+            .annotation-marker-rail {
+                align-items: center;
+                display: flex;
+                flex-direction: column;
+                gap: 5px;
+                inset-inline-end: -28px;
+                position: absolute;
+                top: 9px;
+                user-select: none;
+            }
+
+            .annotation-marker {
+                cursor: default;
+                font-family: var(--english-font);
+                font-size: 12px;
+                line-height: 1;
+            }
+
+            .annotation-marker.bookmark { color: #175CD3; }
+            .annotation-marker.note { color: #7F56D9; }
+
+            mark.annotation-highlight {
+                border-radius: 2px;
+                box-decoration-break: clone;
+                -webkit-box-decoration-break: clone;
+                color: inherit;
+                padding: 0 1px;
+            }
+
+            mark.annotation-anchor {
+                background: transparent;
+                color: inherit;
+                padding: 0;
+            }
+
+            mark.annotation-bookmark { border-bottom: 2px solid rgba(23, 92, 211, 0.75); }
+            mark.annotation-note { border-bottom: 2px dotted rgba(127, 86, 217, 0.9); }
+
+            .annotation-highlight-row {
+                background: color-mix(in srgb, var(--annotation-colour) 55%, transparent);
+                border-radius: 4px;
+            }
+
             .stndr-context-menu {
                 position: fixed;
                 display: none;
@@ -539,6 +615,36 @@ public partial class MainWindow
             .stndr-context-menu .separator {
                 margin: 4px 0;
                 border-top: 1px solid #EAECF0;
+            }
+
+            .stndr-context-menu .submenu {
+                position: relative;
+            }
+
+            .stndr-context-menu .submenu-panel {
+                background: #fff;
+                border: 1px solid #D0D5DD;
+                border-radius: 8px;
+                box-shadow: 0 8px 24px rgba(16, 24, 40, 0.2);
+                display: none;
+                inset-inline-start: calc(100% - 2px);
+                min-width: 145px;
+                padding: 6px;
+                position: absolute;
+                top: -6px;
+            }
+
+            .stndr-context-menu .submenu:hover .submenu-panel,
+            .stndr-context-menu .submenu:focus-within .submenu-panel {
+                display: block;
+            }
+
+            .highlight-swatch {
+                border-radius: 50%;
+                display: inline-block;
+                height: 11px;
+                margin-inline-end: 7px;
+                width: 11px;
             }
             """;
     }
@@ -709,10 +815,149 @@ public partial class MainWindow
         builder.AppendLine("</div>");
     }
 
-    private string BuildReaderWebScript()
+    private string BuildReaderWebScript(ReaderTabState state)
     {
-        return """
+        var script = """
             (function () {
+                const annotations = __STNDR_ANNOTATIONS__;
+                const annotationRows = () => Array.from(document.querySelectorAll('.reader-row[data-ref]'));
+                const rowForRef = (reference) => annotationRows().find((row) => row.dataset.ref === reference);
+                const colourValue = (colour) => ({
+                    yellow: '#FFE58F',
+                    green: '#B7EB8F',
+                    blue: '#91D5FF',
+                    pink: '#FFADD2',
+                    purple: '#D3ADF7'
+                })[colour] || '#FFE58F';
+
+                const addAnnotationMarker = (annotation) => {
+                    const row = rowForRef(annotation.startRef);
+                    if (!row || (annotation.kind !== 'bookmark' && annotation.kind !== 'note')) return;
+                    let rail = row.querySelector(':scope > .annotation-marker-rail');
+                    if (!rail) {
+                        rail = document.createElement('div');
+                        rail.className = 'annotation-marker-rail';
+                        row.appendChild(rail);
+                    }
+                    const marker = document.createElement('span');
+                    marker.className = `annotation-marker ${annotation.kind}`;
+                    marker.dataset.annotationId = annotation.id;
+                    marker.textContent = annotation.kind === 'bookmark' ? '◆' : '●';
+                    marker.title = annotation.kind === 'bookmark'
+                        ? 'Bookmark'
+                        : (annotation.note || 'Note');
+                    rail.appendChild(marker);
+                };
+
+                const textNodesWithin = (element) => {
+                    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
+                        acceptNode: (node) => node.parentElement?.closest('mark.annotation-highlight')
+                            ? NodeFilter.FILTER_REJECT
+                            : NodeFilter.FILTER_ACCEPT
+                    });
+                    const nodes = [];
+                    while (walker.nextNode()) nodes.push(walker.currentNode);
+                    return nodes;
+                };
+
+                const highlightText = (block, quote, annotation) => {
+                    if (!quote) {
+                        block.classList.add('annotation-highlight-row');
+                        block.style.setProperty('--annotation-colour', colourValue(annotation.color));
+                        block.dataset.annotationId = annotation.id;
+                        return;
+                    }
+                    const nodes = textNodesWithin(block);
+                    const combined = nodes.map((node) => node.nodeValue || '').join('');
+                    let start = combined.indexOf(quote);
+                    if (start < 0) {
+                        return;
+                    }
+                    const end = start + quote.length;
+                    let offset = 0;
+                    for (const node of nodes) {
+                        const length = (node.nodeValue || '').length;
+                        const localStart = Math.max(0, start - offset);
+                        const localEnd = Math.min(length, end - offset);
+                        if (localStart < localEnd && node.parentNode) {
+                            const range = document.createRange();
+                            range.setStart(node, localStart);
+                            range.setEnd(node, localEnd);
+                            const mark = document.createElement('mark');
+                            mark.className = annotation.kind === 'highlight'
+                                ? 'annotation-highlight'
+                                : `annotation-anchor annotation-${annotation.kind}`;
+                            mark.dataset.annotationId = annotation.id;
+                            if (annotation.kind === 'highlight') {
+                                mark.style.backgroundColor = colourValue(annotation.color);
+                            }
+                            range.surroundContents(mark);
+                        }
+                        offset += length;
+                        if (offset >= end) break;
+                    }
+                };
+
+                const renderAnnotationRanges = (annotation) => {
+                    const segments = Array.isArray(annotation.segments) && annotation.segments.length
+                        ? annotation.segments
+                        : [{ ref: annotation.startRef, language: '', text: annotation.text || '' }];
+                    for (const segment of segments) {
+                        const row = rowForRef(segment.ref);
+                        if (!row) continue;
+                        let blocks = Array.from(row.querySelectorAll('.text-block'));
+                        if (segment.language === 'he') blocks = blocks.filter((block) => block.classList.contains('hebrew'));
+                        if (segment.language === 'en') blocks = blocks.filter((block) => block.classList.contains('english'));
+                        if (annotation.kind === 'highlight' || (segment.text || '').trim()) {
+                            for (const block of blocks) highlightText(block, segment.text || '', annotation);
+                        }
+                    }
+                };
+
+                const renderAnnotations = () => {
+                    for (const annotation of annotations) {
+                        addAnnotationMarker(annotation);
+                        renderAnnotationRanges(annotation);
+                    }
+                };
+
+                const selectionPayload = (fallbackRow, target) => {
+                    const selection = window.getSelection();
+                    const hasSelection = selection && selection.rangeCount > 0 && !selection.isCollapsed;
+                    const range = hasSelection ? selection.getRangeAt(0) : null;
+                    const startRow = range?.startContainer.parentElement?.closest('.reader-row') || fallbackRow;
+                    const endRow = range?.endContainer.parentElement?.closest('.reader-row') || startRow;
+                    const segments = [];
+                    if (range) {
+                        for (const row of annotationRows()) {
+                            for (const block of row.querySelectorAll('.text-block')) {
+                                if (!range.intersectsNode(block)) continue;
+                                const blockRange = document.createRange();
+                                blockRange.selectNodeContents(block);
+                                const clipped = range.cloneRange();
+                                if (range.compareBoundaryPoints(Range.START_TO_START, blockRange) < 0)
+                                    clipped.setStart(blockRange.startContainer, blockRange.startOffset);
+                                if (range.compareBoundaryPoints(Range.END_TO_END, blockRange) > 0)
+                                    clipped.setEnd(blockRange.endContainer, blockRange.endOffset);
+                                const text = clipped.toString();
+                                if (text.trim()) segments.push({
+                                    ref: row.dataset.ref || '',
+                                    language: block.classList.contains('hebrew') ? 'he' : 'en',
+                                    text: text
+                                });
+                            }
+                        }
+                    }
+                    return {
+                        ref: startRow?.dataset.ref || '',
+                        startRef: startRow?.dataset.ref || '',
+                        endRef: endRow?.dataset.ref || startRow?.dataset.ref || '',
+                        text: hasSelection ? selection.toString() : '',
+                        segments: segments,
+                        annotationId: target?.closest('[data-annotation-id]')?.dataset.annotationId || ''
+                    };
+                };
+
                 const send = (message) => {
                     if (typeof invokeCSharpAction === 'function') {
                         invokeCSharpAction(JSON.stringify(message));
@@ -783,16 +1028,32 @@ public partial class MainWindow
                     selectedText: '',
                     clickedWord: '',
                     clientX: 0,
-                    clientY: 0
+                    clientY: 0,
+                    anchor: null,
+                    highlightId: ''
                 };
 
                 const menu = document.createElement('div');
                 menu.className = 'stndr-context-menu';
                 menu.innerHTML = `
                     <button type="button" data-menu-action="copy">Copy</button>
-                    <button type="button" data-menu-action="print">Print</button>
                     <button type="button" data-menu-action="dictionary">Dictionary</button>
                     <div class="separator" role="separator"></div>
+                    <button type="button" data-menu-action="bookmark">Add bookmark</button>
+                    <div class="submenu">
+                        <button type="button">Highlight <span aria-hidden="true">›</span></button>
+                        <div class="submenu-panel">
+                            <button type="button" data-menu-action="highlight" data-highlight-color="yellow"><span class="highlight-swatch" style="background:#FFE58F"></span>Yellow</button>
+                            <button type="button" data-menu-action="highlight" data-highlight-color="green"><span class="highlight-swatch" style="background:#B7EB8F"></span>Green</button>
+                            <button type="button" data-menu-action="highlight" data-highlight-color="blue"><span class="highlight-swatch" style="background:#91D5FF"></span>Blue</button>
+                            <button type="button" data-menu-action="highlight" data-highlight-color="pink"><span class="highlight-swatch" style="background:#FFADD2"></span>Pink</button>
+                            <button type="button" data-menu-action="highlight" data-highlight-color="purple"><span class="highlight-swatch" style="background:#D3ADF7"></span>Purple</button>
+                        </div>
+                    </div>
+                    <button type="button" data-menu-action="note">Add note…</button>
+                    <button type="button" data-menu-action="remove-highlight">Remove highlight</button>
+                    <div class="separator" role="separator"></div>
+                    <button type="button" data-menu-action="print">Print</button>
                     <button type="button" data-menu-action="more-tools">More tools</button>
                 `;
                 document.body.appendChild(menu);
@@ -829,9 +1090,25 @@ public partial class MainWindow
                     contextState.clickedWord = getWordAtPoint(event.clientX, event.clientY);
                     contextState.clientX = event.clientX;
                     contextState.clientY = event.clientY;
+                    contextState.anchor = selectionPayload(row, event.target);
+                    contextState.highlightId = event.target.closest('mark.annotation-highlight')?.dataset.annotationId || '';
+                    contextState.anchor.annotationId = contextState.highlightId;
+                    if (!contextState.anchor.text && contextState.clickedWord) {
+                        const block = event.target.closest('.text-block');
+                        contextState.anchor.text = contextState.clickedWord;
+                        contextState.anchor.segments = [{
+                            ref: contextState.ref,
+                            language: block?.classList.contains('hebrew') ? 'he' : 'en',
+                            text: contextState.clickedWord
+                        }];
+                    }
                     const copyButton = menu.querySelector('[data-menu-action="copy"]');
                     if (copyButton) {
                         copyButton.disabled = !contextState.selectedText;
+                    }
+                    const removeHighlightButton = menu.querySelector('[data-menu-action="remove-highlight"]');
+                    if (removeHighlightButton) {
+                        removeHighlightButton.disabled = !contextState.highlightId;
                     }
                     showMenu(event.clientX, event.clientY);
                 });
@@ -851,6 +1128,26 @@ public partial class MainWindow
                             window.print();
                             break;
                         case 'more-tools':
+                            break;
+                        case 'bookmark':
+                            send({ type: 'addBookmark', ...contextState.anchor });
+                            break;
+                        case 'highlight':
+                            send({
+                                type: 'addHighlight',
+                                color: event.target.closest('[data-highlight-color]')?.dataset.highlightColor || 'yellow',
+                                ...contextState.anchor
+                            });
+                            break;
+                        case 'note':
+                            send({ type: 'addNote', ...contextState.anchor });
+                            break;
+                        case 'remove-highlight':
+                            send({
+                                type: 'removeHighlight',
+                                ...contextState.anchor,
+                                annotationId: contextState.highlightId
+                            });
                             break;
                         case 'dictionary':
                             send({
@@ -896,6 +1193,17 @@ public partial class MainWindow
                 document.addEventListener('scroll', hideMenu, { passive: true });
                 window.addEventListener('blur', hideMenu);
                 document.addEventListener('keydown', (event) => {
+                    if (event.ctrlKey && !event.altKey && !event.shiftKey && !event.metaKey &&
+                        event.key.toLowerCase() === 'd') {
+                        event.preventDefault();
+                        const selected = document.querySelector('.reader-row.selected') ||
+                            document.querySelector('.reader-row');
+                        if (selected) {
+                            send({ type: 'addBookmark', ...selectionPayload(selected, null) });
+                        }
+                        return;
+                    }
+
                     if (event.key === 'Escape') {
                         hideMenu();
                         send({ type: 'escapePressed' });
@@ -950,13 +1258,30 @@ public partial class MainWindow
                     }, 80);
                 });
 
+                // Rows are in vertical document order. Cache the nodes and search
+                // their outer boxes without measuring every paragraph on each scroll.
+                const chapterCandidates = Array.from(document.querySelectorAll('#reader > [data-chapter]'));
                 const getVisibleChapter = () => {
-                    const candidates = Array.from(document.querySelectorAll('[data-chapter]'));
+                    let low = 0;
+                    let high = chapterCandidates.length;
+                    while (low < high) {
+                        const middle = low + Math.floor((high - low) / 2);
+                        if (chapterCandidates[middle].getBoundingClientRect().bottom < 0) {
+                            low = middle + 1;
+                        } else {
+                            high = middle;
+                        }
+                    }
+
                     let best = '';
                     let bestDistance = Number.POSITIVE_INFINITY;
-                    for (const candidate of candidates) {
+                    for (let index = low; index < chapterCandidates.length; index++) {
+                        const candidate = chapterCandidates[index];
                         const rect = candidate.getBoundingClientRect();
-                        if (rect.bottom < 0 || rect.top > window.innerHeight) {
+                        if (rect.top > window.innerHeight) {
+                            break;
+                        }
+                        if (rect.bottom < 0) {
                             continue;
                         }
 
@@ -1015,8 +1340,10 @@ public partial class MainWindow
                     }
                     target.scrollIntoView({ block: 'start', inline: 'nearest' });
                 };
+                renderAnnotations();
             })();
             """;
+        return script.Replace("__STNDR_ANNOTATIONS__", BuildReaderAnnotationJson(state), StringComparison.Ordinal);
     }
 
     private void UpdateReaderChapterHeaderFromWeb(ReaderTabState state, string? chapterKey)

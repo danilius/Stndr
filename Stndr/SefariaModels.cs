@@ -418,14 +418,18 @@ public sealed record ReaderTextUnit(
     string HebrewChapterTitle = "",
     string NavigationKey = "",
     string NavigationLabel = "",
-    string HebrewNavigationLabel = "");
+    string HebrewNavigationLabel = "",
+    IReadOnlyList<ReaderNavigationPart>? NavigationPath = null);
+
+public sealed record ReaderNavigationPart(string Key, string Title, string HebrewTitle);
 
 public sealed record ReaderNavigationPage(
     string Page,
     string ChapterTitle,
     string HebrewChapterTitle,
     string Label = "",
-    string HebrewLabel = "");
+    string HebrewLabel = "",
+    IReadOnlyList<ReaderNavigationPart>? NavigationPath = null);
 
 public sealed class SefariaCommentaryItem
 {

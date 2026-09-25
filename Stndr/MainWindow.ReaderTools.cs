@@ -326,6 +326,8 @@ public partial class MainWindow
                     SaveLayoutState();
             }));
         }
+
+        WrapReaderToolsInAnnotationTabs(readerState);
     }
 
     private Expander CreateComplexSectionVersionExpander(
@@ -3874,6 +3876,8 @@ public partial class MainWindow
 
     private Control CreateNavigationGroupHeader(ReaderTabState readerState)
     {
+        if (readerState.HasSiddurNavigation)
+            return new TextBlock { Text = "Prayers", VerticalAlignment = VerticalAlignment.Center };
         var layout = new Grid
         {
             ColumnDefinitions = readerState.HasTalmudNavigation
@@ -3979,6 +3983,8 @@ public partial class MainWindow
 
     private Control CreateReaderNavigationTools(ReaderTabState readerState)
     {
+        if (readerState.HasSiddurNavigation)
+            return CreateSiddurNavigationTools(readerState);
         if (readerState.NavigationChapters.Count == 0)
         {
             return new TextBlock
@@ -4180,6 +4186,11 @@ public partial class MainWindow
 
     private void SyncActiveNavigationTopicExpansion(ReaderTabState readerState, string chapterKey)
     {
+        if (readerState.HasSiddurNavigation)
+        {
+            SyncSiddurNavigation(readerState, chapterKey);
+            return;
+        }
         if (!readerState.HasTalmudNavigation || string.IsNullOrWhiteSpace(chapterKey))
         {
             return;
@@ -4614,6 +4625,11 @@ public partial class MainWindow
         panel.Children.Add(CreateHebrewMarksToggle(readerState, "Vowels", isCantillationToggle: false));
         panel.Children.Add(CreateHebrewMarksToggle(readerState, "Cantillation", isCantillationToggle: true));
         panel.Children.Add(CreateAliyotToggle(readerState));
+        panel.Children.Add(CreateDisplayDivider());
+        panel.Children.Add(new TextBlock { Text = "Annotations", FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 2, 0, 4) });
+        panel.Children.Add(CreateAnnotationVisibilityToggle(readerState, ReaderAnnotationKind.Bookmark, "Bookmarks"));
+        panel.Children.Add(CreateAnnotationVisibilityToggle(readerState, ReaderAnnotationKind.Highlight, "Highlights"));
+        panel.Children.Add(CreateAnnotationVisibilityToggle(readerState, ReaderAnnotationKind.Note, "Notes"));
 
         return compact
             ? new Border

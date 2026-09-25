@@ -152,6 +152,9 @@
                 <Button Content="Advanced Search" Click="OpenAdvancedSearchClicked" />
                 <Button Content="Dictionary" Click="OpenDictionaryClicked" />
                 <Button Content="Settings" Click="OpenSettingsClicked" />
+                <Button Content="Bookmarks" Click="OpenBookmarksClicked" />
+                <Button Content="Highlights" Click="OpenHighlightsClicked" />
+                <Button Content="Notes" Click="OpenNotesClicked" />
             </StackPanel>
         </Border>
 
@@ -237,6 +240,7 @@
                         <Button
                                 Content="☰"
                                 Click="ToggleLeftPanel"
+                                ToolTip.Tip="Toggle library panel (Ctrl+B)"
                                 Width="28"
                                 HorizontalAlignment="Left" />
                         <Button x:Name="LeftPanelSearchButton"
@@ -342,6 +346,7 @@
                     <Button
                             Content="☰"
                             Click="ToggleRightPanel"
+                            ToolTip.Tip="Toggle Reader Tools panel (Ctrl+Shift+B)"
                             Width="28"
                             HorizontalAlignment="Left" />
                     <TextBlock x:Name="RightPanelTitle"

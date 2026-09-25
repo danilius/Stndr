@@ -379,6 +379,21 @@ public partial class MainWindow
             return CreateDictionaryView();
         }
 
+        if (string.Equals(title, BookmarksTabTitle, StringComparison.Ordinal))
+        {
+            return CreateAnnotationLibraryView(ReaderAnnotationKind.Bookmark);
+        }
+
+        if (string.Equals(title, HighlightsTabTitle, StringComparison.Ordinal))
+        {
+            return CreateAnnotationLibraryView(ReaderAnnotationKind.Highlight);
+        }
+
+        if (string.Equals(title, NotesTabTitle, StringComparison.Ordinal))
+        {
+            return CreateAnnotationLibraryView(ReaderAnnotationKind.Note);
+        }
+
         throw new InvalidOperationException($"Unknown utility tab: {title}");
     }
 
@@ -465,6 +480,30 @@ public partial class MainWindow
         }
 
         return SelectAdjacentCenterTab(direction);
+    }
+
+    /// <summary>
+    /// Ctrl+B toggles the library panel; Ctrl+Shift+B toggles Reader Tools.
+    /// </summary>
+    private bool TryHandlePanelShortcut(KeyEventArgs e)
+    {
+        if (e.Key != Key.B ||
+            !e.KeyModifiers.HasFlag(KeyModifiers.Control) ||
+            e.KeyModifiers.HasFlag(KeyModifiers.Alt))
+        {
+            return false;
+        }
+
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Shift))
+        {
+            ToggleRightPanel(this, e);
+        }
+        else
+        {
+            ToggleLeftPanel(this, e);
+        }
+
+        return true;
     }
 
     private bool SelectAdjacentCenterTab(int direction)
@@ -762,6 +801,9 @@ public partial class MainWindow
     {
         return string.Equals(title, AdvancedSearchTabTitle, StringComparison.Ordinal) ||
             string.Equals(title, DictionaryTabTitle, StringComparison.Ordinal) ||
+            string.Equals(title, BookmarksTabTitle, StringComparison.Ordinal) ||
+            string.Equals(title, HighlightsTabTitle, StringComparison.Ordinal) ||
+            string.Equals(title, NotesTabTitle, StringComparison.Ordinal) ||
             string.Equals(title, SettingsTabTitle, StringComparison.Ordinal);
     }
 }

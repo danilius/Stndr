@@ -249,7 +249,9 @@ public partial class MainWindow : Window
 
     private void OnWindowKeyDown(object? sender, KeyEventArgs e)
     {
-        if (TryHandleDictionaryHistoryShortcut(e) || TryHandleCenterTabShortcut(e))
+        if (TryHandleDictionaryHistoryShortcut(e) ||
+            TryHandlePanelShortcut(e) ||
+            TryHandleCenterTabShortcut(e))
         {
             e.Handled = true;
         }

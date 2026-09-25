@@ -7,3 +7,7 @@
 Uncommitted work carries across a branch switch, so branching late still rescues the situation if the question was missed — but prefer asking up front.
 
 **Merging is always the user’s call.** Propose a merge point and let them approve or decline; never merge to the default branch unprompted.
+
+## Fresh builds
+
+After every successful fresh build or publish, update the repository-root `Stendr.lnk` shortcut to launch that build's `Stndr.exe`. Set its working directory to the executable's directory, and verify that the saved shortcut target exists. Do this before reporting the build as ready.

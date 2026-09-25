@@ -625,6 +625,7 @@ public partial class MainWindow
             : _sefariaLibrary.ReadInstalledBookUnits(state.SelectedTranslation);
         var navigationPages = BuildReaderNavigationPages(state);
         var isTalmudNavigation = navigationPages.Count > 0;
+        state.HasSiddurNavigation = navigationPages.Any(page => page.NavigationPath is { Count: > 0 });
         var chapterTitlesByPage = navigationPages
             .GroupBy(page => page.Page, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => FormatChapterTitle(group.First()), StringComparer.Ordinal);
@@ -680,7 +681,8 @@ public partial class MainWindow
                     page.Label,
                     page.HebrewLabel,
                     page.ChapterTitle,
-                    page.HebrewChapterTitle))
+                    page.HebrewChapterTitle,
+                    page.NavigationPath))
                 .ToList()
             : pageRows
                 .Select(pair => new ReaderNavigationItem(
@@ -694,6 +696,9 @@ public partial class MainWindow
                 .ToList();
         state.HasTalmudNavigation = isTalmudNavigation;
         state.NavigationChapters = BuildReaderNavigationChapters(state);
+        state.SiddurNavigation = SiddurNavigationNode.Build(state.NavigationItems
+            .Where(item => item.NavigationPath is not null)
+            .Select(item => (item.Row.ChapterKey, item.NavigationPath!)));
         state.ReaderRows = items;
         if (state.ReaderList is not null)
         {
@@ -1598,7 +1603,8 @@ public partial class MainWindow
             .Where(candidate => !candidate.IsChapterHeading)
             .FirstOrDefault(candidate =>
                 IsReaderReferenceMatch(candidate.Primary?.Reference, normalizedReference) ||
-                IsReaderReferenceMatch(candidate.Translation?.Reference, normalizedReference));
+                IsReaderReferenceMatch(candidate.Translation?.Reference, normalizedReference) ||
+                IsReaderReferenceMatch(GetReaderRowWebReference(state, candidate), normalizedReference));
         row ??= state.ReaderRows
             .FirstOrDefault(candidate =>
                 string.Equals(candidate.ChapterKey, normalizedReference, StringComparison.OrdinalIgnoreCase));
@@ -1631,7 +1637,7 @@ public partial class MainWindow
         });
     }
 
-    private static bool IsReaderReferenceMatch(string? rowReference, string normalizedReference)
+    internal static bool IsReaderReferenceMatch(string? rowReference, string normalizedReference)
     {
         if (string.IsNullOrWhiteSpace(rowReference) || string.IsNullOrWhiteSpace(normalizedReference))
         {
@@ -2047,6 +2053,9 @@ public partial class MainWindow
 
     private string FormatNavigationPageLabel(ReaderNavigationPage page, bool useHebrewNumbers)
     {
+        if (page.NavigationPath is { Count: > 0 })
+            return FormatChapterTitleParts(page.Label, page.HebrewLabel);
+
         if (string.IsNullOrWhiteSpace(page.Label))
         {
             return FormatNavigationChapterLabel(page.Page, useHebrewNumbers);
