@@ -458,8 +458,7 @@ public partial class MainWindow
     {
         return EnumerateInstalledCategoriesFromTree()
             .Where(c =>
-                c.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                (c.HebrewTitle?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false))
+                SearchTextMatcher.Matches(query, c.Title, c.HebrewTitle))
             .Take(10)
             .ToList();
     }
