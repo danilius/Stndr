@@ -1739,12 +1739,41 @@ public partial class MainWindow
 
         var navigationItem = state.NavigationItems.FirstOrDefault(item =>
             string.Equals(item.Row.ChapterKey, chapterKey, StringComparison.Ordinal));
-        var chapterText = row?.IsChapterHeading == true
-            ? row.ChapterHeading
-            : FirstNonEmpty(row?.ChapterHeading, navigationItem?.Row.ChapterHeading, navigationItem?.ChapterTitle);
-        if (string.IsNullOrWhiteSpace(chapterText))
+        string chapterText;
+        if (SefariaLibraryService.IsTalmud(state.Primary))
         {
-            chapterText = FormatChapterHeading(chapterKey, string.Empty);
+            var englishChapterTitle = FirstNonEmpty(
+                navigationItem?.EnglishGroupTitle,
+                row?.Primary?.ChapterTitle,
+                row?.Translation?.ChapterTitle);
+            var hebrewChapterTitle = FirstNonEmpty(
+                navigationItem?.HebrewGroupTitle,
+                row?.Primary?.HebrewChapterTitle,
+                row?.Translation?.HebrewChapterTitle);
+            chapterText = FormatTalmudPageHeader(
+                chapterKey,
+                englishChapterTitle,
+                hebrewChapterTitle);
+            state.ChapterBlock.FlowDirection = chapterText.Contains(" / ", StringComparison.Ordinal)
+                ? FlowDirection.LeftToRight
+                : FlowDirection.RightToLeft;
+        }
+        else
+        {
+            chapterText = row?.IsChapterHeading == true
+                ? row.ChapterHeading
+                : FirstNonEmpty(row?.ChapterHeading, navigationItem?.Row.ChapterHeading, navigationItem?.ChapterTitle);
+            if (string.IsNullOrWhiteSpace(chapterText))
+            {
+                chapterText = FormatChapterHeading(chapterKey, string.Empty);
+            }
+
+            chapterText = FormatBilingualReaderPageHeader(
+                chapterKey,
+                row,
+                navigationItem,
+                chapterText);
+            state.ChapterBlock.FlowDirection = FlowDirection.LeftToRight;
         }
 
         state.CurrentChapterKey = chapterKey;
@@ -2209,6 +2238,146 @@ public partial class MainWindow
         return resolvedIndex >= 0 && resolvedIndex < parts.Length ? parts[resolvedIndex] : string.Empty;
     }
 
+    private string FormatBilingualReaderPageHeader(
+        string chapterKey,
+        ReaderDisplayRow? row,
+        ReaderNavigationItem? navigationItem,
+        string fallback)
+    {
+        var navigationEnglishTitle = navigationItem?.EnglishGroupTitle;
+        if (navigationEnglishTitle?.Contains(" / ", StringComparison.Ordinal) == true)
+        {
+            navigationEnglishTitle = string.Empty;
+        }
+
+        var englishTitle = FirstNonEmpty(
+            navigationEnglishTitle,
+            row?.Primary?.ChapterTitle,
+            row?.Translation?.ChapterTitle);
+        var hebrewTitle = FirstNonEmpty(
+            navigationItem?.HebrewGroupTitle,
+            row?.Primary?.HebrewChapterTitle,
+            row?.Translation?.HebrewChapterTitle);
+        var englishLabel = FirstNonEmpty(
+            navigationItem?.EnglishLabel,
+            row?.Primary?.NavigationLabel,
+            row?.Translation?.NavigationLabel,
+            chapterKey);
+        var hebrewLabel = FirstNonEmpty(
+            navigationItem?.HebrewLabel,
+            row?.Primary?.HebrewNavigationLabel,
+            row?.Translation?.HebrewNavigationLabel);
+
+        if (string.IsNullOrWhiteSpace(hebrewLabel))
+        {
+            var numericParts = englishLabel.Split(':', StringSplitOptions.TrimEntries);
+            if (numericParts.Length > 0 &&
+                numericParts.All(part => int.TryParse(part, out var number) && number > 0))
+            {
+                hebrewLabel = string.Join(":", numericParts.Select(part => ToHebrewNumber(int.Parse(part))));
+            }
+        }
+
+        var englishHeader = CombinePageHeaderParts(englishTitle, englishLabel);
+        var hebrewHeader = CombinePageHeaderParts(hebrewTitle, hebrewLabel);
+        if (string.IsNullOrWhiteSpace(englishTitle) &&
+            int.TryParse(englishLabel, out var chapterNumber) &&
+            chapterNumber > 0)
+        {
+            englishHeader = $"Chapter {chapterNumber}";
+            if (string.IsNullOrWhiteSpace(hebrewTitle))
+            {
+                hebrewHeader = $"פרק {ToHebrewNumber(chapterNumber)}";
+            }
+        }
+
+        return string.IsNullOrWhiteSpace(hebrewHeader) || string.IsNullOrWhiteSpace(englishHeader)
+            ? fallback
+            : JoinBilingualPageHeader(hebrewHeader, englishHeader);
+    }
+
+    internal static string FormatTalmudPageHeader(
+        string page,
+        string? englishChapterTitle,
+        string? hebrewChapterTitle)
+    {
+        page = page.Trim().ToLowerInvariant();
+        var digitCount = 0;
+        while (digitCount < page.Length && char.IsDigit(page[digitCount]))
+        {
+            digitCount++;
+        }
+
+        var dafNumber = 0;
+        var hasDafAddress =
+            digitCount > 0 &&
+            digitCount == page.Length - 1 &&
+            page[digitCount] is 'a' or 'b' &&
+            int.TryParse(page[..digitCount], out dafNumber) &&
+            dafNumber > 0;
+        var daf = hasDafAddress
+            ? $"דף {ToHebrewNumber(dafNumber)} ע״{(page[digitCount] == 'a' ? 'א' : 'ב')}"
+            : page;
+
+        var hebrewChapter = string.IsNullOrWhiteSpace(hebrewChapterTitle)
+            ? string.Empty
+            : hebrewChapterTitle.Trim();
+        if (!string.IsNullOrWhiteSpace(hebrewChapter) &&
+            !hebrewChapter.StartsWith("פרק", StringComparison.Ordinal))
+        {
+            hebrewChapter = $"פרק {hebrewChapter}";
+        }
+
+        var englishChapter = string.IsNullOrWhiteSpace(englishChapterTitle)
+            ? string.Empty
+            : englishChapterTitle.Trim();
+        if (!string.IsNullOrWhiteSpace(englishChapter) &&
+            !englishChapter.StartsWith("Chapter", StringComparison.OrdinalIgnoreCase))
+        {
+            englishChapter = $"Chapter {englishChapter}";
+        }
+
+        var hebrewHeader = CombinePageHeaderParts(hebrewChapter, daf);
+        var englishDaf = hasDafAddress ? $"Daf {page}" : page;
+        var englishHeader = CombinePageHeaderParts(englishChapter, englishDaf);
+        return JoinBilingualPageHeader(hebrewHeader, englishHeader);
+    }
+
+    internal static string JoinBilingualPageHeader(string? hebrew, string? english)
+    {
+        hebrew = string.IsNullOrWhiteSpace(hebrew) ? string.Empty : hebrew.Trim();
+        english = string.IsNullOrWhiteSpace(english) ? string.Empty : english.Trim();
+        if (string.IsNullOrWhiteSpace(hebrew))
+        {
+            return english;
+        }
+
+        if (string.IsNullOrWhiteSpace(english) ||
+            string.Equals(hebrew, english, StringComparison.Ordinal))
+        {
+            return hebrew;
+        }
+
+        return $"{hebrew} / {english}";
+    }
+
+    private static string CombinePageHeaderParts(string? title, string? page)
+    {
+        title = string.IsNullOrWhiteSpace(title) ? string.Empty : title.Trim();
+        page = string.IsNullOrWhiteSpace(page) ? string.Empty : page.Trim();
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            return page;
+        }
+
+        if (string.IsNullOrWhiteSpace(page) ||
+            string.Equals(title, page, StringComparison.OrdinalIgnoreCase))
+        {
+            return title;
+        }
+
+        return $"{title} — {page}";
+    }
     private static string ToHebrewNumber(int number)
     {
         if (number <= 0)

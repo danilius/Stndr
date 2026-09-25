@@ -615,6 +615,63 @@ public partial class MainWindow
         _rightPanelBody.IsVisible = !_rightCollapsed;
     }
 
+    private bool TryHandleSidePanelShortcut(KeyEventArgs e)
+    {
+        var isTextEntryFocused =
+            e.Source is Control control &&
+            (control is TextBox ||
+             control.FindAncestorOfType<TextBox>(true) is not null);
+        if (!ShouldToggleSidePanelsForKey(e.Key, e.KeyModifiers, isTextEntryFocused))
+        {
+            return false;
+        }
+
+        SetBothSidePanelsCollapsed(ShouldCollapseBothSidePanels(
+            _leftCollapsed,
+            _rightCollapsed));
+        return true;
+    }
+
+    internal static bool ShouldToggleSidePanelsForKey(
+        Key key,
+        KeyModifiers modifiers,
+        bool isTextEntryFocused)
+    {
+        return key == Key.Tab &&
+            modifiers == KeyModifiers.None &&
+            !isTextEntryFocused;
+    }
+
+    internal static bool ShouldCollapseBothSidePanels(
+        bool leftCollapsed,
+        bool rightCollapsed)
+    {
+        return !leftCollapsed || !rightCollapsed;
+    }
+
+    private void SetBothSidePanelsCollapsed(bool collapsed)
+    {
+        if (collapsed)
+        {
+            if (!_leftCollapsed && _leftColumn is not null)
+            {
+                _leftExpandedWidth = Math.Max(
+                    CollapsedPanelWidth,
+                    _leftColumn.Width.Value);
+            }
+
+            if (!_rightCollapsed && _rightColumn is not null)
+            {
+                _rightExpandedWidth = Math.Max(
+                    CollapsedPanelWidth,
+                    _rightColumn.Width.Value);
+            }
+        }
+
+        ApplyLeftPanelState(collapsed, _leftExpandedWidth);
+        ApplyRightPanelState(collapsed, _rightExpandedWidth);
+    }
+
     private void ToggleLeftPanel(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (_leftColumn is null)

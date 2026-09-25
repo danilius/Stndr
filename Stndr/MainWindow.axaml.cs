@@ -251,7 +251,8 @@ public partial class MainWindow : Window
     {
         if (TryHandleDictionaryHistoryShortcut(e) ||
             TryHandlePanelShortcut(e) ||
-            TryHandleCenterTabShortcut(e))
+            TryHandleCenterTabShortcut(e) ||
+            TryHandleSidePanelShortcut(e))
         {
             e.Handled = true;
         }
