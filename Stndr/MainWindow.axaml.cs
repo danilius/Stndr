@@ -24,14 +24,14 @@ namespace Stndr;
 public partial class MainWindow : Window
 {
     private const double CollapsedPanelWidth = 40;
-    private const double DefaultExpandedPanelWidth = 280;
+    private const double DefaultExpandedPanelWidth = 250;
     private const double DefaultLinkSplitWidth = 420;
     private const double DefaultReaderFontSize = 15;
     private const double MinReaderFontSize = 11;
-    private const double MaxReaderFontSize = 28;
+    private const double MaxReaderFontSize = 120;
     private const double DefaultUiFontSize = 13;
     private const double MinUiFontSize = 10;
-    private const double MaxUiFontSize = 22;
+    private const double MaxUiFontSize = 72;
     private const double DefaultSingleLanguageColumnLetters = 80;
     private const double DefaultDualLanguageColumnLetters = 120;
     private const double MinReaderColumnLetters = 30;
@@ -49,7 +49,7 @@ public partial class MainWindow : Window
     private ColumnDefinition? _rightColumn;
     private GridSplitter? _leftSplitter;
     private GridSplitter? _rightSplitter;
-    private ScrollViewer? _leftPanelBody;
+    private Grid? _leftPanelBody;
     private TreeView? _installedBooksTree;
     private ListBox? _savedSearchesList;
 
@@ -108,7 +108,7 @@ public partial class MainWindow : Window
     private Button? _dictionaryPopupDockButton;
     private Button? _dictionaryPopupCloseButton;
     private ObservableCollection<TabItem>? _tabs;
-    private readonly AppSettingsService _settingsService = new();
+    private readonly AppSettingsService _settingsService;
     private readonly SefariaLibraryService _sefariaLibrary;
     private readonly Dictionary<TabItem, ReaderTabState> _openReaderTabs = new();
     private readonly Dictionary<TabItem, Control> _tabContents = new();
@@ -150,8 +150,11 @@ public partial class MainWindow : Window
 
     public event EventHandler? StartupCompleted;
 
-    public MainWindow()
+    public MainWindow() : this(new AppSettingsService()) { }
+
+    internal MainWindow(AppSettingsService settingsService, bool startServices = true)
     {
+        _settingsService = settingsService;
         InitializeComponent();
 
         var rootGrid = this.FindControl<Grid>("LayoutRoot");
@@ -162,7 +165,7 @@ public partial class MainWindow : Window
         }
         _leftSplitter = this.FindControl<GridSplitter>("LeftSplitter");
         _rightSplitter = this.FindControl<GridSplitter>("RightSplitter");
-        _leftPanelBody = this.FindControl<ScrollViewer>("LeftPanelBody");
+        _leftPanelBody = this.FindControl<Grid>("LeftPanelBody");
         _installedBooksTree = this.FindControl<TreeView>("InstalledBooksTree");
         _savedSearchesList = this.FindControl<ListBox>("SavedSearchesList");
         _leftPanelSearchButton = this.FindControl<Button>("LeftPanelSearchButton");
@@ -174,6 +177,7 @@ public partial class MainWindow : Window
             _leftPanelSearchSuggestions.ItemTemplate = new FuncDataTemplate<object>((item, _) =>
                 new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Body",
                     Text = item switch
                     {
                         InstalledSefariaBook b => b is null ? string.Empty : FormatTitle(b.Title, b.HebrewTitle),
@@ -218,6 +222,12 @@ public partial class MainWindow : Window
             UpdateTabHeaderStates();
             UpdateReaderTools();
             RestoreSelectedReaderWebScrollAfterTabSwitch();
+            if (centerTabs.SelectedItem is TabItem selected)
+            {
+                if (_openReaderTabs.TryGetValue(selected, out var activeReader))
+                    HighlightInstalledNodeInTree(activeReader.Primary);
+                Dispatcher.UIThread.Post(() => selected.BringIntoView(), DispatcherPriority.Loaded);
+            }
         };
 
         var configuredDataFolder = _settingsService.GetConfiguredDataFolder();
@@ -231,16 +241,18 @@ public partial class MainWindow : Window
             _settings = new AppSettings();
             _sefariaLibrary = new SefariaLibraryService(null);
         }
+        UiTheme.Configure(_settings.DataStorageFolder);
+        InitializeThemeShell();
         ApplyUiFontSetting();
         InitializeNavigationItems();
         InitializeUpdateBanner();
         ApplyLeftPanelState(false, DefaultExpandedPanelWidth);
-        ApplyRightPanelState(false, DefaultExpandedPanelWidth);
+        ApplyRightPanelState(false, UiTheme.Metric("RightPanelWidth"));
         EnsureDefaultTabs();
         UpdateTabHeaderStates();
         InitializeDictionaryUi();
 
-        this.Opened += async (_, _) => await CompleteStartupAsync();
+        if (startServices) this.Opened += async (_, _) => await CompleteStartupAsync();
         this.Closing += (_, _) => SaveLayoutState();
         this.Closed += (_, _) => SaveLayoutState();
         this.SizeChanged += (_, _) => ConstrainDictionaryPopupPosition();
@@ -249,7 +261,7 @@ public partial class MainWindow : Window
 
     private void OnWindowKeyDown(object? sender, KeyEventArgs e)
     {
-        if (TryHandleDictionaryHistoryShortcut(e) ||
+        if (TryHandleGlobalSearchShortcut(e) || TryHandleDictionaryHistoryShortcut(e) ||
             TryHandlePanelShortcut(e) ||
             TryHandleCenterTabShortcut(e) ||
             TryHandleSidePanelShortcut(e))
@@ -384,6 +396,7 @@ public partial class MainWindow : Window
     {
         _settingsService.SetConfiguredDataFolder(dataFolder);
         _settings = _settingsService.Load(dataFolder);
+        UiTheme.Configure(dataFolder);
         _sefariaLibrary.SetStorageRootFolder(dataFolder);
         ApplyUiFontSetting();
         RefreshInstalledBooksTree();

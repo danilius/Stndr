@@ -25,6 +25,7 @@ namespace Stndr;
 public partial class MainWindow
 {
     private int _installedBooksTreeRefreshGeneration;
+    private bool _isSynchronizingLibrarySelection;
 
     // Cancels the previous search's debounce + API call when the user types a new character.
     private CancellationTokenSource _installedBooksSearchCts = new();
@@ -280,7 +281,8 @@ public partial class MainWindow
     {
         var item = new TreeViewItem
         {
-            Header = node switch
+            Header = CreateLibraryTreeHeader(node),
+            Tag = node switch
             {
                 InstalledSefariaCategory installedCategory => FormatTitle(installedCategory.Title, installedCategory.HebrewTitle),
                 InstalledSefariaBook book => book.DisplayVersion,
@@ -543,7 +545,9 @@ public partial class MainWindow
     {
         if (_installedBooksTree?.ItemsSource is not IEnumerable<TreeViewItem> roots)
             return;
-        FindAndSelectInstalledNodeItem(roots, targetNode);
+        _isSynchronizingLibrarySelection = true;
+        try { FindAndSelectInstalledNodeItem(roots, targetNode); }
+        finally { _isSynchronizingLibrarySelection = false; }
     }
 
     private static bool FindAndSelectInstalledNodeItem(
@@ -553,8 +557,10 @@ public partial class MainWindow
         {
             var matches = targetNode switch
             {
-                InstalledSefariaBook book => item.DataContext is InstalledSefariaBook b &&
-                                             string.Equals(b.Key, book.Key, StringComparison.Ordinal),
+                InstalledSefariaBook book => (item.DataContext is InstalledSefariaBook b &&
+                                             string.Equals(b.Key, book.Key, StringComparison.Ordinal)) ||
+                                             (item.DataContext is InstalledSefariaCategory { IsBookTitle: true } category &&
+                                              string.Equals(category.Title, book.Title, StringComparison.Ordinal)) ,
                 _ => ReferenceEquals(item.DataContext, targetNode)
             };
 

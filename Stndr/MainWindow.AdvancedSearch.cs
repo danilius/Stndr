@@ -51,11 +51,11 @@ public partial class MainWindow
         return CreateAdvancedSearchView(null);
     }
 
-    private Control CreateAdvancedSearchView(SavedAdvancedSearch? savedSearch)
+    private Control CreateAdvancedSearchView(SavedAdvancedSearch? savedSearch, bool runImmediately = false)
     {
         var templateBox = new ComboBox
         {
-            MinWidth = 620,
+            MinWidth = 280,
             MaxWidth = 920,
             HorizontalAlignment = HorizontalAlignment.Left,
             ItemsSource = AdvancedSearchTemplates,
@@ -84,12 +84,14 @@ public partial class MainWindow
         };
         var status = new TextBlock
         {
-            Foreground = new SolidColorBrush(Color.Parse("#667085")),
+            [UiTheme.RoleProperty] = "Body",
+            Foreground = UiTheme.Brush("Muted"),
             VerticalAlignment = VerticalAlignment.Center
         };
         var resultSummary = new TextBlock
         {
-            Foreground = new SolidColorBrush(Color.Parse("#667085")),
+            [UiTheme.RoleProperty] = "Body",
+            Foreground = UiTheme.Brush("Muted"),
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(10, 8)
         };
@@ -97,7 +99,7 @@ public partial class MainWindow
         var resultList = new ListBox
         {
             ItemsSource = resultItems,
-            Background = Brushes.White,
+            Background = UiTheme.Brush("Surface"),
             BorderThickness = new Thickness(0),
             HorizontalAlignment = HorizontalAlignment.Stretch,
             ItemTemplate = new FuncDataTemplate<AdvancedSearchResult>((result, _) =>
@@ -105,8 +107,9 @@ public partial class MainWindow
         };
         var resultEmptyState = new TextBlock
         {
+            [UiTheme.RoleProperty] = "Body",
             Margin = new Thickness(16),
-            Foreground = new SolidColorBrush(Color.Parse("#667085")),
+            Foreground = UiTheme.Brush("Muted"),
             IsHitTestVisible = false
         };
         var visibleResults = new List<AdvancedSearchResult>();
@@ -373,8 +376,8 @@ public partial class MainWindow
 
         var searchArea = new Border
         {
-            Background = new SolidColorBrush(Color.Parse("#F9FAFB")),
-            BorderBrush = new SolidColorBrush(Color.Parse("#EAECF0")),
+            Background = UiTheme.Brush("SurfaceAlt"),
+            BorderBrush = UiTheme.Brush("Border"),
             BorderThickness = new Thickness(0, 0, 0, 1),
             Padding = new Thickness(16),
             Child = new StackPanel
@@ -384,10 +387,11 @@ public partial class MainWindow
                 {
                     new TextBlock
                     {
+                        [UiTheme.RoleProperty] = "Body",
                         Text = "Advanced Search",
                         FontSize = 20,
                         FontWeight = FontWeight.SemiBold,
-                        Foreground = new SolidColorBrush(Color.Parse("#101828")),
+                        Foreground = UiTheme.Brush("Text"),
                         HorizontalAlignment = HorizontalAlignment.Center,
                         TextAlignment = TextAlignment.Center
                     },
@@ -410,6 +414,9 @@ public partial class MainWindow
         };
 
         UpdateAdvancedSearchResultSummary(resultSummary, visibleResults.Count, lastElapsed, hasSearchRun, savedSearch is not null);
+
+        if (runImmediately)
+            Dispatcher.UIThread.Post(() => runButton.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent)), DispatcherPriority.Loaded);
 
         var resultHeader = CreateAdvancedSearchGridHeader(resultSummary, () =>
         {
@@ -440,7 +447,7 @@ public partial class MainWindow
         return new Grid
         {
             RowDefinitions = new RowDefinitions("Auto,*"),
-            Background = Brushes.White,
+            Background = UiTheme.Brush("Surface"),
             Children =
             {
                 searchArea,
@@ -539,7 +546,8 @@ public partial class MainWindow
                 ItemsSource = new[] { new DictionarySearchScopeOption(null, "All dictionaries") },
                 SelectedIndex = 0,
                 ItemTemplate = new FuncDataTemplate<DictionarySearchScopeOption>((option, _) =>
-                    new TextBlock { Text = option?.Label ?? string.Empty })
+                    new TextBlock {
+            [UiTheme.RoleProperty] = "Body", Text = option?.Label ?? string.Empty })
             }
         };
 
@@ -697,9 +705,10 @@ public partial class MainWindow
         {
             return new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = text,
                 VerticalAlignment = VerticalAlignment.Center,
-                Foreground = new SolidColorBrush(Color.Parse("#344054"))
+                Foreground = UiTheme.Brush("Text")
             };
         }
 
@@ -707,8 +716,8 @@ public partial class MainWindow
         {
             return new Border
             {
-                Background = new SolidColorBrush(Color.Parse("#F2F4F7")),
-                BorderBrush = new SolidColorBrush(Color.Parse("#D0D5DD")),
+                Background = UiTheme.Brush("Hover"),
+                BorderBrush = UiTheme.Brush("Border"),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(4),
                 Padding = new Thickness(7, 3),
@@ -726,7 +735,7 @@ public partial class MainWindow
             Padding = new Thickness(0),
             Background = Brushes.Transparent,
             BorderBrush = Brushes.Transparent,
-            Foreground = new SolidColorBrush(Color.Parse("#667085")),
+            Foreground = UiTheme.Brush("Muted"),
             IsTabStop = false
         };
         removeButton.Click += (_, e) =>
@@ -737,8 +746,8 @@ public partial class MainWindow
 
         return new Border
         {
-            Background = new SolidColorBrush(Color.Parse("#F2F4F7")),
-            BorderBrush = new SolidColorBrush(Color.Parse("#D0D5DD")),
+            Background = UiTheme.Brush("Hover"),
+            BorderBrush = UiTheme.Brush("Border"),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(4),
             Padding = new Thickness(7, 3, 2, 3),
@@ -759,16 +768,17 @@ public partial class MainWindow
     {
         return new Border
         {
-            Background = new SolidColorBrush(Color.Parse("#F9FAFB")),
-            BorderBrush = new SolidColorBrush(Color.Parse("#D0D5DD")),
+            Background = UiTheme.Brush("SurfaceAlt"),
+            BorderBrush = UiTheme.Brush("Border"),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(4),
             Padding = new Thickness(7, 3),
             Child = new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = $"+{remainingCount.ToString(CultureInfo.InvariantCulture)} more",
                 VerticalAlignment = VerticalAlignment.Center,
-                Foreground = new SolidColorBrush(Color.Parse("#667085"))
+                Foreground = UiTheme.Brush("Muted")
             }
         };
     }
@@ -780,8 +790,8 @@ public partial class MainWindow
             Content = "Clear scope",
             MinWidth = 92,
             VerticalAlignment = VerticalAlignment.Center,
-            Background = Brushes.White,
-            BorderBrush = new SolidColorBrush(Color.Parse("#D0D5DD")),
+            Background = UiTheme.Brush("Surface"),
+            BorderBrush = UiTheme.Brush("Border"),
             BorderThickness = new Thickness(1)
         };
         button.Click += (_, e) =>
@@ -821,16 +831,17 @@ public partial class MainWindow
         var scopeTree = new TreeView();
         var statusText = new TextBlock
         {
+            [UiTheme.RoleProperty] = "Body",
             Text = "Loading catalogue…",
-            Foreground = new SolidColorBrush(Color.Parse("#667085")),
+            Foreground = UiTheme.Brush("Muted"),
             Margin = new Thickness(0, 0, 0, 8),
             TextWrapping = TextWrapping.Wrap
         };
         var titleButton = new Button
         {
             Content = GetAdvancedSearchScopeTitleDisplayButtonText(),
-            Background = Brushes.White,
-            BorderBrush = new SolidColorBrush(Color.Parse("#D0D5DD")),
+            Background = UiTheme.Brush("Surface"),
+            BorderBrush = UiTheme.Brush("Border"),
             BorderThickness = new Thickness(1),
             MinWidth = 24,
             MinHeight = 22,
@@ -1515,9 +1526,10 @@ public partial class MainWindow
     {
         return new TextBlock
         {
+            [UiTheme.RoleProperty] = "Body",
             Text = text,
             VerticalAlignment = VerticalAlignment.Center,
-            Foreground = new SolidColorBrush(Color.Parse("#344054"))
+            Foreground = UiTheme.Brush("Text")
         };
     }
 
@@ -2442,8 +2454,8 @@ public partial class MainWindow
         var languageButton = new Button
         {
             Content = _savedSearchTitlesHebrew ? "\u05d0" : "A",
-            Background = Brushes.White,
-            BorderBrush = new SolidColorBrush(Color.Parse("#D0D5DD")),
+            Background = UiTheme.Brush("Surface"),
+            BorderBrush = UiTheme.Brush("Border"),
             BorderThickness = new Thickness(1),
             MinWidth = 24,
             MinHeight = 22,
@@ -2462,7 +2474,7 @@ public partial class MainWindow
         var grid = new Grid
         {
             ColumnDefinitions = new ColumnDefinitions("220,160,90,*,Auto,Auto"),
-            Background = new SolidColorBrush(Color.Parse("#F2F4F7")),
+            Background = UiTheme.Brush("Hover"),
             MinHeight = 34,
             Children =
             {
@@ -2486,9 +2498,10 @@ public partial class MainWindow
     {
         return new TextBlock
         {
+            [UiTheme.RoleProperty] = "ExpanderHeader",
             Text = text,
             FontWeight = FontWeight.SemiBold,
-            Foreground = new SolidColorBrush(Color.Parse("#344054")),
+            Foreground = UiTheme.Brush("Text"),
             Margin = new Thickness(10, 8)
         };
     }
@@ -2503,7 +2516,7 @@ public partial class MainWindow
         var button = new Button
         {
             Background = Brushes.Transparent,
-            BorderBrush = new SolidColorBrush(Color.Parse("#EAECF0")),
+            BorderBrush = UiTheme.Brush("Border"),
             BorderThickness = new Thickness(0, 0, 0, 1),
             HorizontalContentAlignment = HorizontalAlignment.Stretch,
             Padding = new Thickness(0),
@@ -2568,7 +2581,7 @@ public partial class MainWindow
 
         return new Border
         {
-            BorderBrush = new SolidColorBrush(Color.Parse("#EAECF0")),
+            BorderBrush = UiTheme.Brush("Border"),
             BorderThickness = new Thickness(0, 0, 0, 1),
             Child = grid
         };
@@ -2604,10 +2617,11 @@ public partial class MainWindow
     {
         return new TextBlock
         {
+            [UiTheme.RoleProperty] = isReference ? "SearchReference" : "Metadata",
             Text = text,
             TextWrapping = TextWrapping.Wrap,
             FontWeight = isReference ? FontWeight.SemiBold : FontWeight.Normal,
-            Foreground = new SolidColorBrush(Color.Parse(isReference ? "#175CD3" : "#101828")),
+            Foreground = UiTheme.Brush(isReference ? "Link" : "Text"),
             Margin = new Thickness(10, 8),
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -2616,6 +2630,7 @@ public partial class MainWindow
     private static TextBlock CreateAdvancedSearchSnippetCell(AdvancedSearchResult result)
     {
         var textBlock = CreateAdvancedSearchResultCell(string.Empty, false);
+        UiTheme.SetRole(textBlock, result.Snippet.Any(c => c >= '\u0590' && c <= '\u05ff') ? "SearchResultHebrew" : "SearchResult");
         AppendHighlightedSnippetRuns(textBlock, result.Snippet, result.MatchedTerms);
         return textBlock;
     }
@@ -2836,17 +2851,19 @@ public partial class MainWindow
             {
                 new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Reference",
                     Text = result.Reference,
                     FontWeight = FontWeight.SemiBold,
                     TextWrapping = TextWrapping.Wrap,
-                    Foreground = new SolidColorBrush(Color.Parse("#101828"))
+                    Foreground = UiTheme.Brush("Text")
                 },
                 new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Body",
                     Text = $"“{workTitle}” is not available in the offline library. You can preview this passage, " +
                            "or update the library from Settings if this title should be included.",
                     TextWrapping = TextWrapping.Wrap,
-                    Foreground = new SolidColorBrush(Color.Parse("#344054"))
+                    Foreground = UiTheme.Brush("Text")
                 },
                 new StackPanel
                 {
@@ -2865,10 +2882,11 @@ public partial class MainWindow
     {
         return new TextBlock
         {
+            [UiTheme.RoleProperty] = "Body",
             Text = text,
             Margin = new Thickness(0, 4, 10, 8),
             VerticalAlignment = VerticalAlignment.Center,
-            Foreground = new SolidColorBrush(Color.Parse("#344054"))
+            Foreground = UiTheme.Brush("Text")
         };
     }
 
@@ -2913,7 +2931,7 @@ public partial class MainWindow
     {
         return new Border
         {
-            Background = Brushes.White,
+            Background = UiTheme.Brush("Surface"),
             Padding = new Thickness(22),
             Child = new StackPanel
             {
@@ -2922,14 +2940,16 @@ public partial class MainWindow
                 {
                     new TextBlock
                     {
+                        [UiTheme.RoleProperty] = "Reference",
                         Text = reference,
                         FontWeight = FontWeight.SemiBold,
                         TextWrapping = TextWrapping.Wrap
                     },
                     new TextBlock
                     {
+                        [UiTheme.RoleProperty] = "Body",
                         Text = "Loading Sefaria preview...",
-                        Foreground = new SolidColorBrush(Color.Parse("#667085")),
+                        Foreground = UiTheme.Brush("Muted"),
                         TextWrapping = TextWrapping.Wrap
                     }
                 }
@@ -2950,16 +2970,18 @@ public partial class MainWindow
         };
         panel.Children.Add(new TextBlock
         {
+            [UiTheme.RoleProperty] = "Reference",
             Text = result.Reference,
             FontWeight = FontWeight.SemiBold,
             FontSize = Math.Max(15, GetSelectedUiFontSize() + 1),
             TextWrapping = TextWrapping.Wrap,
-            Foreground = new SolidColorBrush(Color.Parse("#101828"))
+            Foreground = UiTheme.Brush("Text")
         });
         panel.Children.Add(new TextBlock
         {
+            [UiTheme.RoleProperty] = "Body",
             Text = "Remote preview from Sefaria",
-            Foreground = new SolidColorBrush(Color.Parse("#667085")),
+            Foreground = UiTheme.Brush("Muted"),
             TextWrapping = TextWrapping.Wrap
         });
 
@@ -2990,8 +3012,9 @@ public partial class MainWindow
         {
             panel.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = $"Preview loaded from search snippet only: {error}",
-                Foreground = new SolidColorBrush(Color.Parse("#B42318")),
+                Foreground = UiTheme.Brush("Error"),
                 TextWrapping = TextWrapping.Wrap
             });
         }
@@ -3006,7 +3029,7 @@ public partial class MainWindow
 
         return new ScrollViewer
         {
-            Background = Brushes.White,
+            Background = UiTheme.Brush("Surface"),
             Padding = new Thickness(22),
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             Content = panel
@@ -3020,11 +3043,12 @@ public partial class MainWindow
     {
         var textBlock = new TextBlock
         {
+            [UiTheme.RoleProperty] = "Body",
             TextWrapping = TextWrapping.Wrap,
             FlowDirection = flowDirection,
             FontSize = 16,
             LineHeight = 24,
-            Foreground = new SolidColorBrush(Color.Parse("#101828"))
+            Foreground = UiTheme.Brush("Text")
         };
         AppendHighlightedSnippetRuns(textBlock, text, terms);
         return textBlock;
@@ -3119,10 +3143,11 @@ public partial class MainWindow
             Padding = new Thickness(6, 10, 6, 4),
             Content = new TextBlock
             {
+                [UiTheme.RoleProperty] = "ExpanderHeader",
                 Text = text,
                 FontSize = 11,
                 FontWeight = FontWeight.SemiBold,
-                Foreground = new SolidColorBrush(Color.Parse("#667085"))
+                Foreground = UiTheme.Brush("Muted")
             }
         };
     }
@@ -3131,15 +3156,17 @@ public partial class MainWindow
     {
         var title = new TextBlock
         {
+            [UiTheme.RoleProperty] = "Body",
             Text = savedSearch.ToString(),
             TextWrapping = TextWrapping.Wrap,
-            Foreground = new SolidColorBrush(Color.Parse("#101828"))
+            Foreground = UiTheme.Brush("Text")
         };
         var meta = new TextBlock
         {
+            [UiTheme.RoleProperty] = "Body",
             Text = $"{savedSearch.Results.Count} results",
             FontSize = 11,
-            Foreground = new SolidColorBrush(Color.Parse("#667085"))
+            Foreground = UiTheme.Brush("Muted")
         };
         var closeButton = new Button
         {
@@ -3151,7 +3178,7 @@ public partial class MainWindow
             Padding = new Thickness(0),
             Background = Brushes.Transparent,
             BorderBrush = Brushes.Transparent,
-            Foreground = new SolidColorBrush(Color.Parse("#98A2B3")),
+            Foreground = UiTheme.Brush("Muted"),
             HorizontalContentAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center,
             IsTabStop = false
@@ -3171,6 +3198,7 @@ public partial class MainWindow
             MinHeight = 20,
             Child = new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = "\ud83d\udccc",
                 HorizontalAlignment = HorizontalAlignment.Center,
                 TextAlignment = TextAlignment.Center,

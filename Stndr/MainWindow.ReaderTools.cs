@@ -47,7 +47,7 @@ public partial class MainWindow
 
             var selected = ReferenceEquals(tab, _centerTabs.SelectedItem);
             header.Background = selected
-                ? Brushes.White
+                ? UiTheme.Brush("Surface")
                 : Brushes.Transparent;
 
             if (headerLayout.Children.Count > 3 && headerLayout.Children[3] is Border separator)
@@ -86,6 +86,7 @@ public partial class MainWindow
             {
                 _rightPanelBody.Children.Add(new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Body",
                     Text = "Open a text to see reader tools.",
                     TextWrapping = TextWrapping.Wrap
                 });
@@ -100,6 +101,7 @@ public partial class MainWindow
             {
                 _rightPanelBody.Children.Add(new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Body",
                     Text = "Open a text to see reader tools.",
                     TextWrapping = TextWrapping.Wrap
                 });
@@ -111,16 +113,8 @@ public partial class MainWindow
         ApplyPinnedCommentaryPreferences(readerState);
         ApplyCommentarySortPreferences(readerState);
 
-        _rightPanelBody.Children.Add(new TextBlock
-        {
-            Text = FormatTitle(readerState.Primary.Title, readerState.Primary.HebrewTitle),
-            FontWeight = FontWeight.SemiBold,
-            TextWrapping = TextWrapping.Wrap
-        });
-        _rightPanelBody.Children.Add(CreateReaderToolsExpandCollapseButton(readerState));
-
         _rightPanelBody.Children.Add(CreateReaderToolsGroup(
-            CreateNavigationGroupHeader(readerState),
+            IconHeader("list", CreateNavigationGroupHeader(readerState)),
             CreateReaderNavigationTools(readerState),
             readerState.IsNavigationExpanded,
             value =>
@@ -142,7 +136,7 @@ public partial class MainWindow
         }
 
         _rightPanelBody.Children.Add(CreateReaderToolsGroup(
-            CreateCommentaryGroupHeader(readerState),
+            IconHeader("comment", CreateCommentaryGroupHeader(readerState)),
             CreateReaderCommentaryTools(readerState),
             readerState.IsCommentariesExpanded,
             value =>
@@ -152,7 +146,7 @@ public partial class MainWindow
             }));
 
         _rightPanelBody.Children.Add(CreateReaderToolsGroup(
-            CreateLinksGroupHeader(readerState),
+            IconHeader("link", CreateLinksGroupHeader(readerState)),
             CreateReaderLinksTools(readerState),
             readerState.IsLinksExpanded,
             value =>
@@ -176,6 +170,7 @@ public partial class MainWindow
         {
             textTools.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = "Hebrew Texts",
                 FontWeight = FontWeight.SemiBold
             });
@@ -218,6 +213,7 @@ public partial class MainWindow
 
             textTools.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = "Hebrew versions by section",
                 FontWeight = FontWeight.SemiBold
             });
@@ -231,6 +227,7 @@ public partial class MainWindow
         {
             textTools.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = "No downloaded translations are available for this text.",
                 TextWrapping = TextWrapping.Wrap
             });
@@ -244,6 +241,7 @@ public partial class MainWindow
 
             textTools.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = "Translations",
                 FontWeight = FontWeight.SemiBold
             });
@@ -283,29 +281,31 @@ public partial class MainWindow
             {
                 Height = 1,
                 Margin = new Thickness(0, 8, 0, 4),
-                Background = new SolidColorBrush(Color.Parse("#EAECF0"))
+                Background = UiTheme.Brush("Border")
             });
         }
 
         textTools.Children.Add(new TextBlock
         {
+            [UiTheme.RoleProperty] = "Body",
             Text = "Other versions may be available to download.",
             TextWrapping = TextWrapping.Wrap,
-            Foreground = new SolidColorBrush(Color.Parse("#667085")),
-            FontFamily = new FontFamily(GetSelectedUiFontFamily())
+            Foreground = UiTheme.Brush("Muted"),
+            FontFamily = UiTheme.Font("Body")
         });
 
         textTools.Children.Add(new TextBlock
         {
+            [UiTheme.RoleProperty] = "Body",
             Text = "All installed versions come from the offline Sefaria library. Choose Hebrew and translation versions above.",
             TextWrapping = TextWrapping.Wrap,
-            Foreground = new SolidColorBrush(Color.Parse("#667085")),
-            FontFamily = new FontFamily(GetSelectedUiFontFamily()),
+            Foreground = UiTheme.Brush("Muted"),
+            FontFamily = UiTheme.Font("Body"),
             Margin = new Thickness(0, 2, 0, 0)
         });
 
-        _rightPanelBody.Children.Add(CreateReaderToolsGroup(
-            "Versions",
+        _rightPanelBody.Children.Insert(_isDictionaryDocked ? 1 : 0, CreateReaderToolsGroup(
+            IconHeader("book", FormatTitle(readerState.Primary.Title, readerState.Primary.HebrewTitle)),
             textTools,
             readerState.IsTextsExpanded,
             value =>
@@ -339,6 +339,7 @@ public partial class MainWindow
         {
             panel.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = "No Hebrew text is available for this section.",
                 TextWrapping = TextWrapping.Wrap
             });
@@ -448,8 +449,9 @@ public partial class MainWindow
         {
             content.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = "Loading installed dictionaries...",
-                Foreground = new SolidColorBrush(Color.Parse("#667085")),
+                Foreground = UiTheme.Brush("Muted"),
                 TextWrapping = TextWrapping.Wrap
             });
             _ = LoadDictionaryDrillDownCatalogueAsync(generation);
@@ -467,7 +469,8 @@ public partial class MainWindow
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 ItemsSource = options,
                 ItemTemplate = new FuncDataTemplate<DictionarySearchScopeOption>((option, _) =>
-                    new TextBlock { Text = option?.Label ?? string.Empty }),
+                    new TextBlock {
+            [UiTheme.RoleProperty] = "Body", Text = option?.Label ?? string.Empty }),
                 SelectedItem = options.FirstOrDefault(option =>
                     option.LexiconId == _dictionaryBrowseLexiconId) ?? options[0]
             };
@@ -501,6 +504,7 @@ public partial class MainWindow
                         CreateDictionaryDrillDownBackButton(selectedLexicon),
                         new TextBlock
                         {
+                            [UiTheme.RoleProperty] = "Body",
                             Text = string.IsNullOrWhiteSpace(_dictionaryDrillDownPrefix)
                                 ? "Choose the first letter"
                                 : _dictionaryDrillDownPrefix,
@@ -535,8 +539,9 @@ public partial class MainWindow
             {
                 content.Children.Add(new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Body",
                     Text = "Choose a dictionary, then narrow the headword one letter at a time.",
-                    Foreground = new SolidColorBrush(Color.Parse("#667085")),
+                    Foreground = UiTheme.Brush("Muted"),
                     TextWrapping = TextWrapping.Wrap
                 });
             }
@@ -560,7 +565,16 @@ public partial class MainWindow
         }
 
         _dictionaryLexicons = lexicons;
-        UpdateReaderTools();
+        if (lexicons.Count == 0)
+        {
+            if (_rightPanelBody is not null)
+                foreach (var label in _rightPanelBody.GetVisualDescendants().OfType<TextBlock>())
+                    if (label.Text == "Loading installed dictionaries...")
+                        label.Text = "No installed dictionaries.";
+            return;
+        }
+        Dispatcher.UIThread.Post(UpdateReaderTools);
+
     }
 
     private Button CreateDictionaryDrillDownBackButton(SefariaLexiconInfo lexicon)
@@ -661,8 +675,9 @@ public partial class MainWindow
         {
             choices.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = "No further letters. The matching entry is shown in the dictionary.",
-                Foreground = new SolidColorBrush(Color.Parse("#667085")),
+                Foreground = UiTheme.Brush("Muted"),
                 TextWrapping = TextWrapping.Wrap
             });
         }
@@ -686,18 +701,21 @@ public partial class MainWindow
             var details = new StackPanel { Spacing = 3 };
             details.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = book.VersionTitle,
                 FontWeight = FontWeight.SemiBold,
                 TextWrapping = TextWrapping.Wrap
             });
             details.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = $"Language: {book.LanguageCode}",
-                Foreground = new SolidColorBrush(Color.Parse("#475467")),
+                Foreground = UiTheme.Brush("Muted"),
                 TextWrapping = TextWrapping.Wrap
             });
             details.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = $"License: {(string.IsNullOrWhiteSpace(book.License) ? "Not specified" : book.License)}",
                 TextWrapping = TextWrapping.Wrap
             });
@@ -705,15 +723,17 @@ public partial class MainWindow
             {
                 details.Children.Add(new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Body",
                     Text = $"Source: {book.VersionSource}",
-                    Foreground = new SolidColorBrush(Color.Parse("#475467")),
+                    Foreground = UiTheme.Brush("Muted"),
                     TextWrapping = TextWrapping.Wrap
                 });
             }
             panel.Children.Add(details);
         }
         if (panel.Children.Count == 0)
-            panel.Children.Add(new TextBlock { Text = "No version information is available.", TextWrapping = TextWrapping.Wrap });
+            panel.Children.Add(new TextBlock {
+            [UiTheme.RoleProperty] = "Body", Text = "No version information is available.", TextWrapping = TextWrapping.Wrap });
         return panel;
     }
 
@@ -759,6 +779,7 @@ public partial class MainWindow
 
         var titleBlock = new TextBlock
         {
+            [UiTheme.RoleProperty] = "ExpanderHeader",
             Text = title,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -776,8 +797,8 @@ public partial class MainWindow
         var sortButton = new Button
         {
             Content = "\u21c5",
-            Background = Brushes.White,
-            BorderBrush = new SolidColorBrush(Color.Parse("#D0D5DD")),
+            Background = UiTheme.Brush("Surface"),
+            BorderBrush = UiTheme.Brush("Border"),
             BorderThickness = new Thickness(1),
             MinWidth = 24,
             MinHeight = 22,
@@ -795,8 +816,8 @@ public partial class MainWindow
         var languageButton = new Button
         {
             Content = readerState.CommentaryLanguage == CommentaryLanguage.Hebrew ? "\u05d0" : "A",
-            Background = Brushes.White,
-            BorderBrush = new SolidColorBrush(Color.Parse("#D0D5DD")),
+            Background = UiTheme.Brush("Surface"),
+            BorderBrush = UiTheme.Brush("Border"),
             BorderThickness = new Thickness(1),
             MinWidth = 24,
             MinHeight = 22,
@@ -860,6 +881,7 @@ public partial class MainWindow
 
         var titleBlock = new TextBlock
         {
+            [UiTheme.RoleProperty] = "ExpanderHeader",
             Text = FormatSedrotHeading(readerState),
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -883,6 +905,7 @@ public partial class MainWindow
 
         var titleBlock = new TextBlock
         {
+            [UiTheme.RoleProperty] = "ExpanderHeader",
             Text = FormatLinksHeaderTitle(readerState),
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -891,8 +914,8 @@ public partial class MainWindow
         var languageButton = new Button
         {
             Content = readerState.CommentaryLanguage == CommentaryLanguage.Hebrew ? "\u05d0" : "A",
-            Background = Brushes.White,
-            BorderBrush = new SolidColorBrush(Color.Parse("#D0D5DD")),
+            Background = UiTheme.Brush("Surface"),
+            BorderBrush = UiTheme.Brush("Border"),
             BorderThickness = new Thickness(1),
             MinWidth = 24,
             MinHeight = 22,
@@ -955,6 +978,7 @@ public partial class MainWindow
         {
             panel.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = "No sedrot are available for this book.",
                 TextWrapping = TextWrapping.Wrap
             });
@@ -991,14 +1015,16 @@ public partial class MainWindow
 
         panel.Children.Add(new TextBlock
         {
+            [UiTheme.RoleProperty] = "Body",
             Text = FormatSedraTitle(selectedSedra),
             FontWeight = FontWeight.SemiBold,
             TextWrapping = TextWrapping.Wrap
         });
         panel.Children.Add(new TextBlock
         {
+            [UiTheme.RoleProperty] = "Body",
             Text = selectedSedra.WholeRef,
-            Foreground = new SolidColorBrush(Color.Parse("#667085")),
+            Foreground = UiTheme.Brush("Muted"),
             FontSize = Math.Max(10, GetSelectedUiFontSize() - 1),
             TextWrapping = TextWrapping.Wrap
         });
@@ -1015,6 +1041,7 @@ public partial class MainWindow
     {
         var title = new TextBlock
         {
+            [UiTheme.RoleProperty] = "Navigation",
             Text = FormatSedraTitle(sedra),
             FontSize = Math.Max(13, GetSelectedUiFontSize()),
             FontWeight = FontWeight.SemiBold,
@@ -1023,9 +1050,10 @@ public partial class MainWindow
 
         var detail = new TextBlock
         {
+            [UiTheme.RoleProperty] = "Navigation",
             Text = sedra.IsCombined ? $"{sedra.WholeRef} - Combined" : sedra.WholeRef,
             FontSize = Math.Max(11, GetSelectedUiFontSize() - 1),
-            Foreground = new SolidColorBrush(Color.Parse("#667085")),
+            Foreground = UiTheme.Brush("Muted"),
             TextWrapping = TextWrapping.Wrap
         };
 
@@ -1094,13 +1122,14 @@ public partial class MainWindow
         var button = new Button
         {
             Background = background,
-            BorderBrush = new SolidColorBrush(Color.Parse("#EAECF0")),
+            BorderBrush = UiTheme.Brush("Border"),
             BorderThickness = new Thickness(1),
             Padding = new Thickness(8, 7),
             HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Stretch,
             Content = new TextBlock
             {
+                [UiTheme.RoleProperty] = "Navigation",
                 Text = $"{aliyah.Number}. {FormatAliyahRef(aliyah.Ref)}",
                 TextWrapping = TextWrapping.Wrap
             }
@@ -1133,18 +1162,7 @@ public partial class MainWindow
 
     private static IBrush GetAliyahBrush(int aliyahNumber)
     {
-        var colors = new[]
-        {
-            "#FFF3C4",
-            "#DFF7E8",
-            "#DDEBFF",
-            "#F5E3FF",
-            "#FFE3DF",
-            "#E1F5F7",
-            "#F1EAD8"
-        };
-        var color = colors[Math.Clamp(aliyahNumber - 1, 0, colors.Length - 1)];
-        return new SolidColorBrush(Color.Parse(color));
+        return UiTheme.Brush("Aliyah" + Math.Clamp(aliyahNumber, 1, 7));
     }
 
     private static void ScrollReaderToReference(ReaderTabState readerState, string aliyahRef)
@@ -1218,6 +1236,7 @@ public partial class MainWindow
         {
             panel.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = "Select a paragraph to see commentaries.",
                 TextWrapping = TextWrapping.Wrap
             });
@@ -1226,8 +1245,9 @@ public partial class MainWindow
 
         panel.Children.Add(new TextBlock
         {
+            [UiTheme.RoleProperty] = "Body",
             Text = readerState.SelectedCommentaryRef,
-            Foreground = new SolidColorBrush(Color.Parse("#667085")),
+            Foreground = UiTheme.Brush("Muted"),
             FontSize = Math.Max(10, GetSelectedUiFontSize() - 1),
             TextWrapping = TextWrapping.Wrap
         });
@@ -1236,6 +1256,7 @@ public partial class MainWindow
         {
             panel.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = "Loading commentaries...",
                 TextWrapping = TextWrapping.Wrap
             });
@@ -1246,8 +1267,9 @@ public partial class MainWindow
         {
             panel.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = readerState.CommentaryError,
-                Foreground = new SolidColorBrush(Color.Parse("#B42318")),
+                Foreground = UiTheme.Brush("Error"),
                 TextWrapping = TextWrapping.Wrap
             });
             return panel;
@@ -1257,6 +1279,7 @@ public partial class MainWindow
         {
             panel.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = "No commentaries for this paragraph.",
                 TextWrapping = TextWrapping.Wrap
             });
@@ -1283,6 +1306,7 @@ public partial class MainWindow
         {
             panel.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = "Select a paragraph to see links.",
                 TextWrapping = TextWrapping.Wrap
             });
@@ -1291,8 +1315,9 @@ public partial class MainWindow
 
         panel.Children.Add(new TextBlock
         {
+            [UiTheme.RoleProperty] = "Body",
             Text = readerState.SelectedLinksRef,
-            Foreground = new SolidColorBrush(Color.Parse("#667085")),
+            Foreground = UiTheme.Brush("Muted"),
             FontSize = Math.Max(10, GetSelectedUiFontSize() - 1),
             TextWrapping = TextWrapping.Wrap
         });
@@ -1301,6 +1326,7 @@ public partial class MainWindow
         {
             panel.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = "Loading links...",
                 TextWrapping = TextWrapping.Wrap
             });
@@ -1311,8 +1337,9 @@ public partial class MainWindow
         {
             panel.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = readerState.LinksError,
-                Foreground = new SolidColorBrush(Color.Parse("#B42318")),
+                Foreground = UiTheme.Brush("Error"),
                 TextWrapping = TextWrapping.Wrap
             });
             return panel;
@@ -1322,6 +1349,7 @@ public partial class MainWindow
         {
             panel.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = string.Equals(readerState.LoadedLinksRef, readerState.SelectedLinksRef, StringComparison.Ordinal)
                     ? "No links for this paragraph."
                     : "Open this expander to load cached or live links for the selected paragraph.",
@@ -1342,6 +1370,7 @@ public partial class MainWindow
         {
             panel.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = "No categories selected for this work.",
                 TextWrapping = TextWrapping.Wrap
             });
@@ -1424,10 +1453,11 @@ public partial class MainWindow
         {
             Margin = new Thickness(0, 4, 0, 0),
             Padding = new Thickness(0, 8, 0, 0),
-            BorderBrush = new SolidColorBrush(Color.Parse("#EAECF0")),
+            BorderBrush = UiTheme.Brush("Border"),
             BorderThickness = new Thickness(0, 1, 0, 0),
             Child = new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = $"{group.Category} ({group.Items.Count})",
                 FontWeight = FontWeight.SemiBold,
                 TextWrapping = TextWrapping.Wrap
@@ -1518,7 +1548,7 @@ public partial class MainWindow
         };
         container.Children.Add(new Border
         {
-            BorderBrush = new SolidColorBrush(Color.Parse("#EAECF0")),
+            BorderBrush = UiTheme.Brush("Border"),
             BorderThickness = new Thickness(0, 0, 0, 1),
             Padding = new Thickness(0, 0, 0, 8),
             Child = button
@@ -1543,6 +1573,7 @@ public partial class MainWindow
         {
             panel.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = "Loading preview...",
                 TextWrapping = TextWrapping.Wrap
             });
@@ -1589,10 +1620,11 @@ public partial class MainWindow
             {
                 panel.Children.Add(new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Body",
                     Text = readerState.LinkPreviewError,
-                    FontFamily = new FontFamily(GetSelectedUiFontFamily()),
+                    FontFamily = UiTheme.Font("Body"),
                     FontSize = GetSelectedUiFontSize(),
-                    Foreground = new SolidColorBrush(Color.Parse("#B42318")),
+                    Foreground = UiTheme.Brush("Error"),
                     TextWrapping = TextWrapping.Wrap
                 });
             }
@@ -1601,10 +1633,11 @@ public partial class MainWindow
         {
             panel.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = string.IsNullOrWhiteSpace(readerState.LinkPreviewError)
                     ? "This linked text is not installed."
                     : readerState.LinkPreviewError,
-                Foreground = new SolidColorBrush(Color.Parse("#B42318")),
+                Foreground = UiTheme.Brush("Error"),
                 TextWrapping = TextWrapping.Wrap
             });
 
@@ -1624,8 +1657,8 @@ public partial class MainWindow
 
         return new Border
         {
-            Background = new SolidColorBrush(Color.Parse("#F9FAFB")),
-            BorderBrush = new SolidColorBrush(Color.Parse("#D0D5DD")),
+            Background = UiTheme.Brush("SurfaceAlt"),
+            BorderBrush = UiTheme.Brush("Border"),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(8),
             Padding = new Thickness(12),
@@ -1637,7 +1670,7 @@ public partial class MainWindow
     {
         var webView = new NativeWebView
         {
-            Background = Brushes.White,
+            Background = UiTheme.Brush("Surface"),
             HorizontalAlignment = HorizontalAlignment.Stretch,
             VerticalAlignment = VerticalAlignment.Stretch
         };
@@ -1707,6 +1740,7 @@ public partial class MainWindow
         builder.AppendLine("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
         builder.AppendLine("<style>");
         builder.AppendLine(BuildReaderSplitWebCss());
+        builder.AppendLine(BuildThemeSplitCss());
         builder.AppendLine("</style>");
         builder.AppendLine("</head>");
         builder.AppendLine("<body>");
@@ -1730,7 +1764,7 @@ public partial class MainWindow
 
     private string BuildReaderSplitWebCss()
     {
-        var uiFont = CssString(GetSelectedUiFontFamily());
+        var uiFont = CssString(GetSelectedUiFontFamily()) + ", " + CssString(GetSelectedHebrewDisplayFontFamily());
         var englishFont = CssString(GetSelectedEnglishFontFamily());
         var hebrewFont = CssString(GetSelectedHebrewFontFamily());
         var uiSize = GetSelectedUiFontSize().ToString(CultureInfo.InvariantCulture);
@@ -1746,15 +1780,15 @@ public partial class MainWindow
                 --ui-size: {{uiSize}}px;
                 --english-commentary-size: {{englishCommentarySize}}px;
                 --hebrew-commentary-size: {{hebrewCommentarySize}}px;
-                --text: #101828;
-                --muted: #667085;
-                --faint: #98A2B3;
-                --border: #EAECF0;
-                --error: #B42318;
+                --text: {{UiTheme.CssColor("Text")}};
+                --muted: {{UiTheme.CssColor("Muted")}};
+                --faint: {{UiTheme.CssColor("Muted")}};
+                --border: {{UiTheme.CssColor("Border")}};
+                --error: {{UiTheme.CssColor("Error")}};
             }
 
             html, body {
-                background: #fff;
+                background: {{UiTheme.CssColor("Surface")}};
                 color: var(--text);
                 font-family: var(--ui-font);
                 font-size: var(--ui-size);
@@ -1777,7 +1811,7 @@ public partial class MainWindow
                 padding: 12px 16px 8px;
                 position: sticky;
                 top: 0;
-                background: #fff;
+                background: {{UiTheme.CssColor("Surface")}};
                 z-index: 2;
             }
 
@@ -1795,10 +1829,10 @@ public partial class MainWindow
             }
 
             button {
-                background: #fff;
-                border: 1px solid #D0D5DD;
+                background: {{UiTheme.CssColor("Surface")}};
+                border: 1px solid {{UiTheme.CssColor("Border")}};
                 border-radius: 4px;
-                color: #344054;
+                color: {{UiTheme.CssColor("Text")}};
                 cursor: default;
                 font: inherit;
                 padding: 5px 9px;
@@ -2130,8 +2164,9 @@ public partial class MainWindow
         };
         header.Children.Add(new TextBlock
         {
+            [UiTheme.RoleProperty] = "Reference",
             Text = readerState.ActiveLinkPreview?.Reference ?? readerState.ActiveLinkPreviewItem?.DisplayReference ?? "Linked text",
-            FontFamily = new FontFamily(GetSelectedUiFontFamily()),
+            FontFamily = UiTheme.Font("Body"),
             FontSize = GetSelectedUiFontSize(),
             FontWeight = FontWeight.SemiBold,
             TextWrapping = TextWrapping.Wrap,
@@ -2161,8 +2196,9 @@ public partial class MainWindow
         {
             content.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = "Loading linked text...",
-                FontFamily = new FontFamily(GetSelectedUiFontFamily()),
+                FontFamily = UiTheme.Font("Body"),
                 FontSize = GetSelectedUiFontSize(),
                 TextWrapping = TextWrapping.Wrap
             });
@@ -2171,12 +2207,13 @@ public partial class MainWindow
         {
             content.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = readerState.ActiveLinkPreview.IsFromInstalledBook
                     ? "Showing the locally installed source text"
                     : "Showing the downloaded linked excerpt",
-                FontFamily = new FontFamily(GetSelectedUiFontFamily()),
+                FontFamily = UiTheme.Font("Body"),
                 FontSize = Math.Max(10, GetSelectedUiFontSize() - 1),
-                Foreground = new SolidColorBrush(Color.Parse("#667085")),
+                Foreground = UiTheme.Brush("Muted"),
                 TextWrapping = TextWrapping.Wrap
             });
 
@@ -2189,11 +2226,12 @@ public partial class MainWindow
 
                 content.Children.Add(new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Body",
                     Text = section.Label,
-                    FontFamily = new FontFamily(GetSelectedUiFontFamily()),
+                    FontFamily = UiTheme.Font("Body"),
                     FontSize = Math.Max(10, GetSelectedUiFontSize() - 1),
                     FontWeight = FontWeight.SemiBold,
-                    Foreground = new SolidColorBrush(Color.Parse("#475467"))
+                    Foreground = UiTheme.Brush("Muted")
                 });
                 var isHebrewSection = string.Equals(section.Label, "Hebrew", StringComparison.OrdinalIgnoreCase);
                 content.Children.Add(CreateLinkPreviewBody(
@@ -2207,12 +2245,13 @@ public partial class MainWindow
         {
             content.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = string.IsNullOrWhiteSpace(readerState.LinkPreviewError)
                     ? "This linked text is not installed."
                     : readerState.LinkPreviewError,
-                FontFamily = new FontFamily(GetSelectedUiFontFamily()),
+                FontFamily = UiTheme.Font("Body"),
                 FontSize = GetSelectedUiFontSize(),
-                Foreground = new SolidColorBrush(Color.Parse("#B42318")),
+                Foreground = UiTheme.Brush("Error"),
                 TextWrapping = TextWrapping.Wrap
             });
         }
@@ -2224,7 +2263,7 @@ public partial class MainWindow
             {
                 new Border
                 {
-                    BorderBrush = new SolidColorBrush(Color.Parse("#EAECF0")),
+                    BorderBrush = UiTheme.Brush("Border"),
                     BorderThickness = new Thickness(0, 0, 0, 1),
                     Child = header
                 },
@@ -2249,10 +2288,11 @@ public partial class MainWindow
         };
         header.Children.Add(new TextBlock
         {
+            [UiTheme.RoleProperty] = "Body",
             Text = string.IsNullOrWhiteSpace(readerState.SelectedCommentaryRef)
                 ? "Commentaries"
                 : readerState.SelectedCommentaryRef,
-            FontFamily = new FontFamily(GetSelectedUiFontFamily()),
+            FontFamily = UiTheme.Font("Body"),
             FontSize = GetSelectedUiFontSize(),
             FontWeight = FontWeight.SemiBold,
             TextWrapping = TextWrapping.Wrap,
@@ -2262,8 +2302,8 @@ public partial class MainWindow
         var languageButton = new Button
         {
             Content = readerState.CommentaryLanguage == CommentaryLanguage.Hebrew ? "\u05d0" : "A",
-            Background = Brushes.White,
-            BorderBrush = new SolidColorBrush(Color.Parse("#D0D5DD")),
+            Background = UiTheme.Brush("Surface"),
+            BorderBrush = UiTheme.Brush("Border"),
             BorderThickness = new Thickness(1),
             MinWidth = 28,
             MinHeight = 26,
@@ -2313,8 +2353,9 @@ public partial class MainWindow
         {
             content.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = "Loading commentaries...",
-                FontFamily = new FontFamily(GetSelectedUiFontFamily()),
+                FontFamily = UiTheme.Font("Body"),
                 FontSize = GetSelectedUiFontSize(),
                 TextWrapping = TextWrapping.Wrap
             });
@@ -2323,10 +2364,11 @@ public partial class MainWindow
         {
             content.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = readerState.CommentaryError,
-                FontFamily = new FontFamily(GetSelectedUiFontFamily()),
+                FontFamily = UiTheme.Font("Body"),
                 FontSize = GetSelectedUiFontSize(),
-                Foreground = new SolidColorBrush(Color.Parse("#B42318")),
+                Foreground = UiTheme.Brush("Error"),
                 TextWrapping = TextWrapping.Wrap
             });
         }
@@ -2334,8 +2376,9 @@ public partial class MainWindow
         {
             content.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = "No commentaries for this paragraph.",
-                FontFamily = new FontFamily(GetSelectedUiFontFamily()),
+                FontFamily = UiTheme.Font("Body"),
                 FontSize = GetSelectedUiFontSize(),
                 TextWrapping = TextWrapping.Wrap
             });
@@ -2353,7 +2396,7 @@ public partial class MainWindow
             {
                 new Border
                 {
-                    BorderBrush = new SolidColorBrush(Color.Parse("#EAECF0")),
+                    BorderBrush = UiTheme.Brush("Border"),
                     BorderThickness = new Thickness(0, 0, 0, 1),
                     Child = header
                 },
@@ -2377,8 +2420,9 @@ public partial class MainWindow
     {
         statusBlock = new TextBlock
         {
+            [UiTheme.RoleProperty] = "Body",
             Text = $"Preparing {FormatTitle(workTitle, workHebrewTitle)}...",
-            FontFamily = new FontFamily(GetSelectedUiFontFamily()),
+            FontFamily = UiTheme.Font("Body"),
             FontSize = GetSelectedUiFontSize(),
             TextAlignment = TextAlignment.Center,
             TextWrapping = TextWrapping.Wrap,
@@ -2395,7 +2439,7 @@ public partial class MainWindow
 
         return new Grid
         {
-            Background = Brushes.White,
+            Background = UiTheme.Brush("Surface"),
             Children =
             {
                 new StackPanel
@@ -2417,15 +2461,16 @@ public partial class MainWindow
     {
         return new Grid
         {
-            Background = Brushes.White,
+            Background = UiTheme.Brush("Surface"),
             Children =
             {
                 new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Body",
                     Text = $"The linked work could not be opened.\n{message}",
-                    FontFamily = new FontFamily(GetSelectedUiFontFamily()),
+                    FontFamily = UiTheme.Font("Body"),
                     FontSize = GetSelectedUiFontSize(),
-                    Foreground = new SolidColorBrush(Color.Parse("#B42318")),
+                    Foreground = UiTheme.Brush("Error"),
                     TextAlignment = TextAlignment.Center,
                     TextWrapping = TextWrapping.Wrap,
                     HorizontalAlignment = HorizontalAlignment.Center,
@@ -2467,12 +2512,13 @@ public partial class MainWindow
         var useHebrew = ContainsHebrewText(text);
         return new TextBlock
         {
+            [UiTheme.RoleProperty] = "Body",
             Text = text,
             FontFamily = new FontFamily(useHebrew ? GetSelectedHebrewFontFamily() : GetSelectedEnglishFontFamily()),
             FontSize = fontSizeOverride ?? GetSelectedLinkPanelFontSize(useHebrew),
             FontWeight = isEmphasized ? FontWeight.SemiBold : FontWeight.Normal,
             FlowDirection = useHebrew ? FlowDirection.RightToLeft : FlowDirection.LeftToRight,
-            Foreground = foreground ?? new SolidColorBrush(Color.Parse("#344054")),
+            Foreground = foreground ?? UiTheme.Brush("Text"),
             TextWrapping = TextWrapping.Wrap
         };
     }
@@ -2749,6 +2795,7 @@ public partial class MainWindow
         var isSelected = string.Equals(readerState.SelectedCommentarySourceKey, key, StringComparison.OrdinalIgnoreCase);
         var titleLine = new TextBlock
         {
+            [UiTheme.RoleProperty] = "Body",
             FontFamily = new FontFamily(useHebrew ? GetSelectedHebrewFontFamily() : GetSelectedEnglishFontFamily()),
             FontSize = Math.Max(13, GetSelectedUiFontSize()),
             TextWrapping = TextWrapping.Wrap,
@@ -2757,25 +2804,26 @@ public partial class MainWindow
         titleLine.Inlines?.Add(new Run(title)
         {
             FontWeight = FontWeight.SemiBold,
-            Foreground = new SolidColorBrush(Color.Parse("#101828"))
+            Foreground = UiTheme.Brush("Text")
         });
         titleLine.Inlines?.Add(new Run($" ({count})")
         {
-            Foreground = new SolidColorBrush(Color.Parse("#98A2B3"))
+            Foreground = UiTheme.Brush("Muted")
         });
 
         var badge = new Border
         {
             BorderThickness = new Thickness(1),
-            BorderBrush = new SolidColorBrush(Color.Parse("#D0D5DD")),
+            BorderBrush = UiTheme.Brush("Border"),
             CornerRadius = new CornerRadius(3),
             Padding = new Thickness(3, 0),
             VerticalAlignment = VerticalAlignment.Top,
             Child = new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = useHebrew ? "HE" : "EN",
                 FontSize = 9,
-                Foreground = new SolidColorBrush(Color.Parse("#667085"))
+                Foreground = UiTheme.Brush("Muted")
             }
         };
 
@@ -2797,6 +2845,7 @@ public partial class MainWindow
                 MinHeight = 20,
                 Child = new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Body",
                     Text = "\ud83d\udccc",
                     HorizontalAlignment = HorizontalAlignment.Center,
                     TextAlignment = TextAlignment.Center,
@@ -2842,9 +2891,10 @@ public partial class MainWindow
         {
             content.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = description,
                 FontSize = Math.Max(11, GetSelectedUiFontSize() - 1),
-                Foreground = new SolidColorBrush(Color.Parse("#475467")),
+                Foreground = UiTheme.Brush("Muted"),
                 TextWrapping = TextWrapping.Wrap
             });
         }
@@ -2939,6 +2989,7 @@ public partial class MainWindow
             {
                 new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Body",
                     Text = title,
                     FontSize = 16,
                     FontWeight = FontWeight.SemiBold,
@@ -2948,9 +2999,10 @@ public partial class MainWindow
                 },
                 new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Body",
                     Text = description,
                     TextWrapping = TextWrapping.Wrap,
-                    Foreground = new SolidColorBrush(Color.Parse("#475467")),
+                    Foreground = UiTheme.Brush("Muted"),
                     FlowDirection = useHebrew ? FlowDirection.RightToLeft : FlowDirection.LeftToRight,
                     FontFamily = new FontFamily(useHebrew ? GetSelectedHebrewFontFamily() : GetSelectedEnglishFontFamily())
                 },
@@ -2982,8 +3034,9 @@ public partial class MainWindow
             {
                 content.Children.Add(new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Body",
                     Text = "No selected commentary for this paragraph.",
-                    Foreground = new SolidColorBrush(Color.Parse("#667085")),
+                    Foreground = UiTheme.Brush("Muted"),
                     TextWrapping = TextWrapping.Wrap
                 });
             }
@@ -2997,8 +3050,8 @@ public partial class MainWindow
         {
             Padding = new Thickness(10),
             BorderThickness = new Thickness(1),
-            BorderBrush = new SolidColorBrush(Color.Parse("#D0D5DD")),
-            Background = new SolidColorBrush(Color.Parse("#FCFCFD")),
+            BorderBrush = UiTheme.Brush("Border"),
+            Background = UiTheme.Brush("SurfaceAlt"),
             CornerRadius = new CornerRadius(6),
             HorizontalAlignment = HorizontalAlignment.Stretch,
             Child = content
@@ -3010,7 +3063,7 @@ public partial class MainWindow
         return new Border
         {
             Height = 1,
-            Background = new SolidColorBrush(Color.Parse("#98A2B3")),
+            Background = UiTheme.Brush("Muted"),
             Margin = new Thickness(0, 4)
         };
     }
@@ -3048,6 +3101,7 @@ public partial class MainWindow
         {
             content.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = GetCommentaryGroupDisplayTitle(readerState, group),
                 FontWeight = FontWeight.SemiBold,
                 FontFamily = new FontFamily(readerState.CommentaryLanguage == CommentaryLanguage.Hebrew
@@ -3082,8 +3136,9 @@ public partial class MainWindow
 
         panel.Children.Add(new TextBlock
         {
+            [UiTheme.RoleProperty] = "Body",
             Text = displayRef,
-            Foreground = new SolidColorBrush(Color.Parse("#667085")),
+            Foreground = UiTheme.Brush("Muted"),
             FontSize = Math.Max(10, GetSelectedUiFontSize() - 1),
             TextWrapping = TextWrapping.Wrap,
             FlowDirection = useHebrew ? FlowDirection.RightToLeft : FlowDirection.LeftToRight,
@@ -3094,8 +3149,9 @@ public partial class MainWindow
         {
             panel.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = "No text available in this language.",
-                Foreground = new SolidColorBrush(Color.Parse("#98A2B3")),
+                Foreground = UiTheme.Brush("Muted"),
                 TextWrapping = TextWrapping.Wrap
             });
             return panel;
@@ -3387,7 +3443,7 @@ public partial class MainWindow
         var insertionLine = new Border
         {
             Height = 2,
-            Background = new SolidColorBrush(Color.Parse("#1570EF")),
+            Background = UiTheme.Brush("Focus"),
             CornerRadius = new CornerRadius(1),
             IsVisible = false,
             IsHitTestVisible = false,
@@ -3443,9 +3499,10 @@ public partial class MainWindow
             Cursor = new Cursor(StandardCursorType.SizeAll),
             Child = new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = "\u283f",
                 FontSize = Math.Max(12, GetSelectedUiFontSize()),
-                Foreground = new SolidColorBrush(Color.Parse("#667085")),
+                Foreground = UiTheme.Brush("Muted"),
                 VerticalAlignment = VerticalAlignment.Top,
                 Margin = new Thickness(0, 10, 0, 0)
             }
@@ -3505,7 +3562,7 @@ public partial class MainWindow
 
         wrapper.Opacity = 0.55;
         wrapper.ZIndex = 10;
-        context.SectionChrome.Background = new SolidColorBrush(Color.Parse("#F2F4F7"));
+        context.SectionChrome.Background = UiTheme.Brush("Hover");
         UpdateCommentaryReorderVisuals(position.Y);
         e.Pointer.Capture(grip);
         e.Handled = true;
@@ -3718,7 +3775,7 @@ public partial class MainWindow
 
         return new Border
         {
-            Background = Brushes.White,
+            Background = UiTheme.Brush("Surface"),
             Padding = new Thickness(10),
             Child = panel
         };
@@ -3732,9 +3789,10 @@ public partial class MainWindow
         var isSelected = readerState.CommentarySortMode == mode;
         var checkmark = new TextBlock
         {
+            [UiTheme.RoleProperty] = "Body",
             Text = isSelected ? "\u2713" : string.Empty,
-            FontFamily = new FontFamily(GetSelectedUiFontFamily()),
-            Foreground = new SolidColorBrush(Color.Parse("#101828")),
+            FontFamily = UiTheme.Font("Body"),
+            Foreground = UiTheme.Brush("Text"),
             FontWeight = FontWeight.SemiBold,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -3745,9 +3803,10 @@ public partial class MainWindow
             {
                 new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Body",
                     Text = label,
-                    FontFamily = new FontFamily(GetSelectedUiFontFamily()),
-                    Foreground = new SolidColorBrush(Color.Parse("#101828")),
+                    FontFamily = UiTheme.Font("Body"),
+                    Foreground = UiTheme.Brush("Text"),
                     FontWeight = isSelected ? FontWeight.SemiBold : FontWeight.Normal,
                     VerticalAlignment = VerticalAlignment.Center
                 },
@@ -3760,7 +3819,7 @@ public partial class MainWindow
         {
             HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Stretch,
-            Background = isSelected ? new SolidColorBrush(Color.Parse("#D8E7FF")) : Brushes.Transparent,
+            Background = isSelected ? UiTheme.Brush("Window") : Brushes.Transparent,
             BorderBrush = Brushes.Transparent,
             Padding = new Thickness(8, 6),
             Content = contentGrid
@@ -3894,7 +3953,8 @@ public partial class MainWindow
     private Control CreateNavigationGroupHeader(ReaderTabState readerState)
     {
         if (readerState.HasSiddurNavigation)
-            return new TextBlock { Text = "Prayers", VerticalAlignment = VerticalAlignment.Center };
+            return new TextBlock {
+            [UiTheme.RoleProperty] = "ExpanderHeader", Text = "Prayers", VerticalAlignment = VerticalAlignment.Center };
         var layout = new Grid
         {
             ColumnDefinitions = readerState.HasTalmudNavigation
@@ -3905,6 +3965,7 @@ public partial class MainWindow
 
         var titleBlock = new TextBlock
         {
+            [UiTheme.RoleProperty] = "ExpanderHeader",
             Text = "Navigation",
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 0, 8, 0)
@@ -3982,8 +4043,8 @@ public partial class MainWindow
         var button = new Button
         {
             Content = content,
-            Background = Brushes.White,
-            BorderBrush = new SolidColorBrush(Color.Parse("#D0D5DD")),
+            Background = UiTheme.Brush("Surface"),
+            BorderBrush = UiTheme.Brush("Border"),
             BorderThickness = new Thickness(1),
             MinWidth = 24,
             MinHeight = 22,
@@ -4006,6 +4067,7 @@ public partial class MainWindow
         {
             return new TextBlock
             {
+                [UiTheme.RoleProperty] = "Navigation",
                 Text = "No navigation markers are available.",
                 TextWrapping = TextWrapping.Wrap
             };
@@ -4048,15 +4110,7 @@ public partial class MainWindow
 
     private Expander CreateNavigationTopicExpander(ReaderTabState readerState, ReaderNavigationChapter chapter)
     {
-        var pagesPanel = new WrapPanel
-        {
-            HorizontalAlignment = HorizontalAlignment.Stretch
-        };
-
-        foreach (var item in chapter.Items)
-        {
-            pagesPanel.Children.Add(CreateReaderNavigationButton(readerState, item));
-        }
+        var pagesPanel = CreateCompactNavigationList(readerState, chapter.Items);
 
         var isExpanded = readerState.NavigationTopicsAllExpanded ||
             (readerState.ExpandedNavigationTopics.TryGetValue(chapter.Key, out var expanded) && expanded);
@@ -4095,6 +4149,7 @@ public partial class MainWindow
             SaveLayoutState();
         };
 
+        expander.Classes.Add("navigation-section");
         readerState.NavigationTopicExpanders[chapter.Key] = expander;
         return expander;
     }
@@ -4128,6 +4183,7 @@ public partial class MainWindow
         var titleText = string.IsNullOrWhiteSpace(chapter.Title) ? "Section" : chapter.Title;
         titlePanel.Children.Add(new TextBlock
         {
+            [UiTheme.RoleProperty] = "ExpanderHeader",
             Text = titleText,
             FontWeight = FontWeight.SemiBold,
             TextWrapping = TextWrapping.Wrap,
@@ -4153,8 +4209,9 @@ public partial class MainWindow
         {
             layout.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "ExpanderHeader",
                 Text = chapter.RangeLabel,
-                Foreground = new SolidColorBrush(Color.Parse("#667085")),
+                Foreground = UiTheme.Brush("Muted"),
                 FontSize = 12,
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(8, 0, 0, 0)
@@ -4386,33 +4443,47 @@ public partial class MainWindow
 
     private Control CreateReaderNavigationButtonGrid(IEnumerable<ReaderNavigationItem> items)
     {
-        var pagesPanel = new WrapPanel
-        {
-            HorizontalAlignment = HorizontalAlignment.Stretch
-        };
-
         if (_centerTabs?.SelectedItem is not TabItem selectedTab ||
             !_openReaderTabs.TryGetValue(selectedTab, out var readerState))
-        {
-            return pagesPanel;
-        }
+            return new StackPanel();
+        return CreateCompactNavigationList(readerState, items);
+    }
 
-        foreach (var item in items)
+    private Control CreateCompactNavigationList(ReaderTabState state, IEnumerable<ReaderNavigationItem> source)
+    {
+        var items = source.ToList();
+        var panel = new StackPanel();
+        var count = (int)UiTheme.Metric("NavigationPreviewCount");
+        var activeIndex = items.FindIndex(item => item.Row.ChapterKey == state.CurrentChapterKey);
+        var first = Math.Max(0, Math.Min(activeIndex - 2, items.Count - count));
+        foreach (var item in items.Skip(first).Take(count))
+            panel.Children.Add(CreateReaderNavigationButton(state, item));
+        if (items.Count > count)
         {
-            pagesPanel.Children.Add(CreateReaderNavigationButton(readerState, item));
+            var all = new StackPanel();
+            var more = new Expander { Header = "More sections", IsExpanded = false,
+                Content = new ScrollViewer { MaxHeight = 260, Content = all } };
+            more.Classes.Add("navigation-section");
+            more.PropertyChanged += (_, e) =>
+            {
+                if (e.Property == Expander.IsExpandedProperty && more.IsExpanded && all.Children.Count == 0)
+                    foreach (var item in items) all.Children.Add(CreateReaderNavigationButton(state, item));
+            };
+            panel.Children.Add(more);
         }
-
-        return pagesPanel;
+        return panel;
     }
 
     private Button CreateReaderNavigationButton(ReaderTabState readerState, ReaderNavigationItem item)
     {
         var button = new Button
         {
-            Content = item.Label,
-            Margin = new Thickness(0, 0, 6, 6),
+            Content = IconHeader("dot", new TextBlock { [UiTheme.RoleProperty] = "Navigation", Text = int.TryParse(item.Label, out _) && !SefariaLibraryService.IsTalmud(readerState.Primary) ? "Chapter " + item.Label : item.Label }),
+            Margin = new Thickness(0),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
             Tag = item,
-            HorizontalContentAlignment = HorizontalAlignment.Center,
+            Background = item.Row.ChapterKey == readerState.CurrentChapterKey ? UiTheme.Brush("Selection") : Brushes.Transparent,
+            HorizontalContentAlignment = HorizontalAlignment.Left,
             VerticalContentAlignment = VerticalAlignment.Center
         };
         button.Classes.Add("reader-nav-button");
@@ -4556,7 +4627,7 @@ public partial class MainWindow
             Header = header,
             IsExpanded = isExpanded,
             HorizontalAlignment = HorizontalAlignment.Stretch,
-            Margin = new Thickness(0, 8, 0, 0),
+            Margin = new Thickness(0),
             Content = new Border
             {
                 HorizontalAlignment = HorizontalAlignment.Stretch,
@@ -4588,13 +4659,13 @@ public partial class MainWindow
 
         var button = new Button
         {
-            Content = "A",
+            Content = "Aa",
             MinWidth = 36,
             MinHeight = 36,
             Padding = new Thickness(0),
-            Margin = new Thickness(12, 24, 12, 0),
-            Background = Brushes.White,
-            BorderBrush = new SolidColorBrush(Color.Parse("#D0D5DD")),
+            Margin = new Thickness(0),
+            Background = UiTheme.Brush("Surface"),
+            BorderBrush = UiTheme.Brush("Border"),
             BorderThickness = new Thickness(1),
             HorizontalAlignment = HorizontalAlignment.Right,
             VerticalAlignment = VerticalAlignment.Top,
@@ -4643,7 +4714,8 @@ public partial class MainWindow
         panel.Children.Add(CreateHebrewMarksToggle(readerState, "Cantillation", isCantillationToggle: true));
         panel.Children.Add(CreateAliyotToggle(readerState));
         panel.Children.Add(CreateDisplayDivider());
-        panel.Children.Add(new TextBlock { Text = "Annotations", FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 2, 0, 4) });
+        panel.Children.Add(new TextBlock {
+            [UiTheme.RoleProperty] = "Body", Text = "Annotations", FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 2, 0, 4) });
         panel.Children.Add(CreateAnnotationVisibilityToggle(readerState, ReaderAnnotationKind.Bookmark, "Bookmarks"));
         panel.Children.Add(CreateAnnotationVisibilityToggle(readerState, ReaderAnnotationKind.Highlight, "Highlights"));
         panel.Children.Add(CreateAnnotationVisibilityToggle(readerState, ReaderAnnotationKind.Note, "Notes"));
@@ -4651,7 +4723,7 @@ public partial class MainWindow
         return compact
             ? new Border
             {
-            Background = Brushes.White,
+            Background = UiTheme.Brush("Surface"),
                 Padding = new Thickness(10),
                 Child = panel
             }
@@ -4691,8 +4763,9 @@ public partial class MainWindow
 
         layout.Children.Add(new TextBlock
         {
+            [UiTheme.RoleProperty] = "Body",
             Text = "Layout",
-            FontFamily = new FontFamily(GetSelectedUiFontFamily()),
+            FontFamily = UiTheme.Font("Body"),
             VerticalAlignment = VerticalAlignment.Center
         });
 
@@ -4726,8 +4799,8 @@ public partial class MainWindow
             MinHeight = 42,
             Padding = new Thickness(4, 0),
             IsEnabled = enabled,
-            Background = isSelected ? new SolidColorBrush(Color.Parse("#D8E7FF")) : Brushes.Transparent,
-            BorderBrush = isSelected ? new SolidColorBrush(Color.Parse("#7AB7F0")) : Brushes.Transparent,
+            Background = isSelected ? UiTheme.Brush("Window") : Brushes.Transparent,
+            BorderBrush = isSelected ? UiTheme.Brush("Focus") : Brushes.Transparent,
             Tag = mode
         };
         ToolTip.SetTip(button, tooltip);
@@ -4748,6 +4821,7 @@ public partial class MainWindow
         var fontSize = GetSelectedHebrewDisplayFontSize();
         return new TextBlock
         {
+            [UiTheme.RoleProperty] = "Body",
             Text = "A\n\u05d0",
             FontFamily = new FontFamily(GetSelectedHebrewDisplayFontFamily()),
             FontSize = fontSize,
@@ -4781,6 +4855,7 @@ public partial class MainWindow
         var fontSize = GetSelectedHebrewDisplayFontSize();
         return new TextBlock
         {
+            [UiTheme.RoleProperty] = "Body",
             FontSize = fontSize,
             FontWeight = FontWeight.SemiBold,
             LineHeight = Math.Max(13, fontSize + 1),
@@ -4795,7 +4870,7 @@ public partial class MainWindow
         textBlock.Inlines ??= new InlineCollection();
         textBlock.Inlines.Add(new Run(text)
         {
-            FontFamily = new FontFamily(isHebrew ? GetSelectedHebrewDisplayFontFamily() : GetSelectedUiFontFamily()),
+            FontFamily = isHebrew ? new FontFamily(GetSelectedHebrewDisplayFontFamily()) : UiTheme.Font("Body"),
             FontSize = GetSelectedHebrewDisplayFontSize(),
             FontWeight = FontWeight.SemiBold
         });
@@ -4813,7 +4888,7 @@ public partial class MainWindow
         {
             HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Stretch,
-            Background = isSelected ? new SolidColorBrush(Color.Parse("#D8E7FF")) : Brushes.Transparent,
+            Background = isSelected ? UiTheme.Brush("Window") : Brushes.Transparent,
             BorderBrush = Brushes.Transparent,
             IsEnabled = enabled,
             Padding = new Thickness(8, 6),
@@ -4824,17 +4899,19 @@ public partial class MainWindow
                 {
                     new TextBlock
                     {
+                        [UiTheme.RoleProperty] = "Body",
                         Text = label,
-                        FontFamily = new FontFamily(GetSelectedUiFontFamily()),
-                        Foreground = new SolidColorBrush(Color.Parse("#101828")),
+                        FontFamily = UiTheme.Font("Body"),
+                        Foreground = UiTheme.Brush("Text"),
                         FontWeight = isSelected ? FontWeight.SemiBold : FontWeight.Normal,
                         VerticalAlignment = VerticalAlignment.Center
                     },
                     new TextBlock
                     {
+                        [UiTheme.RoleProperty] = "Body",
                         Text = isSelected ? "\u2713" : string.Empty,
-                        FontFamily = new FontFamily(GetSelectedUiFontFamily()),
-                        Foreground = new SolidColorBrush(Color.Parse("#101828")),
+                        FontFamily = UiTheme.Font("Body"),
+                        Foreground = UiTheme.Brush("Text"),
                         FontWeight = FontWeight.SemiBold,
                         VerticalAlignment = VerticalAlignment.Center
                     }
@@ -4865,8 +4942,9 @@ public partial class MainWindow
         {
             Content = new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = label,
-                FontFamily = new FontFamily(GetSelectedUiFontFamily())
+                FontFamily = UiTheme.Font("Body")
             },
             IsChecked = isChecked,
             IsEnabled = isEnabled,
@@ -4902,8 +4980,9 @@ public partial class MainWindow
         {
             Content = new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = "Aliyot",
-                FontFamily = new FontFamily(GetSelectedUiFontFamily())
+                FontFamily = UiTheme.Font("Body")
             },
             IsChecked = state.ShowAliyot,
             IsEnabled = hasTorahSedrot,
@@ -4942,7 +5021,7 @@ public partial class MainWindow
         {
             Height = 1,
             Margin = new Thickness(-10, 8),
-            Background = new SolidColorBrush(Color.Parse("#EAECF0"))
+            Background = UiTheme.Brush("Border")
         };
     }
 

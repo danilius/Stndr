@@ -64,8 +64,8 @@ internal static class DictionaryHeadwordCrossReferenceParser
 internal sealed class DictionaryLinkedTextView : SelectableTextBlock
 {
     private const double ClickMovementTolerance = 4;
-    private static readonly IBrush CitationBrush = new SolidColorBrush(Color.Parse("#005EA8"));
-    private static readonly IBrush SelectionHighlightBrush = new SolidColorBrush(Color.Parse("#665AA9E6"));
+    private static readonly IBrush CitationBrush = UiTheme.Brush("Link");
+    private static readonly IBrush SelectionHighlightBrush = UiTheme.Brush("Selection");
 
     private readonly string _text;
     private readonly IReadOnlyList<DictionaryTextLink> _links;
@@ -80,6 +80,7 @@ internal sealed class DictionaryLinkedTextView : SelectableTextBlock
         FlowDirection flowDirection,
         Action<DictionaryTextLink> openLink)
     {
+        UiTheme.SetRole(this, flowDirection == FlowDirection.RightToLeft ? "DictionaryDefinitionHebrew" : "DictionaryDefinition");
         _text = text;
         _links = links.OrderBy(link => link.Start).ToList();
         _openLink = openLink;
@@ -88,7 +89,7 @@ internal sealed class DictionaryLinkedTextView : SelectableTextBlock
         TextAlignment = flowDirection == FlowDirection.RightToLeft ? TextAlignment.Right : TextAlignment.Left;
         TextWrapping = TextWrapping.Wrap;
         SelectionBrush = SelectionHighlightBrush;
-        SelectionForegroundBrush = Brushes.Black;
+        SelectionForegroundBrush = UiTheme.Brush("Text");
 
         var inlines = Inlines ?? new InlineCollection();
         inlines.Clear();
@@ -103,7 +104,9 @@ internal sealed class DictionaryLinkedTextView : SelectableTextBlock
             inlines.Add(new Run
             {
                 Text = link.DisplayText,
-                Foreground = CitationBrush,
+                Foreground = UiTheme.Brush(UiTheme.Type("Reference").Color),
+                FontFamily = UiTheme.Font("Reference"),
+                FontSize = UiTheme.Type("Reference").Size,
                 TextDecorations = Avalonia.Media.TextDecorations.Underline
             });
             position = link.Start + link.Length;

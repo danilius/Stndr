@@ -1,0 +1,327 @@
+{
+  "Version": 1,
+  "Name": "Warm parchment",
+  "Colors": {
+    "Window": "#FAF8F5",
+    "Surface": "#FFFFFF",
+    "SurfaceAlt": "#FCFAF7",
+    "Text": "#25221D",
+    "Muted": "#79736B",
+    "Icon": "#805C32",
+    "Border": "#EEEAE3",
+    "Hover": "#F8F3EB",
+    "Pressed": "#EEE4D6",
+    "Selection": "#F7F0E5",
+    "SelectionText": "#25221D",
+    "Focus": "#A17B43",
+    "Link": "#805C32",
+    "Error": "#B42318",
+    "Success": "#34704C",
+    "Warning": "#98651E",
+    "SearchHighlight": "#FFE7A3",
+    "SearchHit": "#FFFAE9",
+    "Shadow": "#18000000",
+    "HighlightGreen": "#B7EB8F",
+    "HighlightBlue": "#91D5FF",
+    "HighlightPink": "#FFADD2",
+    "HighlightPurple": "#D3ADF7",
+    "HighlightYellow": "#FFE58F",
+    "ErrorBackground": "#FEF3F2",
+    "SuccessBackground": "#ECFDF3",
+    "WarningBackground": "#FFFAEB",
+    "InfoBackground": "#EFF8FF",
+    "Aliyah1": "#FFF3C4",
+    "Aliyah2": "#DFF7E8",
+    "Aliyah3": "#DDEBFF",
+    "Aliyah4": "#F5E3FF",
+    "Aliyah5": "#FFE3DF",
+    "Aliyah6": "#E1F5F7",
+    "Aliyah7": "#F1EAD8",
+    "NoteMarker": "#7F56D9"
+  },
+  "Text": {
+    "Body": {
+      "FontFamily": "Georgia",
+      "Size": 14,
+      "Color": "Text",
+      "Weight": 400,
+      "LineHeight": 1.4,
+      "HebrewFontFamily": "David"
+    },
+    "Button": {
+      "FontFamily": "Georgia",
+      "Size": 14,
+      "Color": "Text",
+      "Weight": 400,
+      "LineHeight": 1.4,
+      "HebrewFontFamily": "David"
+    },
+    "Input": {
+      "FontFamily": "Georgia",
+      "Size": 14,
+      "Color": "Text",
+      "Weight": 400,
+      "LineHeight": 1.4,
+      "HebrewFontFamily": "David"
+    },
+    "LibraryItem": {
+      "FontFamily": "Georgia",
+      "Size": 14,
+      "Color": "Text",
+      "Weight": 400,
+      "LineHeight": 1.4,
+      "HebrewFontFamily": "David"
+    },
+    "Navigation": {
+      "FontFamily": "Georgia",
+      "Size": 14,
+      "Color": "Text",
+      "Weight": 400,
+      "LineHeight": 1.4,
+      "HebrewFontFamily": "David"
+    },
+    "DictionaryDefinition": {
+      "FontFamily": "Georgia",
+      "Size": 14,
+      "Color": "Text",
+      "Weight": 400,
+      "LineHeight": 1.4,
+      "HebrewFontFamily": "David"
+    },
+    "CommentaryEnglish": {
+      "FontFamily": "Georgia",
+      "Size": 14,
+      "Color": "Text",
+      "Weight": 400,
+      "LineHeight": 1.4,
+      "HebrewFontFamily": "David"
+    },
+    "AnnotationBody": {
+      "FontFamily": "Georgia",
+      "Size": 14,
+      "Color": "Text",
+      "Weight": 400,
+      "LineHeight": 1.4,
+      "HebrewFontFamily": "David"
+    },
+    "Menu": {
+      "FontFamily": "Georgia",
+      "Size": 14,
+      "Color": "Text",
+      "Weight": 400,
+      "LineHeight": 1.4,
+      "HebrewFontFamily": "David"
+    },
+    "Tooltip": {
+      "FontFamily": "Georgia",
+      "Size": 14,
+      "Color": "Text",
+      "Weight": 400,
+      "LineHeight": 1.4,
+      "HebrewFontFamily": "David"
+    },
+    "MainButton": {
+      "FontFamily": "Georgia",
+      "Size": 13,
+      "Color": "Icon",
+      "Weight": 400,
+      "LineHeight": 1.4,
+      "HebrewFontFamily": "David"
+    },
+    "ExpanderHeader": {
+      "FontFamily": "Georgia",
+      "Size": 13,
+      "Color": "Text",
+      "Weight": 400,
+      "LineHeight": 1.4,
+      "HebrewFontFamily": "David"
+    },
+    "Tab": {
+      "FontFamily": "Georgia",
+      "Size": 13,
+      "Color": "Text",
+      "Weight": 400,
+      "LineHeight": 1.4,
+      "HebrewFontFamily": "David"
+    },
+    "Reference": {
+      "FontFamily": "Georgia",
+      "Size": 13,
+      "Color": "Text",
+      "Weight": 400,
+      "LineHeight": 1.4,
+      "HebrewFontFamily": "David"
+    },
+    "SearchReference": {
+      "FontFamily": "Georgia",
+      "Size": 13,
+      "Color": "Text",
+      "Weight": 400,
+      "LineHeight": 1.4,
+      "HebrewFontFamily": "David"
+    },
+    "Breadcrumb": {
+      "FontFamily": "Georgia",
+      "Size": 13,
+      "Color": "Text",
+      "Weight": 400,
+      "LineHeight": 1.4,
+      "HebrewFontFamily": "David"
+    },
+    "Metadata": {
+      "FontFamily": "Georgia",
+      "Size": 12,
+      "Color": "Muted",
+      "Weight": 400,
+      "LineHeight": 1.4,
+      "HebrewFontFamily": "David"
+    },
+    "Status": {
+      "FontFamily": "Georgia",
+      "Size": 13,
+      "Color": "Muted",
+      "Weight": 400,
+      "LineHeight": 1.4,
+      "HebrewFontFamily": "David"
+    },
+    "PageTitle": {
+      "FontFamily": "Georgia",
+      "Size": 20,
+      "Color": "Text",
+      "Weight": 400,
+      "LineHeight": 1.4,
+      "HebrewFontFamily": "David"
+    },
+    "DictionaryHeadword": {
+      "FontFamily": "David",
+      "Size": 25,
+      "Color": "Text",
+      "Weight": 600,
+      "LineHeight": 1.4,
+      "HebrewFontFamily": "David"
+    },
+    "SectionHeading": {
+      "FontFamily": "Georgia",
+      "Size": 22,
+      "Color": "Text",
+      "Weight": 600,
+      "LineHeight": 1.4,
+      "HebrewFontFamily": "David"
+    },
+    "DialogTitle": {
+      "FontFamily": "Georgia",
+      "Size": 22,
+      "Color": "Text",
+      "Weight": 600,
+      "LineHeight": 1.4,
+      "HebrewFontFamily": "David"
+    },
+    "ReaderHebrew": {
+      "FontFamily": "David",
+      "Size": 30,
+      "Color": "Text",
+      "Weight": 400,
+      "LineHeight": 1.45,
+      "HebrewFontFamily": "David"
+    },
+    "ReaderEnglish": {
+      "FontFamily": "Georgia",
+      "Size": 18,
+      "Color": "Text",
+      "Weight": 400,
+      "LineHeight": 1.4,
+      "HebrewFontFamily": "David"
+    },
+    "HebrewHeading": {
+      "FontFamily": "David",
+      "Size": 28,
+      "Color": "Text",
+      "Weight": 600,
+      "LineHeight": 1.4,
+      "HebrewFontFamily": "David"
+    },
+    "EnglishHeading": {
+      "FontFamily": "Georgia",
+      "Size": 16,
+      "Color": "Text",
+      "Weight": 400,
+      "LineHeight": 1.4,
+      "HebrewFontFamily": "David"
+    },
+    "HebrewUi": {
+      "FontFamily": "David",
+      "Size": 18,
+      "Color": "Text",
+      "Weight": 400,
+      "LineHeight": 1.4,
+      "HebrewFontFamily": "David"
+    },
+    "CommentaryHebrew": {
+      "FontFamily": "David",
+      "Size": 22,
+      "Color": "Text",
+      "Weight": 400,
+      "LineHeight": 1.4,
+      "HebrewFontFamily": "David"
+    },
+    "SearchResult": {
+      "FontFamily": "Georgia",
+      "Size": 15,
+      "Color": "Text",
+      "Weight": 400,
+      "LineHeight": 1.4,
+      "HebrewFontFamily": "David"
+    },
+    "SearchResultHebrew": {
+      "FontFamily": "David",
+      "Size": 21,
+      "Color": "Text",
+      "Weight": 400,
+      "LineHeight": 1.4,
+      "HebrewFontFamily": "David"
+    },
+    "AnnotationMarker": {
+      "FontFamily": "Georgia",
+      "Size": 12,
+      "Color": "Icon",
+      "Weight": 400,
+      "LineHeight": 1.4,
+      "HebrewFontFamily": "David"
+    },
+    "ReferenceHebrew": {
+      "FontFamily": "David",
+      "Size": 16,
+      "Color": "Text",
+      "Weight": 400,
+      "LineHeight": 1.4,
+      "HebrewFontFamily": "David"
+    },
+    "DictionaryDefinitionHebrew": {
+      "FontFamily": "David",
+      "Size": 20,
+      "Color": "Text",
+      "Weight": 400,
+      "LineHeight": 1.4,
+      "HebrewFontFamily": "David"
+    }
+  },
+  "Metrics": {
+    "MainButtonHeight": 40,
+    "ExpanderHeaderHeight": 38,
+    "PageHeaderHeight": 64,
+    "TabHeight": 36,
+    "ControlHeight": 30,
+    "CornerRadius": 7,
+    "IconSize": 20,
+    "LeftPanelWidth": 250,
+    "RightPanelWidth": 320,
+    "ReaderPadding": 28,
+    "ReaderRowGap": 20,
+    "PanelGap": 8,
+    "ButtonRadius": 6,
+    "PanelRadius": 8,
+    "TabWidth": 164,
+    "LibraryRowHeight": 29,
+    "NavigationPreviewCount": 6
+  }
+}

@@ -26,7 +26,7 @@ public partial class MainWindow
 {
     private void OnInstalledBookSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        if (e.AddedItems.Count > 0 &&
+        if (!_isSynchronizingLibrarySelection && e.AddedItems.Count > 0 &&
             e.AddedItems[0] is TreeViewItem { DataContext: InstalledSefariaCategory { IsBookTitle: true } bookCategory } &&
             _sefariaLibrary.GetInstalledVersionsForTitle(bookCategory.Title).FirstOrDefault() is { } book)
         {
@@ -153,9 +153,10 @@ public partial class MainWindow
     {
         return new Border
         {
-            Background = Brushes.White,
+            Background = UiTheme.Brush("Surface"),
             Child = new TextBlock
             {
+                [UiTheme.RoleProperty] = "Body",
                 Text = "Opening book...",
                 HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
                 VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
@@ -424,58 +425,43 @@ public partial class MainWindow
     {
         titleBlock = new SelectableTextBlock
         {
-            FontSize = 24,
-            FontWeight = FontWeight.SemiBold,
+            [UiTheme.RoleProperty] = "PageTitle",
             HorizontalAlignment = HorizontalAlignment.Center,
             TextAlignment = TextAlignment.Center
         };
-
-        versionBlock = new TextBlock
-        {
-            Foreground = new SolidColorBrush(Color.Parse("#667085")),
-            HorizontalAlignment = HorizontalAlignment.Center,
-            TextAlignment = TextAlignment.Center
-        };
-
         chapterBlock = new SelectableTextBlock
         {
-            Foreground = new SolidColorBrush(Color.Parse("#344054")),
-            FontSize = 15,
-            FontWeight = FontWeight.SemiBold,
+            [UiTheme.RoleProperty] = "Breadcrumb",
             HorizontalAlignment = HorizontalAlignment.Center,
             TextAlignment = TextAlignment.Center
         };
-
+        versionBlock = new TextBlock { [UiTheme.RoleProperty] = "Metadata", IsVisible = false };
         var header = new StackPanel
         {
-            Spacing = 8,
-            Margin = new Thickness(64, 24, 64, 12),
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            Children =
-            {
-                titleBlock,
-                chapterBlock,
-                versionBlock
-            }
+            Spacing = 1, VerticalAlignment = VerticalAlignment.Center,
+            Children = { titleBlock, chapterBlock, versionBlock }
         };
-
+        var settingsButton = CreateReaderDisplaySettingsButton(state);
+        var previous = ReaderHeaderButton("back", "Previous section", () => StepReaderPage(state, -1));
+        var next = ReaderHeaderButton("chevron", "Next section", () => StepReaderPage(state, 1));
+        var library = ReaderHeaderButton("book", "Library", () => ToggleLeftPanel(this, new RoutedEventArgs()));
+        var focus = ReaderHeaderButton("expand", "Toggle both side panels (Tab)",
+            () => SetBothSidePanelsCollapsed(ShouldCollapseBothSidePanels(_leftCollapsed, _rightCollapsed)));
         var headerArea = new Grid
         {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
-            Children =
-            {
-                header,
-                CreateReaderDisplaySettingsButton(state)
-            }
+            ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*,Auto,Auto,Auto,Auto"),
+            ColumnSpacing = 10,
+            Margin = new Thickness(12, 0),
+            MinHeight = UiTheme.Metric("PageHeaderHeight"),
+            Children = { settingsButton, previous, header, next, library, focus, CreateReaderOverflowButton(state) }
         };
-        Grid.SetColumn(headerArea.Children[1], 1);
-
+        headerArea.Bind(Grid.MinHeightProperty, this.GetResourceObservable("Theme.PageHeaderHeight"));
+        for (var i = 0; i < headerArea.Children.Count; i++) Grid.SetColumn(headerArea.Children[i], i);
         var headerChrome = new Border
         {
-            Background = Brushes.White,
-            BorderBrush = new SolidColorBrush(Color.Parse("#EAECF0")),
+            Background = UiTheme.Brush("Surface"),
+            BorderBrush = UiTheme.Brush("Border"),
             BorderThickness = new Thickness(0, 0, 0, 1),
-            BoxShadow = BoxShadows.Parse("0 2 8 0 #14000000"),
             Child = headerArea
         };
 
@@ -491,7 +477,7 @@ public partial class MainWindow
         var layout = new Grid
         {
             RowDefinitions = new RowDefinitions("Auto,*"),
-            Background = Brushes.White,
+            Background = UiTheme.Brush("Surface"),
             Children =
             {
                 headerChrome,
@@ -524,8 +510,8 @@ public partial class MainWindow
         var splitHost = new ContentControl();
         var splitBorder = new Border
         {
-            Background = Brushes.White,
-            BorderBrush = new SolidColorBrush(Color.Parse("#D0D5DD")),
+            Background = UiTheme.Brush("Surface"),
+            BorderBrush = UiTheme.Brush("Border"),
             BorderThickness = new Thickness(1, 0, 0, 0),
             IsVisible = false,
             Child = splitHost
@@ -535,7 +521,7 @@ public partial class MainWindow
             Width = 6,
             ResizeDirection = GridResizeDirection.Columns,
             ResizeBehavior = GridResizeBehavior.PreviousAndNext,
-            Background = new SolidColorBrush(Color.Parse("#EAECF0")),
+            Background = UiTheme.Brush("Border"),
             IsVisible = false
         };
         var splitterColumn = new ColumnDefinition(0, GridUnitType.Pixel);
@@ -573,7 +559,7 @@ public partial class MainWindow
         // prevents native text selection from spanning multiple verses/paragraphs.
         var readerList = new ListBox
         {
-            Background = Brushes.White,
+            Background = UiTheme.Brush("Surface"),
             BorderThickness = new Thickness(0),
             Padding = new Thickness(32, 0, 96, 24),
             SelectionMode = SelectionMode.Single,
@@ -1860,7 +1846,7 @@ public partial class MainWindow
                 if (hasHebrew)
                 {
                     AddReaderTitleRun(inlines, hebrewTitle!, true);
-                    AddReaderTitleRun(inlines, " / ", false);
+                    AddReaderTitleRun(inlines, "   |   ", false);
                 }
 
                 AddReaderTitleRun(inlines, english, false);
@@ -1872,11 +1858,12 @@ public partial class MainWindow
 
     private void AddReaderTitleRun(InlineCollection inlines, string text, bool isHebrew)
     {
+        var style = UiTheme.Type("PageTitle");
         inlines.Add(new Run(text)
         {
-            FontFamily = isHebrew
-                ? new FontFamily(GetSelectedHebrewFontFamily())
-                : new FontFamily(GetSelectedEnglishFontFamily())
+            FontFamily = new FontFamily(isHebrew ? UiTheme.HebrewFont("PageTitle") : style.FontFamily),
+            FontSize = style.Size,
+            Foreground = UiTheme.Brush(style.Color)
         });
     }
 
@@ -2008,10 +1995,11 @@ public partial class MainWindow
     {
         return new TextBlock
         {
+            [UiTheme.RoleProperty] = "Body",
             Text = heading,
             FontSize = 18,
             FontWeight = FontWeight.SemiBold,
-            Foreground = new SolidColorBrush(Color.Parse("#344054")),
+            Foreground = UiTheme.Brush("Text"),
             Margin = new Thickness(0, 18, 0, 2),
             HorizontalAlignment = HorizontalAlignment.Center
         };
@@ -2179,9 +2167,10 @@ public partial class MainWindow
             {
                 new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Body",
                     Text = FormatAliyahHeading(aliyah.Number),
                     FontWeight = FontWeight.SemiBold,
-                    Foreground = new SolidColorBrush(Color.Parse("#344054")),
+                    Foreground = UiTheme.Brush("Text"),
                     HorizontalAlignment = HorizontalAlignment.Center,
                     TextAlignment = TextAlignment.Center,
                     Margin = new Thickness(0, 8, 0, 0)
@@ -2718,10 +2707,11 @@ public partial class MainWindow
     {
         return new TextBlock
         {
+            [UiTheme.RoleProperty] = "Body",
             Text = label,
             Width = ReaderSegmentLabelWidth,
             FontSize = 12,
-            Foreground = new SolidColorBrush(Color.Parse("#98A2B3")),
+            Foreground = UiTheme.Brush("Muted"),
             HorizontalAlignment = alignment,
             TextAlignment = TextAlignment.Center,
             VerticalAlignment = VerticalAlignment.Top,
@@ -2767,6 +2757,7 @@ public partial class MainWindow
         var fontSize = overrideFontSize ?? (isHebrew ? GetSelectedHebrewFontSize() : GetSelectedEnglishFontSize());
         return new ReaderTextView
         {
+            [UiTheme.RoleProperty] = isHebrew ? "ReaderHebrew" : "ReaderEnglish",
             SourceText = text,
             IsHebrew = isHebrew,
             HebrewMarksMode = hebrewMarksMode,

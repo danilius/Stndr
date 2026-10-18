@@ -31,7 +31,7 @@ public partial class MainWindow
         var bothOption = CreateTitleDisplayOption("Hebrew / English", InstalledBookTitleDisplay.Both);
         return new Border
         {
-            Background = Brushes.White,
+            Background = UiTheme.Brush("Surface"),
             Padding = new Thickness(24),
             Child = new ScrollViewer
             {
@@ -43,10 +43,12 @@ public partial class MainWindow
                     {
                         new TextBlock
                         {
+                            [UiTheme.RoleProperty] = "Body",
                             Text = "Settings",
                             FontSize = 24,
                             FontWeight = FontWeight.SemiBold
                         },
+                        CreateThemeSettingsPanel(),
                         CreateDataStorageFolderSettingRow(),
                         CreateOfflineLibrarySettingRow(),
                         CreateLibraryUpdateSettingRow(),
@@ -54,6 +56,7 @@ public partial class MainWindow
                         CreateCrashLogFolderSettingRow(),
                         new TextBlock
                         {
+                            [UiTheme.RoleProperty] = "Body",
                             Text = "Title language",
                             FontWeight = FontWeight.SemiBold
                         },
@@ -70,13 +73,17 @@ public partial class MainWindow
                             MaxUiFontSize,
                             family =>
                             {
-                                _settings.UiFontFamily = family;
+                                UiTheme.Current.Text["Body"] = UiTheme.Type("Body") with { FontFamily = family };
+                                UiTheme.Save();
+                                UiTheme.ApplyTree(this);
                                 _settingsService.Save(_settings);
                                 ApplyUiFontSetting();
                             },
                             size =>
                             {
-                                _settings.UiFontSize = size;
+                                UiTheme.Current.Text["Body"] = UiTheme.Type("Body") with { Size = size };
+                                UiTheme.Save();
+                                UiTheme.ApplyTree(this);
                                 _settingsService.Save(_settings);
                                 ApplyUiFontSetting();
                             }),
@@ -89,13 +96,21 @@ public partial class MainWindow
                             MaxReaderFontSize,
                             family =>
                             {
-                                _settings.HebrewDisplayFontFamily = family;
+                                UiTheme.Current.Text["HebrewUi"] = UiTheme.Type("HebrewUi") with { FontFamily = family };
+                                UiTheme.Save();
+                                UiTheme.ApplyTree(this);
                                 _settingsService.Save(_settings);
+                                ApplyUiFontSetting();
                                 RefreshDisplayFlyouts();
+                                RefreshOpenReaderTabs();
+                                RefreshOpenLinkSplitViews();
+                                UpdateReaderTools();
                             },
                             size =>
                             {
-                                _settings.HebrewDisplayFontSize = size;
+                                UiTheme.Current.Text["HebrewUi"] = UiTheme.Type("HebrewUi") with { Size = size };
+                                UiTheme.Save();
+                                UiTheme.ApplyTree(this);
                                 _settingsService.Save(_settings);
                                 RefreshDisplayFlyouts();
                             }),
@@ -108,7 +123,9 @@ public partial class MainWindow
                             MaxReaderFontSize,
                             family =>
                             {
-                                _settings.HebrewReaderFontFamily = family;
+                                UiTheme.Current.Text["ReaderHebrew"] = UiTheme.Type("ReaderHebrew") with { FontFamily = family };
+                                UiTheme.Save();
+                                UiTheme.ApplyTree(this);
                                 _settingsService.Save(_settings);
                                 RefreshOpenReaderTabs();
                                 RefreshOpenLinkSplitViews();
@@ -116,7 +133,9 @@ public partial class MainWindow
                             },
                             size =>
                             {
-                                _settings.HebrewReaderFontSize = size;
+                                UiTheme.Current.Text["ReaderHebrew"] = UiTheme.Type("ReaderHebrew") with { Size = size };
+                                UiTheme.Save();
+                                UiTheme.ApplyTree(this);
                                 _settingsService.Save(_settings);
                                 RefreshOpenReaderTabs();
                             }),
@@ -129,7 +148,9 @@ public partial class MainWindow
                             MaxReaderFontSize,
                             family =>
                             {
-                                _settings.EnglishReaderFontFamily = family;
+                                UiTheme.Current.Text["ReaderEnglish"] = UiTheme.Type("ReaderEnglish") with { FontFamily = family };
+                                UiTheme.Save();
+                                UiTheme.ApplyTree(this);
                                 _settingsService.Save(_settings);
                                 RefreshOpenReaderTabs();
                                 RefreshOpenLinkSplitViews();
@@ -137,7 +158,9 @@ public partial class MainWindow
                             },
                             size =>
                             {
-                                _settings.EnglishReaderFontSize = size;
+                                UiTheme.Current.Text["ReaderEnglish"] = UiTheme.Type("ReaderEnglish") with { Size = size };
+                                UiTheme.Save();
+                                UiTheme.ApplyTree(this);
                                 _settingsService.Save(_settings);
                                 RefreshOpenReaderTabs();
                                 RefreshDictionaryPresentation();
@@ -149,7 +172,9 @@ public partial class MainWindow
                             MaxReaderFontSize,
                             size =>
                             {
-                                _settings.HebrewCommentaryFontSize = size;
+                                UiTheme.Current.Text["CommentaryHebrew"] = UiTheme.Type("CommentaryHebrew") with { Size = size };
+                                UiTheme.Save();
+                                UiTheme.ApplyTree(this);
                                 _settingsService.Save(_settings);
                                 RefreshOpenLinkSplitViews();
                                 UpdateReaderTools();
@@ -161,7 +186,9 @@ public partial class MainWindow
                             MaxReaderFontSize,
                             size =>
                             {
-                                _settings.EnglishCommentaryFontSize = size;
+                                UiTheme.Current.Text["CommentaryEnglish"] = UiTheme.Type("CommentaryEnglish") with { Size = size };
+                                UiTheme.Save();
+                                UiTheme.ApplyTree(this);
                                 _settingsService.Save(_settings);
                                 RefreshOpenLinkSplitViews();
                                 UpdateReaderTools();
@@ -194,8 +221,9 @@ public partial class MainWindow
     {
         var statusText = new TextBlock
         {
+            [UiTheme.RoleProperty] = "Body",
             Text = "Crash logs are saved separately in this folder, one file per crash.",
-            Foreground = new SolidColorBrush(Color.Parse("#475467")),
+            Foreground = UiTheme.Brush("Muted"),
             TextWrapping = TextWrapping.Wrap
         };
 
@@ -224,11 +252,13 @@ public partial class MainWindow
             {
                 new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Body",
                     Text = "Crash logs",
                     FontWeight = FontWeight.SemiBold
                 },
                 new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Body",
                     Text = CrashLogService.CrashLogFolder,
                     FontWeight = FontWeight.SemiBold,
                     TextWrapping = TextWrapping.Wrap
@@ -243,12 +273,14 @@ public partial class MainWindow
     {
         var statusText = new TextBlock
         {
-            Foreground = new SolidColorBrush(Color.Parse("#475467")),
+            [UiTheme.RoleProperty] = "Body",
+            Foreground = UiTheme.Brush("Muted"),
             TextWrapping = TextWrapping.Wrap
         };
 
         var pathText = new TextBlock
         {
+            [UiTheme.RoleProperty] = "Body",
             TextWrapping = TextWrapping.Wrap,
             FontWeight = FontWeight.SemiBold
         };
@@ -298,14 +330,16 @@ public partial class MainWindow
             {
                 new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Body",
                     Text = "Data storage folder",
                     FontWeight = FontWeight.SemiBold
                 },
                 new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Body",
                     Text = "The single folder where Stndr keeps everything: settings, downloaded Hebrew " +
                            "sources and translations, and its local databases. Delete its sub-folders to reset.",
-                    Foreground = new SolidColorBrush(Color.Parse("#475467")),
+                    Foreground = UiTheme.Brush("Muted"),
                     TextWrapping = TextWrapping.Wrap
                 },
                 pathText,
@@ -319,7 +353,8 @@ public partial class MainWindow
     {
         var statusText = new TextBlock
         {
-            Foreground = new SolidColorBrush(Color.Parse("#475467")),
+            [UiTheme.RoleProperty] = "Body",
+            Foreground = UiTheme.Brush("Muted"),
             TextWrapping = TextWrapping.Wrap
         };
         var actionButton = new Button { MinWidth = 170 };
@@ -356,11 +391,13 @@ public partial class MainWindow
             Margin = new Thickness(0, 0, 0, 8),
             Children =
             {
-                new TextBlock { Text = "Sefaria library", FontWeight = FontWeight.SemiBold },
+                new TextBlock {
+            [UiTheme.RoleProperty] = "Body", Text = "Sefaria library", FontWeight = FontWeight.SemiBold },
                 new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Body",
                     Text = "Stndr uses one complete offline library for books, translations, links, and dictionaries.",
-                    Foreground = new SolidColorBrush(Color.Parse("#475467")),
+                    Foreground = UiTheme.Brush("Muted"),
                     TextWrapping = TextWrapping.Wrap
                 },
                 actionButton,
@@ -388,12 +425,14 @@ public partial class MainWindow
             Margin = new Thickness(0, 0, 0, 8),
             Children =
             {
-                new TextBlock { Text = "Reader license information", FontWeight = FontWeight.SemiBold },
+                new TextBlock {
+            [UiTheme.RoleProperty] = "Body", Text = "Reader license information", FontWeight = FontWeight.SemiBold },
                 option,
                 new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Body",
                     Text = "Enabled by default. When shown, the Reader lists the license and source for each selected text version.",
-                    Foreground = new SolidColorBrush(Color.Parse("#475467")),
+                    Foreground = UiTheme.Brush("Muted"),
                     TextWrapping = TextWrapping.Wrap
                 }
             }
@@ -404,10 +443,11 @@ public partial class MainWindow
     {
         var status = new TextBlock
         {
+            [UiTheme.RoleProperty] = "Body",
             Text = _sefariaLibrary.HasOfflineLibrary
                 ? "Stndr can check Sefaria's published snapshot without downloading it."
                 : "Install the complete offline library before checking for updates.",
-            Foreground = new SolidColorBrush(Color.Parse("#475467")),
+            Foreground = UiTheme.Brush("Muted"),
             TextWrapping = TextWrapping.Wrap
         };
         static string LibraryUpdateActionLabel(SefariaLibraryUpdateMode mode) => mode switch
@@ -500,11 +540,13 @@ public partial class MainWindow
             Margin = new Thickness(0, 0, 0, 8),
             Children =
             {
-                new TextBlock { Text = "Sefaria library updates", FontWeight = FontWeight.SemiBold },
+                new TextBlock {
+            [UiTheme.RoleProperty] = "Body", Text = "Sefaria library updates", FontWeight = FontWeight.SemiBold },
                 new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Body",
                     Text = "Update the complete library as one verified snapshot. Downloads run in the background and only start when you approve them. Open books keep their place until you navigate again.",
-                    Foreground = new SolidColorBrush(Color.Parse("#475467")),
+                    Foreground = UiTheme.Brush("Muted"),
                     TextWrapping = TextWrapping.Wrap
                 },
                 automatic,
@@ -516,15 +558,17 @@ public partial class MainWindow
                     {
                         new TextBlock
                         {
+                            [UiTheme.RoleProperty] = "Body",
                             Text = "Automatically check for updates every:",
                             VerticalAlignment = VerticalAlignment.Center
                         },
                         snoozePicker,
                         new TextBlock
                         {
+                            [UiTheme.RoleProperty] = "Body",
                             Text = "days",
                             VerticalAlignment = VerticalAlignment.Center,
-                            Foreground = new SolidColorBrush(Color.Parse("#475467"))
+                            Foreground = UiTheme.Brush("Muted")
                         }
                     }
                 },
@@ -549,6 +593,7 @@ public partial class MainWindow
             {
                 new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Body",
                     Text = label,
                     FontWeight = FontWeight.SemiBold
                 },
@@ -575,6 +620,7 @@ public partial class MainWindow
             {
                 new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Body",
                     Text = label,
                     FontWeight = FontWeight.SemiBold
                 },
@@ -605,6 +651,7 @@ public partial class MainWindow
             {
                 new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Body",
                     Text = label,
                     FontWeight = FontWeight.SemiBold
                 },
@@ -681,13 +728,15 @@ public partial class MainWindow
             {
                 new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Body",
                     Text = "Tabs opened from links",
                     FontWeight = FontWeight.SemiBold
                 },
                 new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Body",
                     Text = "When you open a linked source in a new tab from Reader Tools.",
-                    Foreground = new SolidColorBrush(Color.Parse("#475467")),
+                    Foreground = UiTheme.Brush("Muted"),
                     TextWrapping = TextWrapping.Wrap
                 },
                 afterSource,
@@ -956,7 +1005,7 @@ public partial class MainWindow
 
     private void ApplyUiFontSetting()
     {
-        FontFamily = new FontFamily(GetSelectedUiFontFamily());
+        FontFamily = UiTheme.Font("Body");
         FontSize = GetSelectedUiFontSize();
     }
 
@@ -980,65 +1029,52 @@ public partial class MainWindow
 
     private string GetSelectedUiFontFamily()
     {
-        return ResolveInstalledFont(_settings.UiFontFamily, GetAllFontOptions(), "Inter", "Segoe UI");
+        return UiTheme.Type("Body").FontFamily;
     }
 
     private string GetSelectedEnglishFontFamily()
     {
-        return ResolveInstalledFont(_settings.EnglishReaderFontFamily, GetAllFontOptions(), "Segoe UI", "Arial");
+        return UiTheme.Type("ReaderEnglish").FontFamily;
     }
 
     private string GetSelectedHebrewFontFamily()
     {
-        return ResolveInstalledFont(
-            _settings.HebrewReaderFontFamily,
-            GetHebrewFontOptions(),
-            "SBL Hebrew",
-            "Noto Serif Hebrew",
-            "Ezra SIL",
-            "David",
-            "Nirmala UI",
-            "Segoe UI");
+        return UiTheme.Type("ReaderHebrew").FontFamily;
     }
 
     private string GetSelectedHebrewDisplayFontFamily()
     {
-        return ResolveInstalledFont(
-            _settings.HebrewDisplayFontFamily,
-            GetHebrewFontOptions(),
-            GetSelectedHebrewFontFamily(),
-            "Nirmala UI",
-            "Segoe UI");
+        return UiTheme.Type("HebrewUi").FontFamily;
     }
 
     private double GetSelectedUiFontSize()
     {
-        return NormalizeSettingSize(_settings.UiFontSize, DefaultUiFontSize, MinUiFontSize, MaxUiFontSize);
+        return UiTheme.Type("Body").Size;
     }
 
     private double GetSelectedHebrewFontSize()
     {
-        return NormalizeSettingSize(_settings.HebrewReaderFontSize, DefaultReaderFontSize, MinReaderFontSize, MaxReaderFontSize);
+        return UiTheme.Type("ReaderHebrew").Size;
     }
 
     private double GetSelectedEnglishFontSize()
     {
-        return NormalizeSettingSize(_settings.EnglishReaderFontSize, DefaultReaderFontSize, MinReaderFontSize, MaxReaderFontSize);
+        return UiTheme.Type("ReaderEnglish").Size;
     }
 
     private double GetSelectedHebrewDisplayFontSize()
     {
-        return NormalizeSettingSize(_settings.HebrewDisplayFontSize, 18, MinReaderFontSize, MaxReaderFontSize);
+        return UiTheme.Type("HebrewUi").Size;
     }
 
     private double GetSelectedHebrewCommentaryFontSize()
     {
-        return NormalizeSettingSize(_settings.HebrewCommentaryFontSize, GetSelectedHebrewFontSize(), MinReaderFontSize, MaxReaderFontSize);
+        return UiTheme.Type("CommentaryHebrew").Size;
     }
 
     private double GetSelectedEnglishCommentaryFontSize()
     {
-        return NormalizeSettingSize(_settings.EnglishCommentaryFontSize, GetSelectedEnglishFontSize(), MinReaderFontSize, MaxReaderFontSize);
+        return UiTheme.Type("CommentaryEnglish").Size;
     }
 
     private double GetSingleLanguageReaderColumnLetters()

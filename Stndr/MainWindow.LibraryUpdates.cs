@@ -88,15 +88,15 @@ public partial class MainWindow
             if (showBanner)
             {
                 _libraryUpdateBannerMessage.Text = state.Message;
-                _libraryUpdateBanner.Background = new SolidColorBrush(state.Mode switch
+                _libraryUpdateBanner.Background = UiTheme.Brush(state.Mode switch
                 {
-                    SefariaLibraryUpdateMode.Error => Color.Parse("#FEF3F2"),
-                    SefariaLibraryUpdateMode.Complete => Color.Parse("#ECFDF3"),
-                    SefariaLibraryUpdateMode.Cancelled => Color.Parse("#FFFAEB"),
-                    SefariaLibraryUpdateMode.Interrupted => Color.Parse("#FFFAEB"),
-                    SefariaLibraryUpdateMode.UpdateAvailable => Color.Parse("#ECFDF3"),
-                    SefariaLibraryUpdateMode.Preparing => Color.Parse("#F2F4F7"),
-                    _ => Color.Parse("#EFF8FF")
+                    SefariaLibraryUpdateMode.Error => "ErrorBackground",
+                    SefariaLibraryUpdateMode.Complete => "SuccessBackground",
+                    SefariaLibraryUpdateMode.Cancelled => "WarningBackground",
+                    SefariaLibraryUpdateMode.Interrupted => "WarningBackground",
+                    SefariaLibraryUpdateMode.UpdateAvailable => "SuccessBackground",
+                    SefariaLibraryUpdateMode.Preparing => "Hover",
+                    _ => "InfoBackground"
                 });
             }
 
@@ -414,6 +414,7 @@ public partial class MainWindow
             {
                 new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Body",
                     Text = "Discard the interrupted library download?",
                     FontSize = 16,
                     FontWeight = FontWeight.SemiBold,
@@ -421,11 +422,12 @@ public partial class MainWindow
                 },
                 new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Body",
                     Text =
                         "This deletes partial download and import files. Your current offline library " +
                         "(if installed) is not removed. You can download again later from Settings.",
                     TextWrapping = TextWrapping.Wrap,
-                    Foreground = new SolidColorBrush(Color.Parse("#475467"))
+                    Foreground = UiTheme.Brush("Muted")
                 },
                 new StackPanel
                 {
@@ -578,6 +580,7 @@ public partial class MainWindow
             {
                 new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Body",
                     Text = "You can update the offline library later",
                     FontSize = 18,
                     FontWeight = FontWeight.SemiBold,
@@ -585,12 +588,13 @@ public partial class MainWindow
                 },
                 new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Body",
                     Text =
                         "When you are ready, open Settings → Sefaria library updates and choose Update now. " +
                         $"This update offer will stay quiet for about {snoozeDays} day{(snoozeDays == 1 ? "" : "s")} " +
                         "(configurable in Settings).",
                     TextWrapping = TextWrapping.Wrap,
-                    Foreground = new SolidColorBrush(Color.Parse("#475467"))
+                    Foreground = UiTheme.Brush("Muted")
                 },
                 dontShowAgain,
                 closeButton

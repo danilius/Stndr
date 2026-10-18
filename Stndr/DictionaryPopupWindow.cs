@@ -9,11 +9,11 @@ namespace Stndr;
 
 public sealed class DictionaryPopupWindow : Window
 {
-    private static readonly IBrush PopupBackgroundBrush = new SolidColorBrush(Color.Parse("#FFFFFF"));
-    private static readonly IBrush PopupBorderBrush = new SolidColorBrush(Color.Parse("#D0D5DD"));
-    private static readonly IBrush PopupSectionDividerBrush = new SolidColorBrush(Color.Parse("#EAECF0"));
-    private static readonly IBrush MutedTextBrush = new SolidColorBrush(Color.Parse("#667085"));
-    private static readonly IBrush StatusTextBrush = new SolidColorBrush(Color.Parse("#475467"));
+    private static readonly IBrush PopupBackgroundBrush = UiTheme.Brush("Surface");
+    private static readonly IBrush PopupBorderBrush = UiTheme.Brush("Border");
+    private static readonly IBrush PopupSectionDividerBrush = UiTheme.Brush("Border");
+    private static readonly IBrush MutedTextBrush = UiTheme.Brush("Muted");
+    private static readonly IBrush StatusTextBrush = UiTheme.Brush("Muted");
 
     private readonly TextBlock _wordText;
     private readonly TextBlock _referenceText;
@@ -43,12 +43,14 @@ public sealed class DictionaryPopupWindow : Window
 
         _wordText = new TextBlock
         {
+            [UiTheme.RoleProperty] = "DictionaryDefinition",
             FontSize = 16,
             FontWeight = FontWeight.SemiBold,
             TextWrapping = TextWrapping.Wrap
         };
         _referenceText = new TextBlock
         {
+            [UiTheme.RoleProperty] = "DictionaryDefinition",
             FontSize = 11,
             Foreground = MutedTextBrush,
             TextWrapping = TextWrapping.Wrap,
@@ -56,6 +58,7 @@ public sealed class DictionaryPopupWindow : Window
         };
         _statusText = new TextBlock
         {
+            [UiTheme.RoleProperty] = "DictionaryDefinition",
             Foreground = StatusTextBrush,
             TextWrapping = TextWrapping.Wrap
         };
@@ -124,6 +127,7 @@ public sealed class DictionaryPopupWindow : Window
                 {
                     new TextBlock
                     {
+                        [UiTheme.RoleProperty] = "DictionaryDefinition",
                         Text = "Dictionary",
                         FontWeight = FontWeight.SemiBold,
                         VerticalAlignment = VerticalAlignment.Center

@@ -66,10 +66,10 @@ public partial class MainWindow
         public bool NavigationTopicsAllExpanded { get; set; }
         public bool UseHebrewNavigationNumbers { get; set; }
         public bool IsDisplayExpanded { get; set; } = true;
-        public bool IsSedrotExpanded { get; set; } = true;
-        public bool IsCommentariesExpanded { get; set; } = true;
+        public bool IsSedrotExpanded { get; set; }
+        public bool IsCommentariesExpanded { get; set; }
         public bool IsLinksExpanded { get; set; }
-        public bool IsTextsExpanded { get; set; } = true;
+        public bool IsTextsExpanded { get; set; }
         public bool IsLicensesExpanded { get; set; }
         public bool ShowAliyot { get; set; }
         public bool IsSedraContentOpen { get; set; }
@@ -112,10 +112,10 @@ public partial class MainWindow
         public BookSchema? Schema { get; set; }
         public bool IsNavigationExpanded { get; set; } = true;
         public bool IsDisplayExpanded { get; set; } = true;
-        public bool IsSedrotExpanded { get; set; } = true;
-        public bool IsCommentariesExpanded { get; set; } = true;
+        public bool IsSedrotExpanded { get; set; }
+        public bool IsCommentariesExpanded { get; set; }
         public bool IsLinksExpanded { get; set; }
-        public bool IsTextsExpanded { get; set; } = true;
+        public bool IsTextsExpanded { get; set; }
         public bool IsLicensesExpanded { get; set; }
         public bool ShowAliyot { get; set; }
         public bool IsSedraContentOpen { get; set; }

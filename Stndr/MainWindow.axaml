@@ -1,15 +1,17 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="using:Stndr"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d" d:DesignWidth="1280" d:DesignHeight="720"
         x:Class="Stndr.MainWindow"
         Title="Stndr"
         Icon="/Assets/AppIcon.ico"
-        WindowState="Maximized">
+        WindowState="Maximized"
+        Background="{DynamicResource Theme.Window}">
     <Window.Styles>
         <Style Selector="TabControl#CenterTabs">
-            <Setter Property="Background" Value="#D8E7FF" />
+            <Setter Property="Background" Value="{DynamicResource Theme.Window}" />
             <Setter Property="Padding" Value="0" />
         </Style>
 
@@ -66,11 +68,11 @@
         </Style>
 
         <Style Selector="ListBox.reader-list ListBoxItem:selected">
-            <Setter Property="Background" Value="#105AA9E6" />
+            <Setter Property="Background" Value="{DynamicResource Theme.Selection}" />
         </Style>
 
         <Style Selector="ListBox.reader-list ListBoxItem:selected:pointerover">
-            <Setter Property="Background" Value="#105AA9E6" />
+            <Setter Property="Background" Value="{DynamicResource Theme.Selection}" />
         </Style>
 
         <Style Selector="ListBox.reader-list ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
@@ -90,11 +92,11 @@
         </Style>
 
         <Style Selector="ListBox.reader-list ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="#105AA9E6" />
+            <Setter Property="Background" Value="{DynamicResource Theme.Selection}" />
         </Style>
 
         <Style Selector="ListBox.reader-list ListBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="#105AA9E6" />
+            <Setter Property="Background" Value="{DynamicResource Theme.Selection}" />
         </Style>
 
         <Style Selector="Button.reader-nav-button">
@@ -109,13 +111,13 @@
         </Style>
 
         <Style Selector="Button.reader-nav-button:pointerover">
-            <Setter Property="Background" Value="#08000000" />
+            <Setter Property="Background" Value="{DynamicResource Theme.Hover}" />
             <Setter Property="BorderBrush" Value="Transparent" />
         </Style>
 
         <Style Selector="Button.commentary-source-row">
             <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderBrush" Value="#EAECF0" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Theme.Border}" />
             <Setter Property="BorderThickness" Value="0,0,0,1" />
             <Setter Property="Padding" Value="8,10" />
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -124,47 +126,45 @@
         </Style>
 
         <Style Selector="Button.commentary-source-row:pointerover">
-            <Setter Property="Background" Value="#FCFCFD" />
-            <Setter Property="BorderBrush" Value="#EAECF0" />
+            <Setter Property="Background" Value="{DynamicResource Theme.SurfaceAlt}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Theme.Border}" />
         </Style>
 
         <Style Selector="Button.commentary-source-row:pressed">
-            <Setter Property="Background" Value="#F2F4F7" />
-            <Setter Property="BorderBrush" Value="#EAECF0" />
+            <Setter Property="Background" Value="{DynamicResource Theme.Hover}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Theme.Border}" />
         </Style>
 
         <Style Selector="Button.commentary-source-row.selected">
-            <Setter Property="Background" Value="#F9FAFB" />
+            <Setter Property="Background" Value="{DynamicResource Theme.SurfaceAlt}" />
         </Style>
     </Window.Styles>
 
     <Grid x:Name="LayoutRoot"
           RowDefinitions="Auto,Auto,Auto,*"
-          ColumnDefinitions="280,5,*,5,280">
+          ColumnDefinitions="250,8,*,8,320"
+          Margin="12,0,12,12">
 
-        <Border Grid.Row="0"
-                Grid.ColumnSpan="5"
-                Padding="8"
-                BorderThickness="0,0,0,1"
-                BorderBrush="#22000000">
-            <StackPanel Orientation="Horizontal"
-                        Spacing="8">
-                <Button Content="Advanced Search" Click="OpenAdvancedSearchClicked" />
-                <Button Content="Dictionary" Click="OpenDictionaryClicked" />
-                <Button Content="Settings" Click="OpenSettingsClicked" />
-                <Button Content="Bookmarks" Click="OpenBookmarksClicked" />
-                <Button Content="Highlights" Click="OpenHighlightsClicked" />
-                <Button Content="Notes" Click="OpenNotesClicked" />
+        <Grid Grid.Row="0" Grid.ColumnSpan="5" ColumnDefinitions="Auto,*,Auto" Margin="4,4,4,12">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Classes="main-function" Click="ToggleLeftPanel" ToolTip.Tip="Library (Ctrl+B)"><StackPanel Orientation="Horizontal" Spacing="10"><local:ThemeIcon Kind="book"/><TextBlock local:UiTheme.Role="MainButton" Text="Library"/></StackPanel></Button>
+                <Button Classes="main-function" Click="OpenDictionaryClicked"><StackPanel Orientation="Horizontal" Spacing="10"><local:ThemeIcon Kind="search"/><TextBlock local:UiTheme.Role="MainButton" Text="Dictionary"/></StackPanel></Button>
+                <Button Classes="main-function" Click="OpenAdvancedSearchClicked"><StackPanel Orientation="Horizontal" Spacing="10"><local:ThemeIcon Kind="search"/><TextBlock local:UiTheme.Role="MainButton" Text="Advanced Search"/></StackPanel></Button>
+                <Button Classes="main-function" Click="OpenSettingsClicked"><StackPanel Orientation="Horizontal" Spacing="10"><local:ThemeIcon Kind="settings"/><TextBlock local:UiTheme.Role="MainButton" Text="Settings"/></StackPanel></Button>
+                <Button Classes="main-function" Click="OpenBookmarksClicked"><StackPanel Orientation="Horizontal" Spacing="10"><local:ThemeIcon Kind="bookmark"/><TextBlock local:UiTheme.Role="MainButton" Text="Bookmarks"/></StackPanel></Button>
+                <Button Classes="main-function" Click="OpenHighlightsClicked"><StackPanel Orientation="Horizontal" Spacing="10"><local:ThemeIcon Kind="highlight"/><TextBlock local:UiTheme.Role="MainButton" Text="Highlights"/></StackPanel></Button>
+                <Button Classes="main-function" Click="OpenNotesClicked"><StackPanel Orientation="Horizontal" Spacing="10"><local:ThemeIcon Kind="note"/><TextBlock local:UiTheme.Role="MainButton" Text="Notes"/></StackPanel></Button>
             </StackPanel>
-        </Border>
+            <TextBox x:Name="GlobalSearchBox" Grid.Column="2" Width="320" Margin="16,0,0,0" VerticalAlignment="Center" PlaceholderText="Search across texts…   Ctrl K" KeyDown="GlobalSearchKeyDown"/>
+        </Grid>
 
         <Border x:Name="UpdateBanner"
                 Grid.Row="1"
                 Grid.ColumnSpan="5"
                 IsVisible="False"
-                Background="#E8F0FC"
+                Background="{DynamicResource Theme.InfoBackground}"
                 BorderThickness="0,0,0,1"
-                BorderBrush="#22000000"
+                BorderBrush="{DynamicResource Theme.Border}"
                 Padding="8,6">
             <DockPanel LastChildFill="True">
                 <StackPanel Orientation="Horizontal"
@@ -189,9 +189,9 @@
                 Grid.Row="2"
                 Grid.ColumnSpan="5"
                 IsVisible="False"
-                Background="#ECFDF3"
+                Background="{DynamicResource Theme.SuccessBackground}"
                 BorderThickness="0,0,0,1"
-                BorderBrush="#22000000"
+                BorderBrush="{DynamicResource Theme.Border}"
                 Padding="8,6">
             <DockPanel LastChildFill="True">
                 <StackPanel Orientation="Horizontal"
@@ -228,85 +228,29 @@
             </DockPanel>
         </Border>
 
-        <Border Grid.Row="3"
-                Grid.Column="0"
-                BorderThickness="0,0,1,0"
-                BorderBrush="#22000000">
-            <Grid RowDefinitions="Auto,*">
-                <StackPanel Spacing="4"
-                            Margin="6">
-                    <StackPanel Orientation="Horizontal"
-                                Spacing="6">
-                        <Button
-                                Content="☰"
-                                Click="ToggleLeftPanel"
-                                ToolTip.Tip="Toggle library panel (Ctrl+B)"
-                                Width="28"
-                                HorizontalAlignment="Left" />
-                        <Button x:Name="LeftPanelSearchButton"
-                                Click="ToggleInstalledBooksSearchClicked"
-                                Width="36"
-                                Height="30"
-                                Padding="0"
-                                HorizontalAlignment="Left"
-                                HorizontalContentAlignment="Center"
-                                VerticalContentAlignment="Center">
-                            <TextBlock Text="&#xE721;"
-                                       FontFamily="Segoe MDL2 Assets"
-                                       FontSize="14" />
-                        </Button>
-                        <TextBox x:Name="LeftPanelSearchBox"
-                                 Width="180"
-                                 IsVisible="False"
-                                 PlaceholderText="Search installed books..."
-                                 VerticalAlignment="Center" />
-                    </StackPanel>
-                </StackPanel>
+        <Border Grid.Row="3" Grid.Column="0" Classes="workspace-panel">
+            <Grid RowDefinitions="*,Auto">
+                <Grid x:Name="LeftPanelBody" Margin="10,4">
 
-                <ScrollViewer x:Name="LeftPanelBody"
-                              Grid.Row="1"
-                              VerticalScrollBarVisibility="Auto"
-                              HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel Margin="6"
-                                HorizontalAlignment="Stretch"
-                                Spacing="8">
-                        <Expander Header="Library"
-                                  IsExpanded="True"
-                                  HorizontalAlignment="Stretch">
-                            <TreeView x:Name="InstalledBooksTree"
-                                      HorizontalAlignment="Stretch"
-                                      SelectionChanged="OnInstalledBookSelectionChanged" />
+                        <Expander IsExpanded="True" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" VerticalContentAlignment="Stretch" Classes="library-expander">
+                            <Expander.Header><StackPanel Orientation="Horizontal" Spacing="10"><local:ThemeIcon Kind="book"/><TextBlock local:UiTheme.Role="ExpanderHeader" Text="Library"/></StackPanel></Expander.Header>
+                            <Grid RowDefinitions="Auto,Auto,*" RowSpacing="6">
+                                <Grid ColumnDefinitions="*,30">
+                                    <TextBox x:Name="LeftPanelSearchBox" PlaceholderText="Find a text…" MinWidth="0"/>
+                                    <Button x:Name="LeftPanelSearchButton" Grid.Column="1" Click="ToggleInstalledBooksSearchClicked" Padding="4" ToolTip.Tip="Find an installed book"><local:ThemeIcon Kind="search" Width="17" Height="17"/></Button>
+                                </Grid>
+                                <Border Grid.Row="1" x:Name="LeftPanelSearchSuggestionsContainer" IsVisible="False" Background="{DynamicResource Theme.SurfaceAlt}" BorderBrush="{DynamicResource Theme.Border}" BorderThickness="1" CornerRadius="4">
+                                    <ListBox x:Name="LeftPanelSearchSuggestions" SelectionMode="Single" MaxHeight="200" Background="Transparent" BorderThickness="0"/>
+                                </Border>
+                                <TreeView Grid.Row="2" x:Name="InstalledBooksTree" ScrollViewer.HorizontalScrollBarVisibility="Disabled" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" SelectionChanged="OnInstalledBookSelectionChanged"/>
+                            </Grid>
                         </Expander>
 
-                        <Expander Header="Saved Searches"
-                                  IsExpanded="True"
-                                  HorizontalAlignment="Stretch">
-                           <ListBox x:Name="SavedSearchesList"
-                                    MinHeight="80"
-                                    HorizontalAlignment="Stretch"
-                                    SelectionChanged="OnSavedSearchSelectionChanged" />
+                </Grid>
+                        <Expander x:Name="LeftSavedSearches" Grid.Row="1" Margin="10,0,10,4" IsExpanded="True" HorizontalAlignment="Stretch">
+                            <Expander.Header><StackPanel Orientation="Horizontal" Spacing="10"><local:ThemeIcon Kind="search"/><TextBlock local:UiTheme.Role="ExpanderHeader" Text="Saved Searches"/></StackPanel></Expander.Header>
+                            <ListBox x:Name="SavedSearchesList" MinHeight="0" MaxHeight="240" SelectionChanged="OnSavedSearchSelectionChanged"/>
                         </Expander>
-                    </StackPanel>
-                </ScrollViewer>
-
-                <!-- Floating suggestions overlay -->
-                <Border x:Name="LeftPanelSearchSuggestionsContainer"
-                        Grid.Row="1"
-                        IsVisible="False"
-                        VerticalAlignment="Top"
-                        ZIndex="100"
-                        Background="White"
-                        BorderBrush="#D0D5DD"
-                        BorderThickness="1"
-                        CornerRadius="4"
-                        Margin="6,2,6,0"
-                        BoxShadow="0 4 12 0 #22000000">
-                    <ListBox x:Name="LeftPanelSearchSuggestions"
-                             SelectionMode="Single"
-                             MaxHeight="200"
-                             Background="Transparent"
-                             BorderThickness="0" />
-                </Border>
             </Grid>
         </Border>
 
@@ -314,59 +258,46 @@
                       Grid.Row="3"
                       Grid.Column="1"
                       Background="Transparent"
-                      Width="5"
+                      Width="8"
                       ResizeDirection="Columns"
                       ResizeBehavior="PreviousAndNext" />
 
         <Grid Grid.Row="3"
               Grid.Column="2"
-              Margin="8"
+              Margin="0"
               RowDefinitions="Auto,*">
+            <ScrollViewer Grid.Row="0" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
             <TabControl x:Name="CenterTabs"
-                        Grid.Row="0" />
+                        Grid.Row="0">
+                <TabControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate></TabControl.ItemsPanel>
+            </TabControl>
+            </ScrollViewer>
             <Grid x:Name="CenterTabContentHost"
                   Grid.Row="1"
-                  Background="White" />
+                  Background="{DynamicResource Theme.Surface}" />
         </Grid>
 
         <GridSplitter x:Name="RightSplitter"
                       Grid.Row="3"
                       Grid.Column="3"
                       Background="Transparent"
-                      Width="5"
+                      Width="8"
                       ResizeDirection="Columns"
                       ResizeBehavior="PreviousAndNext" />
 
-        <Border Grid.Row="3"
-                Grid.Column="4"
-                BorderThickness="1,0,0,0"
-                BorderBrush="#22000000">
+        <Border Grid.Row="3" Grid.Column="4" Classes="workspace-panel">
             <Grid RowDefinitions="Auto,*">
-                <DockPanel Margin="6">
-                    <Button
-                            Content="☰"
-                            Click="ToggleRightPanel"
-                            ToolTip.Tip="Toggle Reader Tools panel (Ctrl+Shift+B)"
-                            Width="28"
-                            HorizontalAlignment="Left" />
-                    <TextBlock x:Name="RightPanelTitle"
-                               Text="Reader Tools"
-                               VerticalAlignment="Center"
-                               Margin="8,0,0,0" />
-                </DockPanel>
-
-                <ScrollViewer Grid.Row="1"
-                              VerticalScrollBarVisibility="Auto"
-                              HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel x:Name="RightPanelBody"
-                                Margin="8"
-                                HorizontalAlignment="Stretch"
-                                Spacing="8">
-                        <TextBlock Text="Open a text to see reader tools." TextWrapping="Wrap" />
+                <TextBlock x:Name="RightPanelTitle" IsVisible="False" Text="Tools"/>
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel x:Name="RightPanelBody" Margin="10,4" HorizontalAlignment="Stretch" Spacing="8">
+                        <TextBlock Text="Open a text to see reader tools." TextWrapping="Wrap"/>
                     </StackPanel>
                 </ScrollViewer>
             </Grid>
         </Border>
+
+        <Button Grid.Row="3" Grid.Column="1" ZIndex="1" Width="12" Height="34" MinWidth="0" MinHeight="0" Padding="0" Background="{DynamicResource Theme.Window}" BorderThickness="0" VerticalAlignment="Center" Click="ToggleLeftPanel" ToolTip.Tip="Toggle Library (Ctrl+B)"><local:ThemeIcon x:Name="LeftSplitterArrow" Kind="back" Width="10" Height="14"/></Button>
+        <Button Grid.Row="3" Grid.Column="3" ZIndex="1" Width="12" Height="34" MinWidth="0" MinHeight="0" Padding="0" Background="{DynamicResource Theme.Window}" BorderThickness="0" VerticalAlignment="Center" Click="ToggleRightPanel" ToolTip.Tip="Toggle tools (Ctrl+Shift+B)"><local:ThemeIcon x:Name="RightSplitterArrow" Kind="chevron" Width="10" Height="14"/></Button>
 
         <Canvas x:Name="FloatingOverlayCanvas"
                 Grid.Row="3"
@@ -376,13 +307,13 @@
                     IsVisible="False"
                     Width="280"
                     MinHeight="150"
-                    Background="#F8FAFC"
-                    BorderBrush="#D0D5DD"
+                    Background="{DynamicResource Theme.SurfaceAlt}"
+                    BorderBrush="{DynamicResource Theme.Border}"
                     BorderThickness="1"
                     CornerRadius="8"
                     Canvas.Left="360"
                     Canvas.Top="140"
-                    BoxShadow="0 4 12 0 #22000000">
+                    BoxShadow="{DynamicResource Theme.PopupShadow}">
                 <StackPanel Spacing="8"
                             Margin="10">
                     <Border x:Name="DictionaryPopupDragHandle"
@@ -410,16 +341,16 @@
                     </Border>
                     <StackPanel Spacing="8"
                                 Margin="0">
-                        <TextBlock x:Name="DictionaryPopupWord"
+                        <TextBlock x:Name="DictionaryPopupWord" local:UiTheme.Role="DictionaryHeadword"
                                    FontSize="16"
                                    FontWeight="SemiBold"
                                    TextWrapping="Wrap" />
-                        <TextBlock x:Name="DictionaryPopupReference"
+                        <TextBlock x:Name="DictionaryPopupReference" local:UiTheme.Role="Reference"
                                    FontSize="11"
-                                   Foreground="#667085"
+                                   Foreground="{DynamicResource Theme.Muted}"
                                    TextWrapping="Wrap" />
                         <TextBlock x:Name="DictionaryPopupStatus"
-                                   Foreground="#475467"
+                                   Foreground="{DynamicResource Theme.Muted}"
                                    TextWrapping="Wrap"
                                    Text="Dictionary lookup is not connected yet." />
                     </StackPanel>

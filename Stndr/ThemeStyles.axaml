@@ -1,0 +1,131 @@
+<Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="using:Stndr">
+  <Style Selector="Window">
+    <Setter Property="Background" Value="{DynamicResource Theme.Window}"/>
+    <Setter Property="Foreground" Value="{DynamicResource Theme.Text}"/>
+    <Setter Property="FontFamily" Value="{DynamicResource Theme.Body.Font}"/>
+    <Setter Property="FontSize" Value="{DynamicResource Theme.Body.Size}"/>
+  </Style>
+  <Style Selector="Button">
+    <Setter Property="Background" Value="{DynamicResource Theme.Surface}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource Theme.Border}"/>
+    <Setter Property="Foreground" Value="{DynamicResource Theme.Button.Color}"/>
+    <Setter Property="CornerRadius" Value="{DynamicResource Theme.ButtonCorner}"/>
+    <Setter Property="Padding" Value="10,5"/>
+    <Setter Property="MinHeight" Value="{DynamicResource Theme.ControlHeight}"/>
+  </Style>
+  <Style Selector="Button:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Theme.Hover}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource Theme.Border}"/>
+  </Style>
+  <Style Selector="Button:pressed /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Theme.Pressed}"/>
+  </Style>
+  <Style Selector="Button.main-function">
+    <Setter Property="Height" Value="{DynamicResource Theme.MainButtonHeight}"/>
+    <Setter Property="Padding" Value="16,7"/>
+    <Setter Property="CornerRadius" Value="{DynamicResource Theme.PanelCorner}"/>
+    <Setter Property="Foreground" Value="{DynamicResource Theme.Icon}"/>
+    <Setter Property="local:UiTheme.Role" Value="MainButton"/>
+  </Style>
+  <Style Selector="TextBox">
+    <Setter Property="MinHeight" Value="{DynamicResource Theme.ControlHeight}"/>
+    <Setter Property="Padding" Value="10,5"/>
+    <Setter Property="CornerRadius" Value="{DynamicResource Theme.ButtonCorner}"/>
+    <Setter Property="Background" Value="{DynamicResource Theme.Surface}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource Theme.Border}"/>
+  </Style>
+  <Style Selector="Border.workspace-panel">
+    <Setter Property="Background" Value="{DynamicResource Theme.Surface}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource Theme.Border}"/>
+    <Setter Property="BorderThickness" Value="1"/>
+    <Setter Property="CornerRadius" Value="{DynamicResource Theme.PanelCorner}"/>
+  </Style>
+  <Style Selector="Expander">
+    <Setter Property="Background" Value="{DynamicResource Theme.Surface}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource Theme.Border}"/>
+    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+    <Setter Property="Padding" Value="0"/>
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="{DynamicResource Theme.ButtonCorner}" Background="{TemplateBinding Background}">
+          <Grid RowDefinitions="Auto,*">
+            <ToggleButton Classes="expander-toggle" IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}" HorizontalAlignment="Stretch" Padding="10,0" MinHeight="{DynamicResource Theme.ExpanderHeaderHeight}" Background="Transparent" BorderThickness="0">
+              <ToggleButton.Template>
+                <ControlTemplate>
+                  <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                    <Grid ColumnDefinitions="*,Auto">
+                      <ContentPresenter Content="{Binding Header, RelativeSource={RelativeSource AncestorType=Expander}}" VerticalAlignment="Center" local:UiTheme.Role="ExpanderHeader"/>
+                      <Border x:Name="PART_ChevronHost" Grid.Column="1" Width="24" Height="24" CornerRadius="12" Margin="8,0,0,0" VerticalAlignment="Center">
+                        <local:ThemeIcon x:Name="PART_Chevron" Kind="chevron-down" Width="16" Height="16" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                      </Border>
+                    </Grid>
+                  </Border>
+                </ControlTemplate>
+              </ToggleButton.Template>
+            </ToggleButton>
+            <ContentPresenter Grid.Row="1" Content="{TemplateBinding Content}" IsVisible="{TemplateBinding IsExpanded}" Margin="8,0,8,8" HorizontalAlignment="Stretch"/>
+          </Grid>
+        </Border>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+  <Style Selector="ToggleButton.expander-toggle /template/ local|ThemeIcon#PART_Chevron">
+    <Setter Property="RenderTransform" Value="rotate(0deg)"/>
+    <Setter Property="Transitions">
+      <Transitions>
+        <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.18" Easing="CubicEaseOut"/>
+      </Transitions>
+    </Setter>
+  </Style>
+  <Style Selector="ToggleButton.expander-toggle:checked /template/ local|ThemeIcon#PART_Chevron">
+    <Setter Property="RenderTransform" Value="rotate(180deg)"/>
+  </Style>
+  <Style Selector="ToggleButton.expander-toggle:pointerover /template/ Border#PART_ChevronHost">
+    <Setter Property="Background" Value="{DynamicResource Theme.Hover}"/>
+  </Style>
+  <Style Selector="Expander.library-expander"><Setter Property="BorderBrush" Value="Transparent"/></Style>
+  <Style Selector="TreeView"><Setter Property="Background" Value="Transparent"/></Style>
+  <Style Selector="TreeViewItem">
+    <Setter Property="MinHeight" Value="{DynamicResource Theme.LibraryRowHeight}"/>
+    <Setter Property="Padding" Value="0"/>
+    <Setter Property="local:UiTheme.Role" Value="LibraryItem"/>
+  </Style>
+  <Style Selector="TreeViewItem:selected /template/ Border#PART_LayoutRoot">
+    <Setter Property="Background" Value="{DynamicResource Theme.Selection}"/>
+    <Setter Property="CornerRadius" Value="5"/>
+  </Style>
+  <Style Selector="ListBox">
+    <Setter Property="Background" Value="{DynamicResource Theme.Surface}"/>
+    <Setter Property="BorderThickness" Value="0"/>
+  </Style>
+  <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Theme.Selection}"/>
+  </Style>
+  <Style Selector="TabItem">
+    <Setter Property="FontFamily" Value="{DynamicResource Theme.Tab.Font}"/>
+    <Setter Property="FontSize" Value="{DynamicResource Theme.Tab.Size}"/>
+    <Setter Property="Padding" Value="10,8"/>
+    <Setter Property="MinHeight" Value="{DynamicResource Theme.TabHeight}"/>
+  </Style>
+  <Style Selector="ToolTip"><Setter Property="local:UiTheme.Role" Value="Tooltip"/></Style>
+  <Style Selector="MenuItem"><Setter Property="local:UiTheme.Role" Value="Menu"/></Style>
+  <Style Selector="ComboBox">
+    <Setter Property="Background" Value="{DynamicResource Theme.Surface}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource Theme.Border}"/>
+    <Setter Property="CornerRadius" Value="{DynamicResource Theme.ButtonCorner}"/>
+  </Style>
+  <Style Selector="Button:disabled /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Theme.SurfaceAlt}"/>
+    <Setter Property="Foreground" Value="{DynamicResource Theme.Muted}"/>
+  </Style>
+  <Style Selector="CheckBox">
+    <Setter Property="Foreground" Value="{DynamicResource Theme.Text}"/>
+  </Style>
+  <Style Selector="Expander.navigation-section">
+    <Setter Property="BorderBrush" Value="Transparent"/>
+  </Style>
+  <Style Selector="Expander.navigation-section /template/ ToggleButton">
+    <Setter Property="MinHeight" Value="28"/>
+    <Setter Property="Padding" Value="2,0"/>
+  </Style>
+</Styles>

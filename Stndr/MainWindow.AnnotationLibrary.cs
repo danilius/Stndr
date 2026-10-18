@@ -45,11 +45,13 @@ public partial class MainWindow
         var heading = new StackPanel { Spacing = 4 };
         var title = new TextBlock
         {
+            [UiTheme.RoleProperty] = "AnnotationBody",
             Text = AnnotationLibraryTitle(kind),
             FontSize = 24,
             FontWeight = FontWeight.SemiBold
         };
-        var summary = new TextBlock { Foreground = new SolidColorBrush(Color.Parse("#667085")) };
+        var summary = new TextBlock {
+            [UiTheme.RoleProperty] = "AnnotationBody", Foreground = UiTheme.Brush("Muted") };
         heading.Children.Add(title);
         heading.Children.Add(summary);
         root.Children.Add(heading);
@@ -113,11 +115,12 @@ public partial class MainWindow
             {
                 rows.Children.Add(new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "AnnotationBody",
                     Text = string.IsNullOrWhiteSpace(query)
                         ? $"No {AnnotationLibraryPlural(kind)} yet."
                         : "No matching items.",
                     Margin = new Thickness(12, 18),
-                    Foreground = new SolidColorBrush(Color.Parse("#667085"))
+                    Foreground = UiTheme.Brush("Muted")
                 });
                 return;
             }
@@ -132,12 +135,13 @@ public partial class MainWindow
     private Control CreateAnnotationLibraryHeader(ReaderAnnotationKind kind, Action refresh)
     {
         var grid = CreateAnnotationLibraryGrid();
-        grid.Background = new SolidColorBrush(Color.Parse("#F2F4F7"));
+        grid.Background = UiTheme.Brush("Hover");
         grid.Children.Add(CreateAnnotationSortHeader("Book", AnnotationLibrarySortColumn.Book, 0, kind, refresh));
         grid.Children.Add(CreateAnnotationSortHeader("Reference", AnnotationLibrarySortColumn.Reference, 1, kind, refresh));
         grid.Children.Add(CreateAnnotationSortHeader("Date", AnnotationLibrarySortColumn.Date, 2, kind, refresh));
         var content = new TextBlock
         {
+            [UiTheme.RoleProperty] = "ExpanderHeader",
             Text = kind switch
             {
                 ReaderAnnotationKind.Bookmark => "Bookmarked text",
@@ -152,6 +156,7 @@ public partial class MainWindow
         Grid.SetColumn(content, 3);
         var actions = new TextBlock
         {
+            [UiTheme.RoleProperty] = "ExpanderHeader",
             Text = "Actions",
             FontWeight = FontWeight.SemiBold,
             Margin = new Thickness(10, 8),
@@ -233,9 +238,9 @@ public partial class MainWindow
 
         var row = new Border
         {
-            BorderBrush = new SolidColorBrush(Color.Parse(annotation.Kind == ReaderAnnotationKind.Highlight
-                ? GetHighlightColorHex(annotation.HighlightColor)
-                : "#EAECF0")),
+            BorderBrush = UiTheme.Brush(annotation.Kind == ReaderAnnotationKind.Highlight
+                ? GetHighlightColorKey(annotation.HighlightColor)
+                : "Border"),
             BorderThickness = annotation.Kind == ReaderAnnotationKind.Highlight
                 ? new Thickness(4, 0, 0, 1)
                 : new Thickness(0, 0, 0, 1),
@@ -316,14 +321,8 @@ public partial class MainWindow
         }
     }
 
-    private static string GetHighlightColorHex(ReaderHighlightColor color) => color switch
-    {
-        ReaderHighlightColor.Green => "#B7EB8F",
-        ReaderHighlightColor.Blue => "#91D5FF",
-        ReaderHighlightColor.Pink => "#FFADD2",
-        ReaderHighlightColor.Purple => "#D3ADF7",
-        _ => "#FFE58F"
-    };
+    private static string GetHighlightColorKey(ReaderHighlightColor color) => "Highlight" + color;
+    private static string GetHighlightColorHex(ReaderHighlightColor color) => UiTheme.Hex(GetHighlightColorKey(color));
 
     private string GetAnnotationListReference(ReaderAnnotation annotation)
     {
@@ -383,6 +382,7 @@ public partial class MainWindow
     {
         var cell = new TextBlock
         {
+            [UiTheme.RoleProperty] = "AnnotationBody",
             Text = text,
             TextWrapping = TextWrapping.Wrap,
             TextTrimming = TextTrimming.CharacterEllipsis,

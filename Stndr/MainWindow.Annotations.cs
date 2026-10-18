@@ -216,13 +216,15 @@ public partial class MainWindow
             Spacing = 10,
             Children =
             {
-                new TextBlock { Text = FormatAnnotationReference(anchor.StartReference, anchor.EndReference), FontWeight = FontWeight.SemiBold },
+                new TextBlock {
+            [UiTheme.RoleProperty] = "Reference", Text = FormatAnnotationReference(anchor.StartReference, anchor.EndReference), FontWeight = FontWeight.SemiBold },
                 new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "AnnotationBody",
                     Text = CollapseAnnotationWhitespace(anchor.SelectedText),
                     TextWrapping = TextWrapping.Wrap,
                     MaxHeight = 90,
-                    Foreground = new SolidColorBrush(Color.Parse("#475467")),
+                    Foreground = UiTheme.Brush("Muted"),
                     IsVisible = !string.IsNullOrWhiteSpace(anchor.SelectedText)
                 },
                 editor,
@@ -392,11 +394,12 @@ public partial class MainWindow
             {
                 results.Children.Add(new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "AnnotationBody",
                     Text = string.IsNullOrWhiteSpace(query)
                         ? $"No {kind.ToString().ToLowerInvariant()}s in this view."
                         : "No matching items.",
                     TextWrapping = TextWrapping.Wrap,
-                    Foreground = new SolidColorBrush(Color.Parse("#667085"))
+                    Foreground = UiTheme.Brush("Muted")
                 });
                 return;
             }
@@ -467,9 +470,9 @@ public partial class MainWindow
         var isHighlight = annotation.Kind == ReaderAnnotationKind.Highlight;
         var card = new Border
         {
-            BorderBrush = new SolidColorBrush(Color.Parse(isHighlight
-                ? GetHighlightColorHex(annotation.HighlightColor)
-                : "#D0D5DD")),
+            BorderBrush = UiTheme.Brush(isHighlight
+                ? GetHighlightColorKey(annotation.HighlightColor)
+                : "Border"),
             BorderThickness = isHighlight ? new Thickness(4, 1, 1, 1) : new Thickness(1),
             CornerRadius = new CornerRadius(6),
             Padding = new Thickness(6),
@@ -480,14 +483,16 @@ public partial class MainWindow
                 {
                     new TextBlock
                     {
+                        [UiTheme.RoleProperty] = "Reference",
                         Text = $"{GetAnnotationListReference(annotation)} · {annotation.CreatedAtUtc.ToLocalTime():g}",
                         FontSize = 11,
                         TextWrapping = TextWrapping.Wrap,
                         MaxHeight = 34,
-                        Foreground = new SolidColorBrush(Color.Parse("#475467"))
+                        Foreground = UiTheme.Brush("Muted")
                     },
                     new TextBlock
                     {
+                        [UiTheme.RoleProperty] = "AnnotationBody",
                         Text = annotation.Kind == ReaderAnnotationKind.Note ? annotation.Note : annotation.SelectedText,
                         TextWrapping = TextWrapping.Wrap,
                         MaxHeight = 54,

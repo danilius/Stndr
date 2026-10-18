@@ -153,14 +153,16 @@ public partial class MainWindow
             {
                 new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "DictionaryDefinition",
                     Text = "Dictionary",
                     FontSize = 24,
                     FontWeight = FontWeight.SemiBold
                 },
                 new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "DictionaryDefinition",
                     Text = "Read an installed dictionary in entry order. Use Search to find a particular headword or words within entries.",
-                    Foreground = new SolidColorBrush(Color.Parse("#475467")),
+                    Foreground = UiTheme.Brush("Muted"),
                     TextWrapping = TextWrapping.Wrap
                 }
             }
@@ -170,7 +172,7 @@ public partial class MainWindow
 
         var root = new Grid
         {
-            Background = Brushes.White,
+            Background = UiTheme.Brush("Surface"),
             RowDefinitions = new RowDefinitions("Auto,*"),
             RowSpacing = 14,
             Margin = new Thickness(18),
@@ -321,6 +323,7 @@ public partial class MainWindow
     {
         _dictionaryBrowseTitle = new TextBlock
         {
+            [UiTheme.RoleProperty] = "DictionaryDefinition",
             Text = "Dictionary reader",
             FontSize = 20,
             FontWeight = FontWeight.SemiBold,
@@ -328,8 +331,9 @@ public partial class MainWindow
         };
         _dictionaryBrowseStatus = new TextBlock
         {
+            [UiTheme.RoleProperty] = "DictionaryDefinition",
             Text = "Loading installed dictionaries...",
-            Foreground = new SolidColorBrush(Color.Parse("#667085")),
+            Foreground = UiTheme.Brush("Muted"),
             TextWrapping = TextWrapping.Wrap
         };
         _dictionaryBrowseInitialsPanel = null;
@@ -394,7 +398,7 @@ public partial class MainWindow
         Grid.SetRow(_dictionaryBrowseScrollViewer, 1);
         return new Border
         {
-            BorderBrush = new SolidColorBrush(Color.Parse("#D0D5DD")),
+            BorderBrush = UiTheme.Brush("Border"),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(8),
             Child = grid
@@ -423,10 +427,11 @@ public partial class MainWindow
                 _dictionaryBrowseEntriesPanel.Children.Clear();
                 _dictionaryBrowseEntriesPanel.Children.Add(new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "DictionaryDefinition",
                     Text = _sefariaLibrary.HasOfflineLibrary
                         ? "No dictionaries were found in the offline library."
                         : "Install the Sefaria library to browse dictionaries.",
-                    Foreground = new SolidColorBrush(Color.Parse("#667085")),
+                    Foreground = UiTheme.Brush("Muted"),
                     TextWrapping = TextWrapping.Wrap
                 });
                 return;
@@ -456,6 +461,7 @@ public partial class MainWindow
             _dictionaryBrowseEntriesPanel.Children.Clear();
             _dictionaryBrowseEntriesPanel.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "DictionaryDefinition",
                 Text = $"Could not load dictionaries: {ex.Message}",
                 TextWrapping = TextWrapping.Wrap
             });
@@ -503,11 +509,13 @@ public partial class MainWindow
                     Spacing = 3,
                     Children =
                     {
-                        new TextBlock { Text = lexicon.Name, FontWeight = FontWeight.SemiBold },
+                        new TextBlock {
+            [UiTheme.RoleProperty] = "DictionaryDefinition", Text = lexicon.Name, FontWeight = FontWeight.SemiBold },
                         new TextBlock
                         {
+                            [UiTheme.RoleProperty] = "DictionaryDefinition",
                             Text = $"{lexicon.EntryCount:N0} entries{(language.Length > 0 ? $" · {language}" : "")}",
-                            Foreground = new SolidColorBrush(Color.Parse("#667085"))
+                            Foreground = UiTheme.Brush("Muted")
                         }
                     }
                 }
@@ -738,8 +746,8 @@ public partial class MainWindow
         return new Border
         {
             Tag = entry.EntryId,
-            Background = highlighted ? new SolidColorBrush(Color.Parse("#FFF8E7")) : Brushes.Transparent,
-            BorderBrush = highlighted ? new SolidColorBrush(Color.Parse("#F2C94C")) : Brushes.Transparent,
+            Background = highlighted ? UiTheme.Brush("SearchHit") : Brushes.Transparent,
+            BorderBrush = highlighted ? UiTheme.Brush("SearchHighlight") : Brushes.Transparent,
             BorderThickness = highlighted ? new Thickness(2) : new Thickness(0),
             CornerRadius = new CornerRadius(6),
             Padding = highlighted ? new Thickness(6) : new Thickness(0),
@@ -939,22 +947,25 @@ public partial class MainWindow
         var dictionaryFontSize = GetDictionaryFontSize();
         _dictionaryToolsWord = new SelectableTextBlock
         {
+            [UiTheme.RoleProperty] = "DictionaryDefinition",
             FontSize = dictionaryFontSize,
             FontWeight = FontWeight.SemiBold,
             TextWrapping = TextWrapping.Wrap
         };
         _dictionaryToolsReference = new TextBlock
         {
+            [UiTheme.RoleProperty] = "DictionaryDefinition",
             FontSize = Math.Max(11, dictionaryFontSize - 3),
-            Foreground = new SolidColorBrush(Color.Parse("#667085")),
+            Foreground = UiTheme.Brush("Muted"),
             TextWrapping = TextWrapping.Wrap,
             IsVisible = false
         };
         _dictionaryToolsResultsPanel = new StackPanel { Spacing = 4 };
         _dictionaryToolsStatus = new TextBlock
         {
+            [UiTheme.RoleProperty] = "DictionaryDefinition",
             FontSize = dictionaryFontSize,
-            Foreground = new SolidColorBrush(Color.Parse("#475467")),
+            Foreground = UiTheme.Brush("Muted"),
             TextWrapping = TextWrapping.Wrap
         };
 
@@ -1005,7 +1016,8 @@ public partial class MainWindow
             {
                 new TextBlock
                 {
-                    Text = "Dictionary",
+                    [UiTheme.RoleProperty] = "DictionaryDefinition",
+                    Text = "",
                     FontWeight = FontWeight.SemiBold,
                     VerticalAlignment = VerticalAlignment.Center
                 },
@@ -1020,8 +1032,8 @@ public partial class MainWindow
 
         var content = new Border
         {
-            Background = new SolidColorBrush(Color.Parse("#F8FAFC")),
-            BorderBrush = new SolidColorBrush(Color.Parse("#D0D5DD")),
+            Background = UiTheme.Brush("SurfaceAlt"),
+            BorderBrush = UiTheme.Brush("Border"),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(8),
             Padding = new Thickness(10),
@@ -1030,7 +1042,7 @@ public partial class MainWindow
                 Spacing = 8,
                 Children =
                 {
-                    header,
+                    CreateDockedDictionarySearchBox(),
                     _dictionaryToolsWord,
                     _dictionaryToolsReference,
                     new ScrollViewer
@@ -1040,15 +1052,19 @@ public partial class MainWindow
                         VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
                         Content = _dictionaryToolsResultsPanel
                     },
-                    _dictionaryToolsStatus
+                    _dictionaryToolsStatus,
+                    header
                 }
             }
         };
 
+        UiTheme.SetRole(_dictionaryToolsWord, "DictionaryHeadword");
+        UiTheme.SetRole(_dictionaryToolsReference, "Reference");
+        UiTheme.SetRole(_dictionaryToolsStatus, "Status");
         ApplyDictionaryToolsContent();
 
         return CreateReaderToolsGroup(
-            "Dictionary",
+            IconHeader("book", "Dictionary"),
             content,
             _isDictionaryToolsExpanded,
             value => _isDictionaryToolsExpanded = value);
@@ -1068,6 +1084,7 @@ public partial class MainWindow
         if (_dictionaryToolsWord is not null)
         {
             _dictionaryToolsWord.Text = displayWord;
+            _dictionaryToolsWord.IsVisible = hasContent;
         }
 
         if (_dictionaryToolsReference is not null)
@@ -1348,11 +1365,12 @@ public partial class MainWindow
         {
             panel.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "DictionaryDefinition",
                 Text = string.IsNullOrWhiteSpace(group.Key) ? "Dictionary" : group.Key,
                 FontWeight = FontWeight.SemiBold,
                 FontSize = 15,
                 Margin = new Thickness(0, 8, 0, 2),
-                Foreground = new SolidColorBrush(Color.Parse("#344054"))
+                Foreground = UiTheme.Brush("Text")
             });
 
             foreach (var entry in group)
@@ -1441,6 +1459,7 @@ public partial class MainWindow
         var stack = new StackPanel { Spacing = 2 };
         stack.Children.Add(new SelectableTextBlock
         {
+            [UiTheme.RoleProperty] = "DictionaryHeadword",
             Text = entry.Headword,
             FontSize = fontSize,
             FontWeight = FontWeight.SemiBold,
@@ -1451,9 +1470,10 @@ public partial class MainWindow
         {
             stack.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "Metadata",
                 Text = entry.LexiconName,
                 FontSize = Math.Max(10, fontSize - 4),
-                Foreground = new SolidColorBrush(Color.Parse("#667085")),
+                Foreground = UiTheme.Brush("Muted"),
                 TextWrapping = TextWrapping.Wrap
             });
         }
@@ -1462,6 +1482,7 @@ public partial class MainWindow
             string.IsNullOrWhiteSpace(entry.ContentText) ? entry.Definition : entry.ContentText);
         stack.Children.Add(new SelectableTextBlock
         {
+            [UiTheme.RoleProperty] = "DictionaryDefinition",
             Text = string.IsNullOrWhiteSpace(gloss) ? "(no definition)" : gloss,
             FontSize = fontSize,
             TextWrapping = TextWrapping.Wrap
@@ -1469,7 +1490,7 @@ public partial class MainWindow
 
         return new Border
         {
-            BorderBrush = new SolidColorBrush(Color.Parse("#EAECF0")),
+            BorderBrush = UiTheme.Brush("Border"),
             BorderThickness = new Thickness(0, 0, 0, 1),
             Padding = new Thickness(0, 4, 0, 6),
             Child = stack
@@ -1509,9 +1530,10 @@ public partial class MainWindow
         {
             panel.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "DictionaryDefinition",
                 Text = string.Join(" | ", metaParts),
                 FontSize = dictionaryFontSize,
-                Foreground = new SolidColorBrush(Color.Parse("#667085")),
+                Foreground = UiTheme.Brush("Muted"),
                 TextWrapping = TextWrapping.Wrap
             });
         }
@@ -1527,9 +1549,10 @@ public partial class MainWindow
         {
             panel.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "DictionaryDefinition",
                 Text = string.Join(" · ", identifiers),
                 FontSize = dictionaryFontSize,
-                Foreground = new SolidColorBrush(Color.Parse("#667085")),
+                Foreground = UiTheme.Brush("Muted"),
                 TextWrapping = TextWrapping.Wrap
             });
         }
@@ -1547,6 +1570,7 @@ public partial class MainWindow
         {
             panel.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "Reference",
                 Text = "References",
                 FontSize = dictionaryFontSize,
                 FontWeight = FontWeight.SemiBold,
@@ -1587,6 +1611,7 @@ public partial class MainWindow
 
         var titleBlock = new SelectableTextBlock
         {
+            [UiTheme.RoleProperty] = "DictionaryDefinition",
             Text = titleText,
             FontSize = dictionaryFontSize,
             FontWeight = FontWeight.SemiBold,
@@ -1654,7 +1679,7 @@ public partial class MainWindow
             Content = new Border
             {
                 HorizontalAlignment = HorizontalAlignment.Stretch,
-                BorderBrush = new SolidColorBrush(Color.Parse("#EAECF0")),
+                BorderBrush = UiTheme.Brush("Border"),
                 BorderThickness = new Thickness(0, 1, 0, 0),
                 Child = panel
             }
@@ -1686,8 +1711,9 @@ public partial class MainWindow
             {
                 new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Reference",
                     Text = "Expand to load this reference.",
-                    Foreground = new SolidColorBrush(Color.Parse("#667085")),
+                    Foreground = UiTheme.Brush("Muted"),
                     TextWrapping = TextWrapping.Wrap
                 }
             }
@@ -1701,8 +1727,8 @@ public partial class MainWindow
             Content = new Border
             {
                 HorizontalAlignment = HorizontalAlignment.Stretch,
-                Background = new SolidColorBrush(Color.Parse("#FCFCFD")),
-                BorderBrush = new SolidColorBrush(Color.Parse("#EAECF0")),
+                Background = UiTheme.Brush("SurfaceAlt"),
+                BorderBrush = UiTheme.Brush("Border"),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(6),
                 Child = contentPanel
@@ -1730,8 +1756,9 @@ public partial class MainWindow
         contentPanel.Children.Clear();
         contentPanel.Children.Add(new TextBlock
         {
+            [UiTheme.RoleProperty] = "Reference",
             Text = "Loading reference from Sefaria...",
-            Foreground = new SolidColorBrush(Color.Parse("#667085")),
+            Foreground = UiTheme.Brush("Muted"),
             TextWrapping = TextWrapping.Wrap
         });
 
@@ -1752,8 +1779,9 @@ public partial class MainWindow
             {
                 contentPanel.Children.Add(new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Reference",
                     Text = "No preview text was available for this reference.",
-                    Foreground = new SolidColorBrush(Color.Parse("#B42318")),
+                    Foreground = UiTheme.Brush("Error"),
                     TextWrapping = TextWrapping.Wrap
                 });
                 return;
@@ -1767,8 +1795,9 @@ public partial class MainWindow
             {
                 contentPanel.Children.Add(new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Reference",
                     Text = "Preview loaded, but no displayable text was returned.",
-                    Foreground = new SolidColorBrush(Color.Parse("#B42318")),
+                    Foreground = UiTheme.Brush("Error"),
                     TextWrapping = TextWrapping.Wrap
                 });
             }
@@ -1778,8 +1807,9 @@ public partial class MainWindow
             contentPanel.Children.Clear();
             contentPanel.Children.Add(new TextBlock
             {
+                [UiTheme.RoleProperty] = "Reference",
                 Text = $"Could not load this reference: {ex.Message}",
-                Foreground = new SolidColorBrush(Color.Parse("#B42318")),
+                Foreground = UiTheme.Brush("Error"),
                 TextWrapping = TextWrapping.Wrap
             });
         }
