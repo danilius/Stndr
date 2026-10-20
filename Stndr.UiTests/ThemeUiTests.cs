@@ -76,6 +76,15 @@ public class ThemeUiTests
             var originalTheme = File.ReadAllText(UiTheme.FilePath!);
             try
             {
+                foreach (var (name, path) in UiTheme.BundledColorSchemes())
+                {
+                    UiTheme.ApplyColorScheme(path);
+                    UiTheme.ApplyTree(window);
+                    Dispatcher.UIThread.RunJobs();
+                    Assert.Equal(name, UiTheme.Current.Name);
+                    Capture(window, output, "scheme-" + name);
+                }
+
                 File.WriteAllText(UiTheme.FilePath!, """{"Colors":{"Surface":"#202428","Window":"#171A1E","Text":"#F3EEE5","Muted":"#BCB4AA","Icon":"#DAB888","Border":"#41464D","SurfaceAlt":"#282D32","Hover":"#393D43","Selection":"#484136"},"Text":{"Reference":{"Size":21}}}""");
                 Assert.True(UiTheme.Reload(), UiTheme.LoadError);
 
@@ -211,6 +220,21 @@ public class ThemeUiTests
         Assert.ThrowsAny<Exception>(() => UiTheme.Parse("""{"Text":{"Reference":{"Size":-3}}}"""));
         Assert.ThrowsAny<Exception>(() => UiTheme.Parse("""{"Metrics":{"MainButtonHeight":-1}}"""));
         Assert.Same(before, UiTheme.Current);
+    }
+
+    [Fact]
+    public void Bundled_schemes_make_selected_text_darker_than_the_selected_paragraph()
+    {
+        static double Luminance(string hex) { var c = Avalonia.Media.Color.Parse(hex); return c.R * .2126 + c.G * .7152 + c.B * .0722; }
+        var schemes = UiTheme.BundledColorSchemes();
+        Assert.Contains(schemes, scheme => scheme.Name == "Blue");
+        Assert.Contains(schemes, scheme => scheme.Name == "Azure");
+        Assert.Contains(schemes, scheme => scheme.Name == "Green");
+        foreach (var (name, path) in schemes)
+        {
+            var colors = UiTheme.Parse(File.ReadAllText(path)).Colors;
+            Assert.True(Luminance(colors["Selection"]) - Luminance(colors["TextSelection"]) >= 25, name);
+        }
     }
 
     [Fact]

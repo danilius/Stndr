@@ -13,6 +13,7 @@
     "Pressed": "#EEE4D6",
     "Selection": "#F7F0E5",
     "SelectionText": "#25221D",
+    "TextSelection": "#E4CC9F",
     "Focus": "#A17B43",
     "Link": "#805C32",
     "Error": "#B42318",

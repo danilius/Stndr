@@ -147,7 +147,6 @@
 
         <Grid Grid.Row="0" Grid.ColumnSpan="5" ColumnDefinitions="Auto,*,Auto" Margin="4,4,4,12">
             <StackPanel Orientation="Horizontal" Spacing="8">
-                <Button Classes="main-function" Click="ToggleLeftPanel" ToolTip.Tip="Library (Ctrl+B)"><StackPanel Orientation="Horizontal" Spacing="10"><local:ThemeIcon Kind="book"/><TextBlock local:UiTheme.Role="MainButton" Text="Library"/></StackPanel></Button>
                 <Button Classes="main-function" Click="OpenDictionaryClicked"><StackPanel Orientation="Horizontal" Spacing="10"><local:ThemeIcon Kind="search"/><TextBlock local:UiTheme.Role="MainButton" Text="Dictionary"/></StackPanel></Button>
                 <Button Classes="main-function" Click="OpenAdvancedSearchClicked"><StackPanel Orientation="Horizontal" Spacing="10"><local:ThemeIcon Kind="search"/><TextBlock local:UiTheme.Role="MainButton" Text="Advanced Search"/></StackPanel></Button>
                 <Button Classes="main-function" Click="OpenSettingsClicked"><StackPanel Orientation="Horizontal" Spacing="10"><local:ThemeIcon Kind="settings"/><TextBlock local:UiTheme.Role="MainButton" Text="Settings"/></StackPanel></Button>
@@ -266,12 +265,14 @@
               Grid.Column="2"
               Margin="0"
               RowDefinitions="Auto,*">
-            <ScrollViewer Grid.Row="0" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-            <TabControl x:Name="CenterTabs"
-                        Grid.Row="0">
-                <TabControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate></TabControl.ItemsPanel>
-            </TabControl>
-            </ScrollViewer>
+            <Grid Grid.Row="0" ColumnDefinitions="*,Auto">
+                <ScrollViewer x:Name="CenterTabsScroller" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled">
+                    <TabControl x:Name="CenterTabs">
+                        <TabControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate></TabControl.ItemsPanel>
+                    </TabControl>
+                </ScrollViewer>
+                <Button x:Name="TabOverflowButton" Grid.Column="1" IsVisible="False" Width="30" Height="30" MinWidth="0" MinHeight="0" Padding="6" Margin="4,0,0,0" VerticalAlignment="Center" Background="Transparent" BorderThickness="0" ToolTip.Tip="All open tabs"><local:ThemeIcon Kind="chevron-down" Width="16" Height="16"/></Button>
+            </Grid>
             <Grid x:Name="CenterTabContentHost"
                   Grid.Row="1"
                   Background="{DynamicResource Theme.Surface}" />

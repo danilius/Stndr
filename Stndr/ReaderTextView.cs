@@ -16,7 +16,7 @@ namespace Stndr;
 
 public sealed class ReaderTextView : SelectableTextBlock
 {
-    private static readonly IBrush ReaderSelectionBrush = UiTheme.Brush("Selection");
+    private static readonly IBrush ReaderSelectionBrush = UiTheme.Brush("TextSelection");
     private const double ParagraphClickMovementTolerance = 4;
     private readonly MenuItem _copyMenuItem;
     private string _plainText = string.Empty;

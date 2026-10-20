@@ -343,7 +343,7 @@ public partial class MainWindow
         return $$"""
             :root {
                 color-scheme: light;
-                --selection: {{UiTheme.CssColor("Selection")}};
+                --selection: {{UiTheme.CssColor("TextSelection")}};
                 --selected-row: {{UiTheme.CssColor("Selection")}};
                 --text: {{UiTheme.CssColor("Text")}};
                 --muted: {{UiTheme.CssColor("Muted")}};

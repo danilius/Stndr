@@ -113,6 +113,7 @@ public partial class MainWindow
         ApplyPinnedCommentaryPreferences(readerState);
         ApplyCommentarySortPreferences(readerState);
 
+        _rightPanelBody.Children.Add(CreateReaderToolsExpandCollapseButton(readerState));
         _rightPanelBody.Children.Add(CreateReaderToolsGroup(
             IconHeader("list", CreateNavigationGroupHeader(readerState)),
             CreateReaderNavigationTools(readerState),
@@ -4110,7 +4111,7 @@ public partial class MainWindow
 
     private Expander CreateNavigationTopicExpander(ReaderTabState readerState, ReaderNavigationChapter chapter)
     {
-        var pagesPanel = CreateCompactNavigationList(readerState, chapter.Items);
+        var pagesPanel = CreateNavigationWrapPanel(readerState, chapter.Items);
 
         var isExpanded = readerState.NavigationTopicsAllExpanded ||
             (readerState.ExpandedNavigationTopics.TryGetValue(chapter.Key, out var expanded) && expanded);
@@ -4446,31 +4447,14 @@ public partial class MainWindow
         if (_centerTabs?.SelectedItem is not TabItem selectedTab ||
             !_openReaderTabs.TryGetValue(selectedTab, out var readerState))
             return new StackPanel();
-        return CreateCompactNavigationList(readerState, items);
+        return CreateNavigationWrapPanel(readerState, items);
     }
 
-    private Control CreateCompactNavigationList(ReaderTabState state, IEnumerable<ReaderNavigationItem> source)
+    private WrapPanel CreateNavigationWrapPanel(ReaderTabState state, IEnumerable<ReaderNavigationItem> items)
     {
-        var items = source.ToList();
-        var panel = new StackPanel();
-        var count = (int)UiTheme.Metric("NavigationPreviewCount");
-        var activeIndex = items.FindIndex(item => item.Row.ChapterKey == state.CurrentChapterKey);
-        var first = Math.Max(0, Math.Min(activeIndex - 2, items.Count - count));
-        foreach (var item in items.Skip(first).Take(count))
+        var panel = new WrapPanel { HorizontalAlignment = HorizontalAlignment.Stretch };
+        foreach (var item in items)
             panel.Children.Add(CreateReaderNavigationButton(state, item));
-        if (items.Count > count)
-        {
-            var all = new StackPanel();
-            var more = new Expander { Header = "More sections", IsExpanded = false,
-                Content = new ScrollViewer { MaxHeight = 260, Content = all } };
-            more.Classes.Add("navigation-section");
-            more.PropertyChanged += (_, e) =>
-            {
-                if (e.Property == Expander.IsExpandedProperty && more.IsExpanded && all.Children.Count == 0)
-                    foreach (var item in items) all.Children.Add(CreateReaderNavigationButton(state, item));
-            };
-            panel.Children.Add(more);
-        }
         return panel;
     }
 
@@ -4478,12 +4462,11 @@ public partial class MainWindow
     {
         var button = new Button
         {
-            Content = IconHeader("dot", new TextBlock { [UiTheme.RoleProperty] = "Navigation", Text = int.TryParse(item.Label, out _) && !SefariaLibraryService.IsTalmud(readerState.Primary) ? "Chapter " + item.Label : item.Label }),
-            Margin = new Thickness(0),
-            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Content = new TextBlock { [UiTheme.RoleProperty] = "Navigation", Text = item.Label },
+            Margin = new Thickness(0, 0, 6, 6),
             Tag = item,
             Background = item.Row.ChapterKey == readerState.CurrentChapterKey ? UiTheme.Brush("Selection") : Brushes.Transparent,
-            HorizontalContentAlignment = HorizontalAlignment.Left,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center
         };
         button.Classes.Add("reader-nav-button");

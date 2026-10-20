@@ -442,21 +442,29 @@ public partial class MainWindow
             Children = { titleBlock, chapterBlock, versionBlock }
         };
         var settingsButton = CreateReaderDisplaySettingsButton(state);
-        var previous = ReaderHeaderButton("back", "Previous section", () => StepReaderPage(state, -1));
-        var next = ReaderHeaderButton("chevron", "Next section", () => StepReaderPage(state, 1));
-        var library = ReaderHeaderButton("book", "Library", () => ToggleLeftPanel(this, new RoutedEventArgs()));
+        settingsButton.VerticalAlignment = VerticalAlignment.Center;
         var focus = ReaderHeaderButton("expand", "Toggle both side panels (Tab)",
             () => SetBothSidePanelsCollapsed(ShouldCollapseBothSidePanels(_leftCollapsed, _rightCollapsed)));
+        var headerButtons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 10,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center,
+            Children = { settingsButton, focus }
+        };
+        // Equal outer columns keep the title centred over the text regardless of the button group's width.
         var headerArea = new Grid
         {
-            ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*,Auto,Auto,Auto,Auto"),
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,*"),
             ColumnSpacing = 10,
             Margin = new Thickness(12, 0),
             MinHeight = UiTheme.Metric("PageHeaderHeight"),
-            Children = { settingsButton, previous, header, next, library, focus, CreateReaderOverflowButton(state) }
+            Children = { header, headerButtons }
         };
         headerArea.Bind(Grid.MinHeightProperty, this.GetResourceObservable("Theme.PageHeaderHeight"));
-        for (var i = 0; i < headerArea.Children.Count; i++) Grid.SetColumn(headerArea.Children[i], i);
+        Grid.SetColumn(header, 1);
+        Grid.SetColumn(headerButtons, 2);
         var headerChrome = new Border
         {
             Background = UiTheme.Brush("Surface"),

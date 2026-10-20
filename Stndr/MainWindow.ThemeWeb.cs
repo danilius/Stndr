@@ -56,5 +56,6 @@ public partial class MainWindow
         button { {{UiTheme.CssText("Button")}} background: {{UiTheme.CssColor("Surface")}}; border-color: {{UiTheme.CssColor("Border")}}; }
         button:hover { background: {{UiTheme.CssColor("Hover")}}; }
         a { color: {{UiTheme.CssColor("Link")}}; }
+        ::selection { background: {{UiTheme.CssColor("TextSelection")}}; color: {{UiTheme.CssColor("Text")}}; }
         """;
 }

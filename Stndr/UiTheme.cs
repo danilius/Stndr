@@ -115,6 +115,26 @@ public static class UiTheme
         }
     }
     public static void Save() { if (FilePath is not null) File.WriteAllText(FilePath, JsonSerializer.Serialize(Current, JsonOptions)); }
+    /// <summary>The colour schemes bundled in the Themes folder, by display name.</summary>
+    public static IReadOnlyList<(string Name, string Path)> BundledColorSchemes()
+    {
+        var folder = Path.Combine(AppContext.BaseDirectory, "Themes");
+        if (!Directory.Exists(folder)) return Array.Empty<(string, string)>();
+        return Directory.GetFiles(folder, "*.json")
+            .Select(path => (Name: Parse(File.ReadAllText(path)).Name, Path: path))
+            .OrderBy(scheme => scheme.Path.EndsWith("warm.json", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+            .ThenBy(scheme => scheme.Name, StringComparer.CurrentCulture)
+            .ToList();
+    }
+    // Swaps in a scheme's colours only, so the user's fonts, sizes and measurements survive the change.
+    public static void ApplyColorScheme(string path)
+    {
+        var scheme = Parse(File.ReadAllText(path));
+        Current.Name = scheme.Name;
+        Current.Colors = new Dictionary<string, string>(scheme.Colors);
+        Save();
+        ApplyResources();
+    }
     public static TextStyle Type(string role) => Current.Text.TryGetValue(role, out var value) ? value : Current.Text["Body"];
     // Reader content keeps the fonts its theme entry names. Every other role follows the Settings
     // screen: Latin text uses the "Display font" (Body) and Hebrew uses the "Hebrew display font" (HebrewUi).

@@ -169,6 +169,52 @@ public partial class MainWindow
         _tabs.Add(tab);
     }
 
+    // The tab strip scrolls without a visible bar; once tabs overflow, a drop-down arrow lists every open tab.
+    private void InitializeTabOverflow(ScrollViewer scroller, Button overflowButton)
+    {
+        void UpdateOverflow() => overflowButton.IsVisible = scroller.Extent.Width > scroller.Viewport.Width + 0.5;
+        scroller.PropertyChanged += (_, e) =>
+        {
+            if (e.Property == ScrollViewer.ExtentProperty || e.Property == ScrollViewer.ViewportProperty)
+                UpdateOverflow();
+        };
+
+        scroller.AddHandler(PointerWheelChangedEvent, (_, e) =>
+        {
+            var delta = e.Delta.X != 0 ? e.Delta.X : e.Delta.Y;
+            if (delta == 0 || !overflowButton.IsVisible)
+                return;
+            var maxOffset = Math.Max(0, scroller.Extent.Width - scroller.Viewport.Width);
+            scroller.Offset = new Vector(Math.Clamp(scroller.Offset.X - delta * 60, 0, maxOffset), 0);
+            e.Handled = true;
+        }, RoutingStrategies.Tunnel);
+
+        overflowButton.Click += (_, _) =>
+        {
+            if (_tabs is null || _centerTabs is null)
+                return;
+            var flyout = new MenuFlyout { Placement = PlacementMode.BottomEdgeAlignedRight };
+            foreach (var tab in _tabs)
+            {
+                var item = new MenuItem
+                {
+                    Header = GetTabDisplayTitle(tab),
+                    ToggleType = MenuItemToggleType.Radio,
+                    IsChecked = ReferenceEquals(tab, _centerTabs.SelectedItem)
+                };
+                item.Click += (_, _) => _centerTabs.SelectedItem = tab;
+                flyout.Items.Add(item);
+            }
+
+            flyout.ShowAt(overflowButton);
+        };
+    }
+
+    private static string GetTabDisplayTitle(TabItem tab) =>
+        tab.Header is Border { Child: Grid layout } && layout.Children.Count > 1 && layout.Children[1] is TextBlock { Text: { Length: > 0 } text }
+            ? text
+            : tab.Tag as string ?? string.Empty;
+
     private TabItem CreateTab(string title, Control? content = null)
     {
         var tab = new TabItem();

@@ -65,7 +65,7 @@ internal sealed class DictionaryLinkedTextView : SelectableTextBlock
 {
     private const double ClickMovementTolerance = 4;
     private static readonly IBrush CitationBrush = UiTheme.Brush("Link");
-    private static readonly IBrush SelectionHighlightBrush = UiTheme.Brush("Selection");
+    private static readonly IBrush SelectionHighlightBrush = UiTheme.Brush("TextSelection");
 
     private readonly string _text;
     private readonly IReadOnlyList<DictionaryTextLink> _links;

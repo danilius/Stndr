@@ -86,6 +86,19 @@ public partial class MainWindow
         return box;
     }
 
+    private void RefreshThemedUi()
+    {
+        if (Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
+            foreach (var window in desktop.Windows) UiTheme.ApplyTree(window);
+        else UiTheme.ApplyTree(this);
+        ApplyLeftPanelState(_leftCollapsed, UiTheme.Metric("LeftPanelWidth"));
+        ApplyRightPanelState(_rightCollapsed, UiTheme.Metric("RightPanelWidth"));
+        RefreshOpenReaderTabs();
+        RefreshOpenLinkSplitViews();
+        UpdateTabHeaderStates();
+        UpdateReaderTools();
+    }
+
     private Control CreateThemeSettingsPanel()
     {
         var status = new TextBlock { [UiTheme.RoleProperty] = "Status", TextWrapping = TextWrapping.Wrap,
@@ -95,13 +108,30 @@ public partial class MainWindow
         reload.Click += (_, _) =>
         {
             if (!UiTheme.Reload()) { status.Text = UiTheme.LoadError; return; }
-            if (Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
-                foreach (var window in desktop.Windows) UiTheme.ApplyTree(window);
-            else UiTheme.ApplyTree(this);
-            ApplyLeftPanelState(_leftCollapsed, UiTheme.Metric("LeftPanelWidth"));
-            ApplyRightPanelState(_rightCollapsed, UiTheme.Metric("RightPanelWidth"));
-            RefreshOpenReaderTabs();
-            UpdateReaderTools();
+            RefreshThemedUi();
+            status.Text = $"Applied {UiTheme.Current.Name}.";
+        };
+        var schemes = UiTheme.BundledColorSchemes();
+        var schemePicker = new ComboBox
+        {
+            ItemsSource = schemes.Select(scheme => scheme.Name).ToList(),
+            SelectedIndex = schemes.ToList().FindIndex(scheme => scheme.Name == UiTheme.Current.Name),
+            PlaceholderText = "Custom",
+            MinWidth = 200
+        };
+        schemePicker.SelectionChanged += (_, _) =>
+        {
+            if (schemePicker.SelectedIndex < 0 || schemes[schemePicker.SelectedIndex].Name == UiTheme.Current.Name) return;
+            try
+            {
+                UiTheme.ApplyColorScheme(schemes[schemePicker.SelectedIndex].Path);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or FormatException or InvalidDataException)
+            {
+                status.Text = ex.Message;
+                return;
+            }
+            RefreshThemedUi();
             status.Text = $"Applied {UiTheme.Current.Name}.";
         };
         var open = new Button { Content = "Open theme file", IsEnabled = UiTheme.FilePath is not null };
@@ -113,6 +143,11 @@ public partial class MainWindow
         return new StackPanel { Spacing = 8, Children =
         {
             new TextBlock { [UiTheme.RoleProperty] = "SectionHeading", Text = "Theme" },
+            new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children =
+            {
+                new TextBlock { [UiTheme.RoleProperty] = "Body", Text = "Colour scheme", VerticalAlignment = VerticalAlignment.Center },
+                schemePicker
+            }},
             path, status,
             new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { open, reload } }
         }};
@@ -135,20 +170,5 @@ public partial class MainWindow
         ToolTip.SetTip(button, tip);
         button.Click += (_, _) => action();
         return button;
-    }
-
-    private Button CreateReaderOverflowButton(ReaderTabState state)
-    {
-        var button = ReaderHeaderButton("more", "Reader tools", () => { });
-        button.Flyout = new Avalonia.Controls.Flyout { Content = CreateReaderToolsExpandCollapseButton(state) };
-        return button;
-    }
-
-    private void StepReaderPage(ReaderTabState state, int delta)
-    {
-        var index = state.NavigationItems.FindIndex(item => item.Row.ChapterKey == state.CurrentChapterKey);
-        var next = index + delta;
-        if (next >= 0 && next < state.NavigationItems.Count)
-            ScrollReaderToExactReference(state, state.NavigationItems[next].Row.ChapterKey);
     }
 }

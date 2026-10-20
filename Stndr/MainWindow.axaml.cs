@@ -199,6 +199,11 @@ public partial class MainWindow : Window
         var centerTabs = this.FindControl<TabControl>("CenterTabs")
             ?? throw new InvalidOperationException("CenterTabs control was not found.");
         _centerTabs = centerTabs;
+        InitializeTabOverflow(
+            this.FindControl<ScrollViewer>("CenterTabsScroller")
+                ?? throw new InvalidOperationException("CenterTabsScroller control was not found."),
+            this.FindControl<Button>("TabOverflowButton")
+                ?? throw new InvalidOperationException("TabOverflowButton control was not found."));
         _centerTabContentHost = this.FindControl<Grid>("CenterTabContentHost")
             ?? throw new InvalidOperationException("CenterTabContentHost control was not found.");
         _floatingOverlayCanvas = this.FindControl<Canvas>("FloatingOverlayCanvas");

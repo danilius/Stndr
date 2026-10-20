@@ -38,9 +38,11 @@ Fonts must be installed on the computer. Native labels also use HebrewFontFamily
 
 ## Palette and layout
 
-Colours use `#RRGGBB` or Avalonia's `#AARRGGBB` notation. Palette categories include surfaces, text, icons, borders, hover, pressed, focus, selection, links, status colours, annotation highlights, and the seven aliyah backgrounds. The reader converts alpha colours to CSS rgba automatically. A dark Surface selects dark native controls and browser colour scheme.
+Colours use `#RRGGBB` or Avalonia's `#AARRGGBB` notation. Palette categories include surfaces, text, icons, borders, hover, pressed, focus, selection (`Selection` for the selected paragraph or navigation entry, `TextSelection` for highlighted text, which must be darker so a text selection stays visible inside a selected paragraph), links, status colours, annotation highlights, and the seven aliyah backgrounds. The reader converts alpha colours to CSS rgba automatically. A dark Surface selects dark native controls and browser colour scheme.
 
-Metrics cover toolbar/expander/page-header/control/tab heights, tab width, panel widths, icon size, corners, reader padding and paragraph spacing. NavigationPreviewCount (1–30) controls the number of visible navigation entries before “More sections”. Font/colour changes reload in native controls and the HTML reader. Some structural dimensions and existing font-based inline content are fully refreshed when a view is reopened.
+Settings > Theme > Colour scheme switches between the bundled schemes in `Themes/` (Warm parchment, Blue, Azure, Green). A scheme replaces only `Colors` in your theme file, so fonts, sizes and metrics are kept. To add a scheme, drop a JSON file with `Version`, `Name` and `Colors` into `Themes/`; missing colours fall back to Warm parchment.
+
+Metrics cover toolbar/expander/page-header/control/tab heights, tab width, panel widths, icon size, corners, reader padding and paragraph spacing. Font/colour changes reload in native controls and the HTML reader. Some structural dimensions and existing font-based inline content are fully refreshed when a view is reopened.
 
 Window resizing, selected book versions, title-language preferences, and reading mode still affect the visible layout; the theme does not change source text or translations. Pronunciation playback and Study Tools are not added.
 

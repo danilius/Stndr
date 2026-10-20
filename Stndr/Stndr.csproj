@@ -11,7 +11,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Content Include="Themes/warm.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Themes/*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
