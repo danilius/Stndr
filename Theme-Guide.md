@@ -8,7 +8,7 @@ Each entry in `Text` has `FontFamily`, `HebrewFontFamily` (fallback for mixed-sc
 
 Categories include Body, Button, MainButton, Input, LibraryItem, Navigation, ExpanderHeader, Tab, PageTitle, Breadcrumb, HebrewHeading, EnglishHeading, ReaderHebrew, ReaderEnglish, CommentaryHebrew, CommentaryEnglish, DictionaryHeadword, DictionaryDefinition, DictionaryDefinitionHebrew, SearchResult, SearchResultHebrew, SearchReference, Reference, ReferenceHebrew, Metadata, Status, AnnotationBody, AnnotationMarker, Menu, Tooltip, SectionHeading, and DialogTitle.
 
-Hebrew and English body text are independently configurable. Reader titles use PageTitle's font for English and its HebrewFontFamily for Hebrew. Main-function button labels always use the Icon colour to match their icons.
+Font families follow the Settings screen for all interface text. Every category except the reader-content ones uses Body's `FontFamily` (the "Display font" setting) and HebrewUi's `FontFamily` (the "Hebrew display font" setting) for Hebrew. DictionaryHeadword, ReferenceHebrew and DictionaryDefinitionHebrew are Hebrew-first, so they use the Hebrew display font throughout. In those categories only `FontFamily` and `HebrewFontFamily` are ignored. Size, colour, weight and line height still apply per category. Reader-content categories keep their own fonts: ReaderHebrew, ReaderEnglish, CommentaryHebrew, CommentaryEnglish, HebrewHeading, EnglishHeading, SearchResult and SearchResultHebrew. Main-function button labels always use the Icon colour to match their icons.
 
 For example:
 

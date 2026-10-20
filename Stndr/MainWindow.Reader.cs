@@ -1861,7 +1861,7 @@ public partial class MainWindow
         var style = UiTheme.Type("PageTitle");
         inlines.Add(new Run(text)
         {
-            FontFamily = new FontFamily(isHebrew ? UiTheme.HebrewFont("PageTitle") : style.FontFamily),
+            FontFamily = new FontFamily(isHebrew ? UiTheme.HebrewFont("PageTitle") : UiTheme.PrimaryFont("PageTitle")),
             FontSize = style.Size,
             Foreground = UiTheme.Brush(style.Color)
         });

@@ -116,11 +116,11 @@ public static class UiTheme
     }
     public static void Save() { if (FilePath is not null) File.WriteAllText(FilePath, JsonSerializer.Serialize(Current, JsonOptions)); }
     public static TextStyle Type(string role) => Current.Text.TryGetValue(role, out var value) ? value : Current.Text["Body"];
-    // Reader content keeps the fonts its theme entry names; every other role takes its Hebrew
-    // glyphs from the "Hebrew display font" setting (HebrewUi).
+    // Reader content keeps the fonts its theme entry names. Every other role follows the Settings
+    // screen: Latin text uses the "Display font" (Body) and Hebrew uses the "Hebrew display font" (HebrewUi).
     private static readonly HashSet<string> ReaderContentRoles = new(StringComparer.Ordinal)
     {
-        "ReaderHebrew", "ReaderEnglish", "CommentaryHebrew", "CommentaryEnglish", "HebrewHeading", "SearchResult", "SearchResultHebrew"
+        "ReaderHebrew", "ReaderEnglish", "CommentaryHebrew", "CommentaryEnglish", "HebrewHeading", "EnglishHeading", "SearchResult", "SearchResultHebrew"
     };
     private static readonly HashSet<string> HebrewDisplayRoles = new(StringComparer.Ordinal)
     {
@@ -129,7 +129,9 @@ public static class UiTheme
     public static string HebrewFont(string role) =>
         ReaderContentRoles.Contains(role) ? Type(role).HebrewFontFamily : Type("HebrewUi").FontFamily;
     public static string PrimaryFont(string role) =>
-        HebrewDisplayRoles.Contains(role) ? Type("HebrewUi").FontFamily : Type(role).FontFamily;
+        ReaderContentRoles.Contains(role) ? Type(role).FontFamily
+        : HebrewDisplayRoles.Contains(role) ? Type("HebrewUi").FontFamily
+        : Type("Body").FontFamily;
     public static string FontStack(string role) => PrimaryFont(role) + ", " + HebrewFont(role);
     public static FontFamily Font(string role) => new(FontStack(role));
     public static double Metric(string key) => Current.Metrics[key];
