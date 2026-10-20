@@ -1,0 +1,20 @@
+{
+  "Version": 1,
+  "Name": "Azure",
+  "Colors": {
+    "Window": "#F3F9FC",
+    "Surface": "#FFFFFF",
+    "SurfaceAlt": "#F7FBFD",
+    "Text": "#17262E",
+    "Muted": "#5F7480",
+    "Icon": "#0F7AA8",
+    "Border": "#DDEBF2",
+    "Hover": "#EAF5FA",
+    "Pressed": "#D3EAF4",
+    "Selection": "#E6F3F9",
+    "SelectionText": "#17262E",
+    "TextSelection": "#A6D6EC",
+    "Focus": "#1B8FC2",
+    "Link": "#0F7AA8"
+  }
+}

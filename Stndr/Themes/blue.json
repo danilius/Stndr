@@ -1,0 +1,20 @@
+{
+  "Version": 1,
+  "Name": "Blue",
+  "Colors": {
+    "Window": "#F5F7FB",
+    "Surface": "#FFFFFF",
+    "SurfaceAlt": "#F8FAFD",
+    "Text": "#1B2333",
+    "Muted": "#667085",
+    "Icon": "#2F5597",
+    "Border": "#E3E8F0",
+    "Hover": "#EEF3FA",
+    "Pressed": "#DCE5F3",
+    "Selection": "#EAF0FA",
+    "SelectionText": "#1B2333",
+    "TextSelection": "#B5C9EA",
+    "Focus": "#3D66B0",
+    "Link": "#2F5597"
+  }
+}

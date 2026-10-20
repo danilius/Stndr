@@ -1,0 +1,20 @@
+{
+  "Version": 1,
+  "Name": "Green",
+  "Colors": {
+    "Window": "#F5F8F4",
+    "Surface": "#FFFFFF",
+    "SurfaceAlt": "#F8FBF7",
+    "Text": "#1F2A1F",
+    "Muted": "#6B776B",
+    "Icon": "#3D6B45",
+    "Border": "#E2EAE0",
+    "Hover": "#EEF4EC",
+    "Pressed": "#DCE8D8",
+    "Selection": "#EAF2E7",
+    "SelectionText": "#1F2A1F",
+    "TextSelection": "#BAD7B1",
+    "Focus": "#4E8A57",
+    "Link": "#3D6B45"
+  }
+}

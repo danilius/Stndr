@@ -16,7 +16,7 @@ namespace Stndr;
 
 public sealed class ReaderTextView : SelectableTextBlock
 {
-    private static readonly IBrush ReaderSelectionBrush = new SolidColorBrush(Color.Parse("#335AA9E6"));
+    private static readonly IBrush ReaderSelectionBrush = UiTheme.Brush("TextSelection");
     private const double ParagraphClickMovementTolerance = 4;
     private readonly MenuItem _copyMenuItem;
     private string _plainText = string.Empty;
@@ -42,7 +42,7 @@ public sealed class ReaderTextView : SelectableTextBlock
         TextTrimming = TextTrimming.None;
         Background = Brushes.Transparent;
         SelectionBrush = ReaderSelectionBrush;
-        SelectionForegroundBrush = Brushes.Black;
+        SelectionForegroundBrush = UiTheme.Brush("Text");
         _copyMenuItem = new MenuItem
         {
             Header = "Copy"

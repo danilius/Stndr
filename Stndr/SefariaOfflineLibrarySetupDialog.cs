@@ -37,8 +37,9 @@ public sealed class SefariaOfflineLibrarySetupDialog : Window
 
         _status = new TextBlock
         {
+            [UiTheme.RoleProperty] = "Body",
             TextWrapping = TextWrapping.Wrap,
-            Foreground = new SolidColorBrush(Color.Parse("#475467")),
+            Foreground = UiTheme.Brush("Muted"),
             Text = isUpdate
                 ? "Choose how to install the latest complete library."
                 : "Stndr needs the complete Sefaria library before you can open books, links, and dictionaries."
@@ -87,12 +88,14 @@ public sealed class SefariaOfflineLibrarySetupDialog : Window
             {
                 new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Body",
                     Text = isUpdate ? "Update the Sefaria library" : "Install the Sefaria library",
                     FontSize = 22,
                     FontWeight = FontWeight.SemiBold
                 },
                 new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Body",
                     Text = isUpdate
                         ? "Stndr will install Sefaria's latest complete library in the background of this window. " +
                           "Open books keep their place until the update finishes."
@@ -102,11 +105,12 @@ public sealed class SefariaOfflineLibrarySetupDialog : Window
                 },
                 new Border
                 {
-                    Background = new SolidColorBrush(Color.Parse("#F2F4F7")),
+                    Background = UiTheme.Brush("Hover"),
                     CornerRadius = new CornerRadius(6),
                     Padding = new Thickness(12),
                     Child = new TextBlock
                     {
+                        [UiTheme.RoleProperty] = "Body",
                         Text = "Allow at least 8 GiB free during setup. The download is about 2.3 GiB. " +
                                "Downloading and installing usually takes a good while depending on your connection and computer — " +
                                "you can leave this window open and wait; progress will update as it works.",

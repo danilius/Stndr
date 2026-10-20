@@ -54,7 +54,8 @@ public partial class MainWindow
             foreach (var root in state.SiddurNavigation)
                 AddSiddurSearchResults(state, root, new(), results);
             if (results.Children.Count == 0)
-                results.Children.Add(new TextBlock { Text = "No matching prayers.", TextWrapping = TextWrapping.Wrap });
+                results.Children.Add(new TextBlock {
+            [UiTheme.RoleProperty] = "Navigation", Text = "No matching prayers.", TextWrapping = TextWrapping.Wrap });
         }
         search.TextChanged += (_, _) => { Filter(); SaveLayoutState(); };
         search.KeyDown += (_, e) =>
@@ -101,6 +102,7 @@ public partial class MainWindow
             if (!expander.IsExpanded) state.NavigationTopicsAllExpanded = false;
             SaveLayoutState();
         };
+        expander.Classes.Add("navigation-section");
         state.NavigationTopicExpanders[node.Part.Key] = expander;
         return expander;
     }
@@ -110,7 +112,8 @@ public partial class MainWindow
         var title = FormatChapterTitleParts(node.Part.Title, node.Part.HebrewTitle);
         var button = new Button
         {
-            Content = new TextBlock { Text = label ?? title, TextWrapping = TextWrapping.Wrap },
+            Content = new TextBlock {
+            [UiTheme.RoleProperty] = "Body", Text = label ?? title, TextWrapping = TextWrapping.Wrap },
             Tag = node,
             Background = Brushes.Transparent,
             BorderThickness = new Thickness(0),
@@ -155,10 +158,13 @@ public partial class MainWindow
         foreach (var (key, button) in state.SiddurNavigationButtons)
         {
             var active = key == path[^1].Key;
-            button.Background = active ? new SolidColorBrush(Color.Parse("#E8EEF8")) : Brushes.Transparent;
+            button.Background = active ? UiTheme.Brush("Selection") : Brushes.Transparent;
             button.FontWeight = keys.Contains(key) ? FontWeight.SemiBold : FontWeight.Normal;
         }
         if (!changed) return;
+        if (!state.NavigationTopicsAllExpanded)
+            foreach (var (key, expander) in state.NavigationTopicExpanders)
+                if (!keys.Contains(key)) expander.IsExpanded = false;
         foreach (var part in path.SkipLast(1))
         {
             state.ExpandedNavigationTopics[part.Key] = true;

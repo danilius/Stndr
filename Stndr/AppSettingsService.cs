@@ -9,10 +9,10 @@ public sealed class AppSettingsService
     private const string SettingsFileName = "settings.json";
     private const string LocationPointerFileName = "location.json";
 
-    public AppSettingsService()
+    public AppSettingsService(string? pointerFolder = null)
     {
         ProjectFolder = ResolveProjectFolder();
-        PointerFolder = Path.Combine(
+        PointerFolder = pointerFolder ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "Stndr");
         LocationPointerPath = Path.Combine(PointerFolder, LocationPointerFileName);

@@ -7,6 +7,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Stndr", "Stndr\Stndr.csproj
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Stndr.Tests", "Stndr.Tests\Stndr.Tests.csproj", "{D6033739-4E32-4E55-9126-B2594DE53315}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Stndr.UiTests", "Stndr.UiTests\Stndr.UiTests.csproj", "{8BA30EAF-7780-4AA7-823B-35A2EA2F2A61}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -41,6 +43,18 @@ Global
 		{D6033739-4E32-4E55-9126-B2594DE53315}.Release|x64.Build.0 = Release|Any CPU
 		{D6033739-4E32-4E55-9126-B2594DE53315}.Release|x86.ActiveCfg = Release|Any CPU
 		{D6033739-4E32-4E55-9126-B2594DE53315}.Release|x86.Build.0 = Release|Any CPU
+		{8BA30EAF-7780-4AA7-823B-35A2EA2F2A61}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8BA30EAF-7780-4AA7-823B-35A2EA2F2A61}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8BA30EAF-7780-4AA7-823B-35A2EA2F2A61}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{8BA30EAF-7780-4AA7-823B-35A2EA2F2A61}.Debug|x64.Build.0 = Debug|Any CPU
+		{8BA30EAF-7780-4AA7-823B-35A2EA2F2A61}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{8BA30EAF-7780-4AA7-823B-35A2EA2F2A61}.Debug|x86.Build.0 = Debug|Any CPU
+		{8BA30EAF-7780-4AA7-823B-35A2EA2F2A61}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8BA30EAF-7780-4AA7-823B-35A2EA2F2A61}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8BA30EAF-7780-4AA7-823B-35A2EA2F2A61}.Release|x64.ActiveCfg = Release|Any CPU
+		{8BA30EAF-7780-4AA7-823B-35A2EA2F2A61}.Release|x64.Build.0 = Release|Any CPU
+		{8BA30EAF-7780-4AA7-823B-35A2EA2F2A61}.Release|x86.ActiveCfg = Release|Any CPU
+		{8BA30EAF-7780-4AA7-823B-35A2EA2F2A61}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

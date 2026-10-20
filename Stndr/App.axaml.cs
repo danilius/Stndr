@@ -14,6 +14,7 @@ public partial class App : Application
 
     public override void Initialize()
     {
+        UiTheme.Initialize();
         AvaloniaXamlLoader.Load(this);
     }
 

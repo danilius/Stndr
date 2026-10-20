@@ -39,7 +39,8 @@ public sealed class DataFolderDialog : Window
 
         _errorText = new TextBlock
         {
-            Foreground = new SolidColorBrush(Color.Parse("#B42318")),
+            [UiTheme.RoleProperty] = "Body",
+            Foreground = UiTheme.Brush("Error"),
             TextWrapping = TextWrapping.Wrap,
             IsVisible = false
         };
@@ -58,6 +59,7 @@ public sealed class DataFolderDialog : Window
             {
                 new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Body",
                     Text = "Stndr stores everything it downloads — Hebrew sources, translations and its " +
                            "databases — inside a single Data folder, alongside its settings file. Choose where " +
                            "that folder should live, or where it should be created.",
@@ -65,10 +67,11 @@ public sealed class DataFolderDialog : Window
                 },
                 new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Body",
                     Text = "Inside it you'll find a 'sources' folder, a 'database' folder and a settings.json file, " +
                            "so you always know where your data is and can reset things by deleting them.",
                     TextWrapping = TextWrapping.Wrap,
-                    Foreground = new SolidColorBrush(Color.Parse("#475467"))
+                    Foreground = UiTheme.Brush("Muted")
                 },
                 new StackPanel
                 {
@@ -79,8 +82,9 @@ public sealed class DataFolderDialog : Window
                 _errorText,
                 new TextBlock
                 {
+                    [UiTheme.RoleProperty] = "Body",
                     Text = "You can change this later in the Settings tab.",
-                    Foreground = new SolidColorBrush(Color.Parse("#475467")),
+                    Foreground = UiTheme.Brush("Muted"),
                     FontStyle = FontStyle.Italic,
                     TextWrapping = TextWrapping.Wrap
                 },

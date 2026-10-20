@@ -43,7 +43,7 @@ public partial class MainWindow
             EnsureDefaultTabs();
             RefreshSavedSearchesList();
             ApplyLeftPanelState(false, DefaultExpandedPanelWidth);
-            ApplyRightPanelState(false, DefaultExpandedPanelWidth);
+            ApplyRightPanelState(false, UiTheme.Metric("RightPanelWidth"));
             return;
         }
 
@@ -169,23 +169,71 @@ public partial class MainWindow
         _tabs.Add(tab);
     }
 
+    // The tab strip scrolls without a visible bar; once tabs overflow, a drop-down arrow lists every open tab.
+    private void InitializeTabOverflow(ScrollViewer scroller, Button overflowButton)
+    {
+        void UpdateOverflow() => overflowButton.IsVisible = scroller.Extent.Width > scroller.Viewport.Width + 0.5;
+        scroller.PropertyChanged += (_, e) =>
+        {
+            if (e.Property == ScrollViewer.ExtentProperty || e.Property == ScrollViewer.ViewportProperty)
+                UpdateOverflow();
+        };
+
+        scroller.AddHandler(PointerWheelChangedEvent, (_, e) =>
+        {
+            var delta = e.Delta.X != 0 ? e.Delta.X : e.Delta.Y;
+            if (delta == 0 || !overflowButton.IsVisible)
+                return;
+            var maxOffset = Math.Max(0, scroller.Extent.Width - scroller.Viewport.Width);
+            scroller.Offset = new Vector(Math.Clamp(scroller.Offset.X - delta * 60, 0, maxOffset), 0);
+            e.Handled = true;
+        }, RoutingStrategies.Tunnel);
+
+        overflowButton.Click += (_, _) =>
+        {
+            if (_tabs is null || _centerTabs is null)
+                return;
+            var flyout = new MenuFlyout { Placement = PlacementMode.BottomEdgeAlignedRight };
+            foreach (var tab in _tabs)
+            {
+                var item = new MenuItem
+                {
+                    Header = GetTabDisplayTitle(tab),
+                    ToggleType = MenuItemToggleType.Radio,
+                    IsChecked = ReferenceEquals(tab, _centerTabs.SelectedItem)
+                };
+                item.Click += (_, _) => _centerTabs.SelectedItem = tab;
+                flyout.Items.Add(item);
+            }
+
+            flyout.ShowAt(overflowButton);
+        };
+    }
+
+    private static string GetTabDisplayTitle(TabItem tab) =>
+        tab.Header is Border { Child: Grid layout } && layout.Children.Count > 1 && layout.Children[1] is TextBlock { Text: { Length: > 0 } text }
+            ? text
+            : tab.Tag as string ?? string.Empty;
+
     private TabItem CreateTab(string title, Control? content = null)
     {
         var tab = new TabItem();
 
         var tabIcon = new TextBlock
         {
-            Text = "\u25c9",
+            [UiTheme.RoleProperty] = "Tab",
+            Text = "\u25cf",
             FontSize = 13,
-            Foreground = new SolidColorBrush(Color.Parse("#3F4A56")),
+            Foreground = UiTheme.Brush("Icon"),
             VerticalAlignment = VerticalAlignment.Center
         };
 
         var titleBlock = new TextBlock
         {
+            [UiTheme.RoleProperty] = "Tab",
             Text = title,
             FontSize = 12,
-            Foreground = new SolidColorBrush(Color.Parse("#2F3843")),
+            Foreground = UiTheme.Brush("Text"),
             VerticalAlignment = VerticalAlignment.Center,
             TextTrimming = TextTrimming.CharacterEllipsis
         };
@@ -194,10 +242,11 @@ public partial class MainWindow
         {
             Content = new TextBlock
             {
+                [UiTheme.RoleProperty] = "Tab",
                 Text = "\u00d7",
                 FontSize = 13,
                 LineHeight = 13,
-                Foreground = new SolidColorBrush(Color.Parse("#2F3843")),
+                Foreground = UiTheme.Brush("Text"),
                 TextAlignment = TextAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center
             },
@@ -223,14 +272,14 @@ public partial class MainWindow
             Width = 1,
             Height = 18,
             Margin = new Thickness(8, 0, 0, 0),
-            Background = new SolidColorBrush(Color.Parse("#7FA3EC")),
+            Background = UiTheme.Brush("Border"),
             VerticalAlignment = VerticalAlignment.Center
         };
 
         var headerLayout = new Grid
         {
-            Width = 236,
-            Height = 34,
+            Width = UiTheme.Metric("TabWidth"),
+            Height = UiTheme.Metric("TabHeight"),
             ColumnDefinitions = new ColumnDefinitions("18,*,24,10"),
             Children =
             {
@@ -241,6 +290,8 @@ public partial class MainWindow
             }
         };
 
+        headerLayout.Bind(Grid.WidthProperty, this.GetResourceObservable("Theme.TabWidth"));
+        headerLayout.Bind(Grid.HeightProperty, this.GetResourceObservable("Theme.TabHeight"));
         Grid.SetColumn(titleBlock, 1);
         Grid.SetColumn(closeButton, 2);
         Grid.SetColumn(separator, 3);
@@ -404,9 +455,7 @@ public partial class MainWindow
 
     private void ToggleInstalledBooksSearchClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        ToggleSearchBox(_leftPanelSearchBox);
-        if (_leftPanelSearchBox?.IsVisible == false && _leftPanelSearchSuggestionsContainer is not null)
-            _leftPanelSearchSuggestionsContainer.IsVisible = false;
+        _leftPanelSearchBox?.Focus();
     }
 
     private static void ToggleSearchBox(TextBox? searchBox)
@@ -589,12 +638,15 @@ public partial class MainWindow
         _leftSplitter.IsVisible = !_leftCollapsed;
 
         _leftPanelSearchButton.IsVisible = !_leftCollapsed;
+        _leftPanelSearchBox.IsVisible = !_leftCollapsed;
         if (_leftCollapsed)
         {
-            _leftPanelSearchBox.IsVisible = false;
             _leftPanelSearchBox.Text = string.Empty;
         }
         _leftPanelBody.IsVisible = !_leftCollapsed;
+        if (this.FindControl<Expander>("LeftSavedSearches") is { } savedSearches) savedSearches.IsVisible = !_leftCollapsed;
+        // The arrow shows the direction the panel will move: outwards to collapse, inwards to expand.
+        if (this.FindControl<ThemeIcon>("LeftSplitterArrow") is { } arrow) arrow.Kind = _leftCollapsed ? "chevron" : "back";
     }
 
     private void ApplyRightPanelState(bool collapsed, double expandedWidth)
@@ -611,8 +663,9 @@ public partial class MainWindow
         _rightColumn.Width = new GridLength(_rightCollapsed ? CollapsedPanelWidth : _rightExpandedWidth, GridUnitType.Pixel);
         _rightSplitter.IsVisible = !_rightCollapsed;
 
-        _rightPanelTitle.IsVisible = !_rightCollapsed;
+        _rightPanelTitle.IsVisible = false;
         _rightPanelBody.IsVisible = !_rightCollapsed;
+        if (this.FindControl<ThemeIcon>("RightSplitterArrow") is { } arrow) arrow.Kind = _rightCollapsed ? "back" : "chevron";
     }
 
     private bool TryHandleSidePanelShortcut(KeyEventArgs e)
@@ -764,7 +817,7 @@ public partial class MainWindow
         File.WriteAllText(filePath, json);
     }
 
-    private static LayoutState? ReadState()
+    private LayoutState? ReadState()
     {
         var filePath = GetStateFilePath();
         if (!File.Exists(filePath))
@@ -783,13 +836,9 @@ public partial class MainWindow
         }
     }
 
-    private static string GetStateFolder()
-    {
-        var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        return Path.Combine(appData, "Stndr");
-    }
+    private string GetStateFolder() => _settingsService.PointerFolder;
 
-    private static string GetStateFilePath()
+    private string GetStateFilePath()
     {
         return Path.Combine(GetStateFolder(), "layout-state.json");
     }

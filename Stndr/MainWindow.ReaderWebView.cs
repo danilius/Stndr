@@ -21,7 +21,7 @@ public partial class MainWindow
     {
         var webView = new NativeWebView
         {
-            Background = Brushes.White,
+            Background = UiTheme.Brush("Surface"),
             HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Stretch
         };
@@ -309,6 +309,7 @@ public partial class MainWindow
         builder.AppendLine($"<title>{title}</title>");
         builder.AppendLine("<style>");
         builder.AppendLine(BuildReaderWebCss(primaryIsHebrew));
+        builder.AppendLine(BuildThemeReaderCss());
         builder.AppendLine("</style>");
         builder.AppendLine("</head>");
         builder.AppendLine($"<body class=\"{displayClass}\">");
@@ -342,10 +343,10 @@ public partial class MainWindow
         return $$"""
             :root {
                 color-scheme: light;
-                --selection: rgba(90, 169, 230, 0.28);
-                --selected-row: rgba(90, 169, 230, 0.08);
-                --text: #101828;
-                --muted: #98A2B3;
+                --selection: {{UiTheme.CssColor("TextSelection")}};
+                --selected-row: {{UiTheme.CssColor("Selection")}};
+                --text: {{UiTheme.CssColor("Text")}};
+                --muted: {{UiTheme.CssColor("Muted")}};
                 --english-font: {{englishFont}};
                 --hebrew-font: {{hebrewFont}};
                 --english-size: {{englishSize}}px;
@@ -357,7 +358,7 @@ public partial class MainWindow
             html, body {
                 margin: 0;
                 min-height: 100%;
-                background: #fff;
+                background: {{UiTheme.CssColor("Surface")}};
                 color: var(--text);
             }
 
@@ -369,7 +370,7 @@ public partial class MainWindow
 
             ::selection {
                 background: var(--selection);
-                color: #000;
+                color: {{UiTheme.CssColor("Text")}};
             }
 
             #reader {
@@ -378,7 +379,7 @@ public partial class MainWindow
             }
 
             .chapter-heading {
-                color: #344054;
+                color: {{UiTheme.CssColor("Text")}};
                 font-family: var(--english-font);
                 font-size: 18px;
                 font-weight: 600;
@@ -407,12 +408,12 @@ public partial class MainWindow
             }
 
             .reader-row.search-hit {
-                background: #FFF4B8;
+                background: {{UiTheme.CssColor("SearchHit")}};
                 border-radius: 4px;
             }
 
             .reader-row.search-hit mark {
-                background: #FFE066;
+                background: {{UiTheme.CssColor("SearchHighlight")}};
                 border-radius: 3px;
                 box-decoration-break: clone;
                 -webkit-box-decoration-break: clone;
@@ -440,7 +441,7 @@ public partial class MainWindow
             }
 
             .aliyah-heading {
-                color: #344054;
+                color: {{UiTheme.CssColor("Text")}};
                 font-family: var(--english-font);
                 font-size: 13px;
                 font-weight: 600;
@@ -554,8 +555,8 @@ public partial class MainWindow
                 line-height: 1;
             }
 
-            .annotation-marker.bookmark { color: #175CD3; }
-            .annotation-marker.note { color: #7F56D9; }
+            .annotation-marker.bookmark { color: {{UiTheme.CssColor("Link")}}; }
+            .annotation-marker.note { color: {{UiTheme.CssColor("NoteMarker")}}; }
 
             mark.annotation-highlight {
                 border-radius: 2px;
@@ -584,8 +585,8 @@ public partial class MainWindow
                 display: none;
                 min-width: 180px;
                 padding: 6px;
-                background: #fff;
-                border: 1px solid #D0D5DD;
+                background: {{UiTheme.CssColor("Surface")}};
+                border: 1px solid {{UiTheme.CssColor("Border")}};
                 border-radius: 8px;
                 box-shadow: 0 8px 24px rgba(16, 24, 40, 0.2);
                 z-index: 2147483647;
@@ -605,22 +606,22 @@ public partial class MainWindow
                 padding: 8px 10px;
                 text-align: left;
                 border-radius: 6px;
-                color: #101828;
+                color: {{UiTheme.CssColor("Text")}};
                 cursor: pointer;
             }
 
             .stndr-context-menu button:hover {
-                background: #F2F4F7;
+                background: {{UiTheme.CssColor("Hover")}};
             }
 
             .stndr-context-menu button:disabled {
-                color: #98A2B3;
+                color: {{UiTheme.CssColor("Muted")}};
                 cursor: default;
             }
 
             .stndr-context-menu .separator {
                 margin: 4px 0;
-                border-top: 1px solid #EAECF0;
+                border-top: 1px solid {{UiTheme.CssColor("Border")}};
             }
 
             .stndr-context-menu .submenu {
@@ -628,8 +629,8 @@ public partial class MainWindow
             }
 
             .stndr-context-menu .submenu-panel {
-                background: #fff;
-                border: 1px solid #D0D5DD;
+                background: {{UiTheme.CssColor("Surface")}};
+                border: 1px solid {{UiTheme.CssColor("Border")}};
                 border-radius: 8px;
                 box-shadow: 0 8px 24px rgba(16, 24, 40, 0.2);
                 display: none;
@@ -667,7 +668,11 @@ public partial class MainWindow
             builder.Append("<section class=\"chapter-heading\" data-chapter=\"");
             builder.Append(headingChapterKey);
             builder.Append("\">");
-            builder.Append(WebUtility.HtmlEncode(row.ChapterHeading));
+            var navigation = state.NavigationItems.FirstOrDefault(item => item.Row.ChapterKey == row.ChapterKey);
+            var heading = state.HasSiddurNavigation && navigation?.NavigationPath?.LastOrDefault() is { } prayer
+                ? prayer.HebrewTitle + " / " + prayer.Title
+                : row.ChapterHeading;
+            AppendThemedChapterHeading(builder, heading, row.ChapterKey);
             builder.AppendLine("</section>");
             return;
         }
@@ -766,8 +771,8 @@ public partial class MainWindow
                 row.Primary?.Text ?? string.Empty,
                 primaryIsHebrew,
                 state.HebrewMarksMode,
-                leftLabel: FormatSegmentLabel(row.Primary, primaryIsHebrew),
-                rightLabel: string.Empty,
+                leftLabel: primaryIsHebrew ? string.Empty : FormatSegmentLabel(row.Primary, false),
+                rightLabel: primaryIsHebrew ? FormatSegmentLabel(row.Primary, true) : string.Empty,
                 lineClass: "stacked-line",
                 highlightTerms: searchTerms);
             AppendReaderWebLabeledLine(
@@ -776,7 +781,7 @@ public partial class MainWindow
                 false,
                 state.HebrewMarksMode,
                 leftLabel: string.Empty,
-                rightLabel: FormatSegmentLabel(row.Translation, false),
+                rightLabel: string.Empty,
                 lineClass: "stacked-line",
                 highlightTerms: searchTerms);
         }
@@ -1359,7 +1364,13 @@ public partial class MainWindow
                 renderAnnotations();
             })();
             """;
-        return script.Replace("__STNDR_ANNOTATIONS__", BuildReaderAnnotationJson(state), StringComparison.Ordinal);
+        return script
+            .Replace("#FFE58F", UiTheme.Hex("HighlightYellow"), StringComparison.Ordinal)
+            .Replace("#B7EB8F", UiTheme.Hex("HighlightGreen"), StringComparison.Ordinal)
+            .Replace("#91D5FF", UiTheme.Hex("HighlightBlue"), StringComparison.Ordinal)
+            .Replace("#FFADD2", UiTheme.Hex("HighlightPink"), StringComparison.Ordinal)
+            .Replace("#D3ADF7", UiTheme.Hex("HighlightPurple"), StringComparison.Ordinal)
+            .Replace("__STNDR_ANNOTATIONS__", BuildReaderAnnotationJson(state), StringComparison.Ordinal);
     }
 
     private void UpdateReaderChapterHeaderFromWeb(ReaderTabState state, string? chapterKey)
@@ -1384,17 +1395,7 @@ public partial class MainWindow
 
     private static string GetAliyahCssColor(int aliyahNumber)
     {
-        var colors = new[]
-        {
-            "#FFF3C4",
-            "#DFF7E8",
-            "#DDEBFF",
-            "#F5E3FF",
-            "#FFE3DF",
-            "#E1F5F7",
-            "#F1EAD8"
-        };
-        return colors[Math.Clamp(aliyahNumber - 1, 0, colors.Length - 1)];
+        return UiTheme.CssColor("Aliyah" + Math.Clamp(aliyahNumber, 1, 7));
     }
 
     private static string GetReaderRowWebReference(ReaderTabState state, ReaderDisplayRow row)
