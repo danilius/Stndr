@@ -39,6 +39,9 @@ public sealed class SefariaOfflineLibraryImporter
     private readonly List<string> _referencesById = [""];
     private readonly Dictionary<string, long> _lexiconIds = new(StringComparer.Ordinal);
     private readonly Dictionary<string, List<long>> _lexiconEntryIds = new(StringComparer.Ordinal);
+    // Word-form lookups seen before lexicon_entry; linked once the entries are imported.
+    private readonly List<(long FormId, string Key)> _pendingWordFormLookups = [];
+    private bool _lexiconEntriesImported;
     private Dictionary<string, string[]> _workCandidates = new(StringComparer.Ordinal);
     private long _nextWorkId;
     private long _nextVersionId;
@@ -106,6 +109,8 @@ public sealed class SefariaOfflineLibraryImporter
                     break;
                 case "lexicon_entry":
                     await ImportLexiconEntriesAsync(connection, dataStream, progress, cancellationToken);
+                    if (_pendingWordFormLookups.Count > 0)
+                        await LinkPendingWordFormsAsync(connection, cancellationToken);
                     break;
                 case "person":
                     await ImportGenericMetadataAsync(connection, dataStream, "people", progress, cancellationToken);
@@ -150,6 +155,8 @@ public sealed class SefariaOfflineLibraryImporter
         _referenceIds.Clear();
         _lexiconIds.Clear();
         _lexiconEntryIds.Clear();
+        _pendingWordFormLookups.Clear();
+        _lexiconEntriesImported = false;
         _referencesById.Clear();
         _referencesById.Add("");
         _workCandidates = new(StringComparer.Ordinal);
@@ -202,14 +209,15 @@ public sealed class SefariaOfflineLibraryImporter
     {
         progress?.Report(new(SefariaOfflineLibraryStage.ImportingMetadata, "Importing books and schemas..."));
         using var transaction = connection.BeginTransaction();
+        // The dump's collection order varies, so texts may already have created a placeholder
+        // work for this title; reuse its id and replace the row so versions keep pointing at it.
         using var insert = new PreparedInsert(connection, transaction,
-            "INSERT INTO works VALUES($p0,$p1,$p2,$p3,$p4,$p5,$p6,$p7,$p8,$p9,$p10,$p11,$p12,$p13,$p14)", 15);
+            "INSERT OR REPLACE INTO works VALUES($p0,$p1,$p2,$p3,$p4,$p5,$p6,$p7,$p8,$p9,$p10,$p11,$p12,$p13,$p14)", 15);
         await foreach (var document in ReadBsonDocumentsAsync(stream, token))
         {
             var title = String(document, "title");
             if (string.IsNullOrWhiteSpace(title)) continue;
-            var id = ++_nextWorkId;
-            _workIds[title] = id;
+            if (!_workIds.TryGetValue(title, out var id)) _workIds[title] = id = ++_nextWorkId;
             var schema = Value(document, "schema", new BsonDocument());
             await insert.ExecuteAsync(token, id, UpstreamId(document), title, PrimaryTitle(schema, "he"), Json(Value(document, "categories", new BsonArray())),
                 ExtractWorkOrder(document), Json(schema), Json(Value(document, "alt_structs", new BsonDocument())), String(document, "dependence"),
@@ -273,13 +281,13 @@ public sealed class SefariaOfflineLibraryImporter
     {
         progress?.Report(new(SefariaOfflineLibraryStage.ImportingDictionaries, "Importing dictionary catalogue"));
         using var transaction = connection.BeginTransaction();
-        using var insert = new PreparedInsert(connection, transaction, "INSERT INTO lexicons VALUES($p0,$p1,$p2,$p3,$p4,$p5,$p6,$p7,$p8,$p9,$p10)", 11);
+        // lexicon_entry may precede lexicon in the dump and leave a placeholder row; upgrade it in place.
+        using var insert = new PreparedInsert(connection, transaction, "INSERT OR REPLACE INTO lexicons VALUES($p0,$p1,$p2,$p3,$p4,$p5,$p6,$p7,$p8,$p9,$p10)", 11);
         await foreach (var document in ReadBsonDocumentsAsync(stream, token))
         {
             var name = String(document, "name");
             if (string.IsNullOrWhiteSpace(name)) continue;
-            var id = ++_nextLexiconId;
-            _lexiconIds[name] = id;
+            if (!_lexiconIds.TryGetValue(name, out var id)) _lexiconIds[name] = id = ++_nextLexiconId;
             var metadata = document.DeepClone().AsBsonDocument;
             metadata.Remove("_id");
             await insert.ExecuteAsync(token, id, UpstreamId(document), name, String(document, "language"),
@@ -341,6 +349,21 @@ public sealed class SefariaOfflineLibraryImporter
                 progress?.Report(new(SefariaOfflineLibraryStage.ImportingDictionaries, $"Imported {id:N0} dictionary entries", id));
         }
         transaction.Commit();
+        _lexiconEntriesImported = true;
+    }
+
+    private async Task LinkPendingWordFormsAsync(SqliteConnection connection, CancellationToken token)
+    {
+        using var transaction = connection.BeginTransaction();
+        using var linkInsert = new PreparedInsert(connection, transaction,
+            "INSERT OR IGNORE INTO dictionary_word_form_entries VALUES($p0,$p1)", 2);
+        foreach (var (formId, key) in _pendingWordFormLookups)
+        {
+            if (_lexiconEntryIds.TryGetValue(key, out var entryIds))
+                foreach (var entryId in entryIds) await linkInsert.ExecuteAsync(token, formId, entryId);
+        }
+        transaction.Commit();
+        _pendingWordFormLookups.Clear();
     }
 
     private async Task ImportDictionaryWordFormsAsync(SqliteConnection connection, Stream stream,
@@ -364,7 +387,8 @@ public sealed class SefariaOfflineLibraryImporter
             foreach (var lookup in lookups.OfType<BsonDocument>())
             {
                 var key = LexiconEntryMapKey(String(lookup, "parent_lexicon"), String(lookup, "headword"));
-                if (_lexiconEntryIds.TryGetValue(key, out var entryIds))
+                if (!_lexiconEntriesImported) _pendingWordFormLookups.Add((id, key));
+                else if (_lexiconEntryIds.TryGetValue(key, out var entryIds))
                     foreach (var entryId in entryIds) await linkInsert.ExecuteAsync(token, id, entryId);
             }
             if (id % 25_000 == 0)
